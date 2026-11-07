@@ -1,0 +1,153 @@
+# 検索詳細設計
+
+[設計書](../design.md) の「4.5 検索」の詳細。
+
+## 1. 要件
+
+- 1 つの検索窓で、意味検索（言い換えにも強い）とキーワード検索（型番・固有名詞・数字に強い）の両方の結果を返す。
+- 自分がアクセスできる文書だけを返す。ゴミ箱内の文書は返さない。
+- 結果は文書単位で表示し、どのページのどの部分がヒットしたかを示す。
+- 応答時間: チャンク 10 万件で p95 1 秒以内。
+
+## 2. クエリの解釈
+
+| 入力例 | 解釈 |
+|---|---|
+| `請求書 振込先` | 通常検索（ハイブリッド） |
+| `"株式会社サンプル"` | ダブルクォートで囲んだ部分はキーワード検索で必須一致 |
+| `-下書き` | その語を含むチャンクを除外（キーワード検索側） |
+| `type:pdf` `tag:経理` `folder:123` `after:2026-01-01` `before:2026-06-30` | 絞り込み |
+
+1. 絞り込み指定（`key:value`）を取り出す。
+2. 残りを NFKC 正規化・小文字化する。
+3. 空白で語に分割する（ダブルクォート内は 1 語）。
+4. 意味検索には、絞り込みと `-` 語を除いた文全体を使う。
+
+## 3. 処理の流れ
+
+```
+クエリ
+  │
+  ├─ (A) 意味検索
+  │     「検索クエリ: 」+ クエリ → ruri-v3-70m → 384 次元ベクトル
+  │     sqlite-vec で近い順に K_vec 件（既定 200）
+  │
+  ├─ (B) キーワード検索
+  │     3 文字以上の語 → FTS5 trigram で MATCH（bm25 順）上位 K_kw 件（既定 200）
+  │     2 文字以下の語 → chunks.text に LIKE（候補を絞れる場合のみ。4.3 参照）
+  │
+  ▼
+アクセス権・ゴミ箱・絞り込みでフィルタ（chunk → blob → document）
+  │
+  ▼
+RRF で統合（チャンク単位）
+  │
+  ▼
+文書単位にまとめる → 上位 N 件 → スニペット・ハイライト生成
+```
+
+`mode=semantic` の場合は (A) のみ、`mode=keyword` の場合は (B) のみを使う。
+
+## 4. 各検索の SQL
+
+### 4.1 意味検索
+
+```sql
+SELECT rowid AS chunk_id, distance
+  FROM chunk_vectors
+ WHERE embedding MATCH :query_vec
+   AND k = :k_vec;
+```
+
+- sqlite-vec の KNN は「先に上位 k 件を取り、その後でフィルタ」になるため、アクセス権のフィルタで件数が減る。フィルタ後の文書数が要求件数に満たなければ、k を 2 倍（最大 2000）にして取り直す。
+- 少人数での利用を前提に、大半の文書が誰からも見える状況を想定している。ユーザーごとに見える範囲が大きく分かれる使い方が増えたら、vec0 の partition key（所有者ごと）を検討する。
+- 類似度 = `1 - distance`（コサイン）。類似度 0.3 未満は捨てる（無関係な結果を出さないため。Phase 3 の評価で調整）。
+
+### 4.2 キーワード検索（3 文字以上）
+
+```sql
+SELECT c.id AS chunk_id,
+       bm25(chunks_fts) AS score,
+       highlight(chunks_fts, 0, char(2), char(3)) AS hl
+  FROM chunks_fts
+  JOIN chunks c ON c.id = chunks_fts.rowid
+ WHERE chunks_fts MATCH :fts_query
+ ORDER BY score
+ LIMIT :k_kw;
+```
+
+`:fts_query` の組み立て:
+
+- 各語をダブルクォートで囲み、内部の `"` は `""` にエスケープする（FTS5 の構文を利用者に使わせない）。
+- 複数語は AND。`-語` は `NOT "語"`。
+- 例: `請求書 "株式会社サンプル" -下書き` → `"請求書" AND "株式会社サンプル" NOT "下書き"`
+
+### 4.3 キーワード検索（2 文字以下の語）
+
+trigram 索引は 3 文字未満の語を検索できない（例: 「契約」「税」）。
+
+- 3 文字以上の語が他にある場合: 4.2 の結果に対して、2 文字以下の語を `instr(c.text, :term) > 0` で追加の条件にする。
+- 2 文字以下の語しか無い場合: 意味検索の候補チャンク（K_vec 件）に対して `instr` で絞り込み、キーワード側の結果とする。全件の LIKE 走査はしない（100 万チャンクでは数秒かかるため）。
+  - このため「2 文字だけの語」のキーワード検索は、意味的に近い文書の中からしか見つからない。この制約は UI のヘルプに記載する。
+  - 精度が問題になったら、2-gram 用の FTS テーブル（unicode61 で 1 文字ずつ区切ったもの）を追加する案を検討する。
+
+## 5. フィルタ
+
+チャンク ID の候補リストを一時テーブル `cand(chunk_id, ...)` に入れ、次の結合で絞り込む。
+
+```sql
+SELECT cand.chunk_id, d.id AS document_id
+  FROM cand
+  JOIN chunks c    ON c.id = cand.chunk_id
+  JOIN documents d ON d.blob_id = c.blob_id AND d.deleted_at IS NULL
+ WHERE d.folder_id IN (SELECT folder_id FROM accessible_folders)  -- 権限
+   AND (:type   IS NULL OR <blobs.mime_type が type に対応>)
+   AND (:after  IS NULL OR d.updated_at >= :after)
+   AND (:before IS NULL OR d.updated_at <  :before)
+   AND (:tag    IS NULL OR EXISTS (SELECT 1 FROM document_tags dt JOIN tags t ON t.id = dt.tag_id
+                                    WHERE dt.document_id = d.id AND t.name = :tag))
+   AND (:folder IS NULL OR d.folder_id IN (<folder 以下のフォルダ>));
+```
+
+- `accessible_folders` は検索ごとに再帰 CTE で作る（[セキュリティ設計](security.md) 3.3）。
+- 1 つの blob を複数の文書が参照している場合、1 つのチャンクが複数の文書にヒットする。それぞれの文書を別の結果として扱う。
+
+## 6. スコアの統合（RRF）
+
+```
+score(d) = Σ_{検索 s ∈ {A, B}}  w_s / (60 + rank_s(chunk))
+```
+
+- `rank_s` はフィルタ前の各検索での順位（1 始まり）。その検索でヒットしなければ項は 0。
+- 重み `w_A = 1.0`、`w_B = 1.0`。ダブルクォートの語がある場合は `w_B = 1.5`。Phase 3 の評価で調整する。
+- 文書のスコア = その文書に属するチャンクのスコアの最大値 + 2 位以下のチャンクのスコアの合計 × 0.1（同じ文書の複数箇所でヒットしたものを少し上げる）。
+- ファイル名に検索語が含まれる文書は、スコアに `1 / 60` を加える。
+
+## 7. 結果
+
+1 文書あたり最大 3 チャンクをスニペットとして返す。
+
+- キーワードでヒットしたチャンク: FTS5 の `highlight()` の結果を使う。区切り文字を `<mark>` に置き換えるのは HTML エスケープの後に行う。
+- 意味検索だけでヒットしたチャンク: 本文の先頭 160 文字。クエリ中の語が本文に含まれていればその付近を切り出してハイライトする。
+- 各スニペットにページ番号を付け、クリックで文書詳細のそのページを開く。
+
+ページング: `limit`（既定 20、最大 100）と `offset`（最大 500）。
+
+## 8. 性能の見積もりと対策
+
+| 処理 | 見積もり（Pi 5, チャンク 10 万件） |
+|---|---|
+| クエリの埋め込み | 50〜150ms（短文 1 件） |
+| sqlite-vec 総当たり（384 次元 × 10 万件） | 50〜200ms |
+| FTS5 MATCH | 10〜100ms |
+| フィルタ・RRF・スニペット | 〜50ms |
+
+- 見積もりは Phase 0 と Phase 3 で実測して更新する。
+- 100 万チャンクでベクトル検索が 1 秒を超える場合は、ベクトルを `int8` に量子化するか、`bit` 量子化で候補を絞ってから float で並べ直す方式に切り替える。
+- 同じクエリのベクトルは LRU キャッシュ（256 件）に保持する。
+
+## 9. 検索品質の評価
+
+- `tests/eval/queries.yaml` に「質問」と「正解の文書（とページ）」の組を 30 件以上用意する（自分の実データから作る。リポジトリには含めず、評価用データの置き場所だけを決めておく）。
+- 評価スクリプト `scripts/eval_search.py` で Recall@5、Recall@20、MRR を mode（hybrid / semantic / keyword）ごとに出す。
+- RRF の重み、類似度のしきい値、チャンクサイズを変えたときは必ず評価を実行して比較する。
