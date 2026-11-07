@@ -1,0 +1,19 @@
+# Phase 0 計測スクリプトの依存パッケージ
+# Raspberry Pi (aarch64) では PyPI の torch がそのまま CPU 版になる。
+# x86_64 で試す場合は先に: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+# OCR
+rapidocr>=3.10
+onnxocr-ppocrv5>=0.0.23
+onnxruntime>=1.20
+pypdfium2>=4.30
+pillow>=10.0
+rapidfuzz>=3.0
+
+# 埋め込み（[onnx] で optimum-onnx も入る）
+sentence-transformers[onnx]>=5.0
+
+# ベクトル検索
+sqlite-vec>=0.1.6
+
+numpy

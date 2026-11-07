@@ -1,0 +1,8 @@
+# モデル・計測用 DB・個人の文書はコミットしない
+models/
+results/db/
+samples/real/
+samples/synthetic/
+out/
+__pycache__/
+cache/
