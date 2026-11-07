@@ -37,15 +37,15 @@ fi
 
 echo; echo "=== 2. OCR: エンジン比較 ==="
 $PY bench_ocr.py "${INPUTS[@]}" "${MAXP[@]}" \
-  --engines rapidocr-v5-mobile,onnxocr-v5,rapidocr-v6-small \
+  --engines rapidocr-v6-small,rapidocr-v6-medium,rapidocr-v5-mobile \
   --models-dir models --save-text out/text
 
-echo; echo "=== 3. OCR: DPI と検出サイズ（rapidocr-v5-mobile） ==="
+echo; echo "=== 3. OCR: DPI と検出サイズ（rapidocr-v6-small） ==="
 $PY bench_ocr.py "${INPUTS[@]}" "${MAXP[@]}" \
-  --engines rapidocr-v5-mobile --dpi 150,200,300 --det-side 960,1600,2400 --models-dir models
+  --engines rapidocr-v6-small --dpi 150,200,300 --det-side 960,1600,2400 --models-dir models
 
 echo; echo "=== 4. OCR: 連続処理 ${SOAK} 秒（温度・スロットリング） ==="
-$PY bench_ocr.py "${INPUTS[@]}" --engines rapidocr-v5-mobile --duration "$SOAK" \
+$PY bench_ocr.py "${INPUTS[@]}" --engines rapidocr-v6-small --duration "$SOAK" \
   --warmup 0 --cool-to 100 --models-dir models
 command -v vcgencmd >/dev/null && vcgencmd get_throttled || true
 

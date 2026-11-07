@@ -4,7 +4,7 @@
 
 | 決めること | 使うスクリプト | 判断材料 |
 |---|---|---|
-| PP-OCRv5 のラッパー（RapidOCR / OnnxOCR） | `bench_ocr.py` | 速度、CER（文字誤り率）、メモリ |
+| PP-OCRv6 small で足りるか（medium との差） | `bench_ocr.py` | 速度、CER（文字誤り率）、メモリ |
 | PDF を画像にする DPI と検出サイズ | `bench_ocr.py --dpi --det-side` | 速度と CER のバランス |
 | 埋め込みの実行方式（PyTorch / ONNX / ONNX int8）とスレッド数 | `bench_embed.py` | chunks/s、クエリの応答時間、torch との差（コサイン類似度） |
 | SQLite（sqlite-vec / FTS5）で目標の検索速度が出るか | `bench_vec.py` | 10 万件での検索時間 |
@@ -77,13 +77,13 @@ python make_samples.py
 
 # OCR: エンジンの比較（認識結果のテキストも保存）
 python bench_ocr.py samples/synthetic samples/real \
-  --engines rapidocr-v5-mobile,onnxocr-v5,rapidocr-v6-small --save-text out/text
+  --engines rapidocr-v6-small,rapidocr-v6-medium,rapidocr-v5-mobile --save-text out/text
 
 # OCR: DPI と検出サイズ
-python bench_ocr.py samples/real --engines rapidocr-v5-mobile --dpi 150,200,300 --det-side 960,1600,2400
+python bench_ocr.py samples/real --engines rapidocr-v6-small --dpi 150,200,300 --det-side 960,1600,2400
 
 # OCR: 30 分の連続処理
-python bench_ocr.py samples/real --engines rapidocr-v5-mobile --duration 1800 --cool-to 100
+python bench_ocr.py samples/real --engines rapidocr-v6-small --duration 1800 --cool-to 100
 
 # 埋め込み（OCR の結果をコーパスとして使う）
 python bench_embed.py --corpus out/text --backends torch,onnx,onnx-int8
@@ -100,10 +100,13 @@ python bench_vec.py --sizes 1000000
 
 | 名前 | 内容 |
 |---|---|
-| `rapidocr-v5-mobile` | RapidOCR で PP-OCRv5 mobile（第一候補） |
-| `onnxocr-v5` | OnnxOCR で PP-OCRv5 mobile（モデル同梱） |
-| `rapidocr-v5-server` | PP-OCRv5 server（精度の上限の確認用。重い） |
-| `rapidocr-v6-small` | 参考: 後継の PP-OCRv6 small（日本語モデル） |
+| `rapidocr-v6-small` | PP-OCRv6 small（採用） |
+| `rapidocr-v6-medium` | PP-OCRv6 medium（精度重視の再処理用。重い） |
+| `rapidocr-v5-mobile` | 参考: 前世代の PP-OCRv5 mobile |
+| `rapidocr-v5-server` | 参考: PP-OCRv5 server |
+| `onnxocr-v5` | 参考: OnnxOCR で PP-OCRv5 mobile |
+
+PP-OCRv6 の tiny は日本語に対応していないため含めていません。medium は x86 の予備計測でも small の約 20 倍の時間がかかったため、実文書が多い場合は `--max-pages` で枚数を絞るか、`--engines` から外してください。
 | `tesseract` | 参考: 従来型の Tesseract |
 
 ## 3. 判定の目安

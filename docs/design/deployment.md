@@ -22,7 +22,7 @@
 ├── files/        原本（.tmp/ は一時ファイル）
 ├── derived/      サムネイル・ページ画像のキャッシュ
 ├── db/           docseed.sqlite（+ -wal, -shm）
-├── models/       PP-OCRv5 ONNX、ruri-v3-70m
+├── models/       PP-OCRv6 ONNX（RapidOCR）、ruri-v3-70m
 ├── inbox/        Samba の投入フォルダ（任意）
 ├── backup/       DB の日次スナップショット
 ├── run/          worker への通知用ファイル等
@@ -87,7 +87,7 @@ networks:
 
 ```
 FROM python:3.12-slim-bookworm（arm64）
-  ├ apt: libgl1 など OpenCV の最小依存（RapidOCR 等が必要とする場合）、tini
+  ├ apt: libgl1 など OpenCV の最小依存（RapidOCR が必要とする場合）、tini
   ├ pip: 本体 + onnxruntime + sentence-transformers + torch（CPU 版）+ sqlite-vec + pypdfium2 + Pillow ...
   ├ 非 root ユーザー docseed（UID 1000）で実行
   └ ENTRYPOINT ["tini", "--"]
@@ -129,7 +129,7 @@ FROM python:3.12-slim-bookworm（arm64）
 | `DOCSEED_SECRET_KEY` | — | Cookie 署名用。32 バイト以上の乱数（必須） |
 | `DOCSEED_MAX_UPLOAD_MB` | `1024` | 1 ファイルの上限 |
 | `DOCSEED_TRASH_RETENTION_DAYS` | `30` | ゴミ箱の保持日数 |
-| `DOCSEED_OCR_ENGINE` | `ppocrv5_mobile` | OCR エンジン |
+| `DOCSEED_OCR_ENGINE` | `ppocrv6_small` | OCR エンジン（`ppocrv6_small` / `ppocrv6_medium`） |
 | `DOCSEED_OCR_DPI` | `200` | PDF のページ画像化の解像度 |
 | `DOCSEED_OCR_THREADS` | `3` | ONNX Runtime のスレッド数 |
 | `DOCSEED_EMBED_MODEL` | `cl-nagoya/ruri-v3-70m` | 埋め込みモデル |

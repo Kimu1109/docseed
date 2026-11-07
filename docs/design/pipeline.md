@@ -112,21 +112,22 @@ RETURNING *;
 
 検索クエリにも同じ NFKC 正規化をかける。
 
-## 4. OCR（PP-OCRv5）
+## 4. OCR（PP-OCRv6）
 
 ### 4.1 構成
 
 ```
 ページ画像
   → 前処理
-  → 文字領域の検出 (PP-OCRv5_mobile_det)
+  → 文字領域の検出 (PP-OCRv6_small_det)
   → 各領域を切り出し・向き補正 (文字方向分類 0°/180°)
-  → 文字認識 (PP-OCRv5_mobile_rec)
+  → 文字認識 (PP-OCRv6_small_rec, 日本語を含む多言語統合モデル)
   → 読み順の並べ替え
   → 行テキスト + 座標 + 信頼度
 ```
 
-- 推論は ONNX Runtime（CPUExecutionProvider）。ラッパーは RapidOCR / OnnxOCR を Phase 0 で比較して決める。
+- 推論は RapidOCR（ONNX Runtime, CPUExecutionProvider）。RapidOCR の設定は `Det/Rec.ocr_version = PP-OCRv6`、`model_type = small`、`lang_type = japan`。文字方向分類は PP-OCRv5 の textline_ori_cls（mobile）を使う。
+- モデルは `small`（7.7M パラメータ）を既定とする。`medium`（34.5M）は精度が必要な文書の再処理用。`tiny` は日本語に対応していないため使わない。
 - アプリ側は次のインタフェースだけに依存させ、エンジンを差し替えられるようにする。
 
 ```python

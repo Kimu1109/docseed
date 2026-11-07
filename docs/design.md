@@ -2,7 +2,7 @@
 
 | 項目 | 内容 |
 |---|---|
-| 版 | 0.2 |
+| 版 | 0.3 |
 | 日付 | 2026-11-07 |
 | 状態 | ドラフト |
 | 関連 | [ローカル OCR / Embedding モデル調査](research/ocr-embedding-models.md) |
@@ -43,7 +43,7 @@ Raspberry Pi 5（SSD 起動）1台で動く、自宅/小規模向けのドキュ
 
 | 項目 | 決定 | 理由 |
 |---|---|---|
-| OCR | **PP-OCRv5 mobile（検出+認識, ONNX Runtime で実行）** | 日本語精度と Pi 5 での速度のバランスが最良。Apache-2.0 |
+| OCR | **PP-OCRv6 small（検出+認識, 7.7M パラメータ）を RapidOCR + ONNX Runtime で実行** | 2026-06 公開の PP-OCRv5 の後継。日本語を含む 50 言語を 1 モデルで扱う。予備計測で PP-OCRv5 mobile と同程度の速度のまま誤り率が小さかった（特に撮影画像）。Apache-2.0。tiny は日本語非対応のため対象外 |
 | Embedding | **cl-nagoya/ruri-v3-70m（384次元, 最大 8192 トークン）** | 日本語性能が高く軽量。Apache-2.0 |
 
 ## 2. 前提と制約
@@ -81,7 +81,7 @@ Raspberry Pi 5（SSD 起動）1台で動く、自宅/小規模向けのドキュ
                     │     │ ジョブ取得・結果書き込み                          │
                     │  docseed-worker（外部ネットワークなし）                 │
                     │   ├─ テキスト抽出 (pypdfium2 等)                      │
-                    │   ├─ OCR (PP-OCRv5 mobile / ONNX Runtime)           │
+                    │   ├─ OCR (PP-OCRv6 small / RapidOCR + ONNX Runtime) │
                     │   ├─ チャンク分割                                     │
                     │   └─ 埋め込み (ruri-v3-70m)                          │
                     │                                                    │
@@ -120,7 +120,7 @@ Raspberry Pi 5（SSD 起動）1台で動く、自宅/小規模向けのドキュ
 ```
 アップロード / inbox
   → SHA-256 計算・重複判定 → 原本を保存 → process_blob ジョブ
-  → [worker] ページごとに抽出（テキスト層 / OCR が必要なページだけ PP-OCRv5）
+  → [worker] ページごとに抽出（テキスト層 / OCR が必要なページだけ PP-OCRv6）
   → 正規化（NFKC など）→ チャンク分割（目安 600 文字、重なり 100 文字、ページをまたがない）
   → ruri-v3-70m で埋め込み（「検索文書: 」+ ファイル名 + 本文）
   → ready
@@ -243,7 +243,7 @@ docseed/
 
 | フェーズ | 内容 | 完了条件 |
 |---|---|---|
-| 0. PoC | Pi 5 上で PP-OCRv5（RapidOCR / OnnxOCR）と ruri-v3-70m を計測 | 速度・精度・RAM が性能目標を満たすことを確認。OCR ラッパー、DPI、埋め込みの実行方式を決定 |
+| 0. PoC | Pi 5 上で PP-OCRv6 small（比較: medium, PP-OCRv5 mobile）と ruri-v3-70m を計測 | 速度・精度・RAM が性能目標を満たすことを確認。DPI、検出サイズ、埋め込みの実行方式を決定 |
 | 1. 基盤 | DB スキーマ、マイグレーション、認証、フォルダ、アップロード / ダウンロード、画面の骨組み | ブラウザからファイルを保存・取得できる |
 | 2. パイプライン | ジョブキュー、テキスト抽出、OCR、チャンク分割、埋め込み、進捗表示 | PDF と画像が自動で検索可能（ready）になる |
 | 3. 検索 | ハイブリッド検索 API と画面、ハイライト、評価スクリプト | 自前の質問セットで Recall@5 を測定し、目標値を決める |
@@ -254,10 +254,10 @@ docseed/
 
 | 項目 | 内容 | 対応 |
 |---|---|---|
-| OCR ラッパーの選定 | RapidOCR と OnnxOCR のどちらで PP-OCRv5 を動かすか | Phase 0 で比較 |
+| OCR モデルのサイズ | PP-OCRv6 small で精度が足りるか（medium は予備計測で small の約 20 倍遅く、常用は難しい） | Phase 0 で実文書を比較。small を既定とし、文書ごとに medium で再処理できるようにする |
 | OCR の解像度・パラメータ | PDF の画像化 DPI、検出の入力サイズ | Phase 0 で精度と速度を比較 |
 | 埋め込みの実行方式 | PyTorch のままか ONNX（int8）にするか | Phase 0 で速度を比較 |
-| 縦書き・表の精度 | PP-OCRv5 mobile で不足する可能性 | `OcrEngine` で抽象化し、server モデルや YomiToku に差し替え可能にする |
+| 縦書き・表の精度 | PP-OCRv6 small で不足する可能性 | `OcrEngine` で抽象化し、medium モデルや YomiToku に差し替え可能にする |
 | sqlite-vec の規模上限 | 100万チャンク超で総当たり検索が遅くなる可能性 | int8 / bit 量子化、または Qdrant へ移行 |
 | 2 文字以下の語の検索 | trigram で検索できない | 意味検索の候補内で照合（制約あり）。必要なら 2-gram 索引を追加 |
 | HEIC 対応 | arm64 でのデコード | pillow-heif を検証 |
@@ -270,3 +270,4 @@ docseed/
 |---|---|---|
 | 0.1 | 2026-11-07 | 初版 |
 | 0.2 | 2026-11-07 | 詳細設計（データモデル・パイプライン・検索・セキュリティ・API・画面・配置運用）を追加。blob と文書の分離、フォルダ単位の権限、Web UI 方式（Jinja2 + htmx）、テスト方針を追加 |
+| 0.3 | 2026-11-07 | OCR モデルを PP-OCRv5 mobile から PP-OCRv6 small に変更。ラッパーは PP-OCRv6 に対応する RapidOCR に決定（OnnxOCR は PP-OCRv5 のみ） |

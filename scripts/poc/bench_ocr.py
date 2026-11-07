@@ -1,14 +1,14 @@
 """OCR の速度・精度・メモリを計測する（Phase 0）。
 
 使い方の例:
-    # 合成サンプルで PP-OCRv5 の 2 実装を比較
+    # 合成サンプルで PP-OCRv6 small / medium と PP-OCRv5 mobile を比較
     python bench_ocr.py samples/synthetic
 
     # 実文書（画像・PDF）で、DPI と検出サイズを振って比較
-    python bench_ocr.py samples/real --engines rapidocr-v5-mobile --dpi 150,200,300 --det-side 960,1600
+    python bench_ocr.py samples/real --engines rapidocr-v6-small --dpi 150,200,300 --det-side 960,1600
 
     # 30 分の連続処理（温度とスロットリングの確認）
-    python bench_ocr.py samples/real --engines rapidocr-v5-mobile --duration 1800
+    python bench_ocr.py samples/real --engines rapidocr-v6-small --duration 1800
 
 入力:
     画像（png, jpg, jpeg, webp, tif, tiff, bmp）と PDF。ディレクトリを渡すと再帰的に探す。
@@ -46,13 +46,15 @@ IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".bmp"}
 MAX_SIDE = 4000  # 設計書 pipeline.md 4.2
 
 ENGINES = [
-    "rapidocr-v5-mobile",  # 第一候補（設計で決定済みの PP-OCRv5 mobile）
-    "onnxocr-v5",          # 同じ PP-OCRv5 mobile を別ラッパーで
-    "rapidocr-v5-server",  # 精度の上限確認用（重い）
-    "rapidocr-v6-small",   # 参考: 後継の PP-OCRv6
+    "rapidocr-v6-small",   # 採用（設計書 1.3: PP-OCRv6 small）
+    "rapidocr-v6-medium",  # 精度重視の再処理用（重い）
+    "rapidocr-v5-mobile",  # 参考: 前世代の PP-OCRv5 mobile
+    "rapidocr-v5-server",  # 参考: PP-OCRv5 server
+    "onnxocr-v5",          # 参考: PP-OCRv5 mobile を別ラッパー（OnnxOCR）で
     "tesseract",           # 参考: 従来型（要 apt install tesseract-ocr tesseract-ocr-jpn）
 ]
-DEFAULT_ENGINES = "rapidocr-v5-mobile,onnxocr-v5"
+# PP-OCRv6 tiny は日本語に対応していないため対象外
+DEFAULT_ENGINES = "rapidocr-v6-small,rapidocr-v6-medium,rapidocr-v5-mobile"
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +137,7 @@ def make_engine(name: str, det_side: int, threads: int, models_dir: Path | None,
             "rapidocr-v5-mobile": (OCRVersion.PPOCRV5, ModelType.MOBILE),
             "rapidocr-v5-server": (OCRVersion.PPOCRV5, ModelType.SERVER),
             "rapidocr-v6-small": (OCRVersion.PPOCRV6, ModelType.SMALL),
+            "rapidocr-v6-medium": (OCRVersion.PPOCRV6, ModelType.MEDIUM),
         }[name]
         v6 = version == OCRVersion.PPOCRV6
         params: dict[str, Any] = {
