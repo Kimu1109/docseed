@@ -1,0 +1,263 @@
+=== docseed Phase 0 計測 (20261107-195929) ===
+temp=33.4'C
+throttled=0x0
+h_clean_32px: 1654x912
+h_small_20px: 1654x672
+h_photo_32px: 1662x926
+v_clean_32px: 452x968
+→ /home/shono/docseed/scripts/poc/samples/synthetic
+※ samples/real/ が空のため、合成サンプルだけで OCR を計測します
+
+=== 2. OCR: エンジン比較 ===
+▶ rapidocr-v6-small dpi=200 det_side=1600
+  rapidocr-v6-small h_clean_32px.png p1: 3.93s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.68s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.92s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.59s CER=0.007
+▶ rapidocr-v6-medium dpi=200 det_side=1600
+  rapidocr-v6-medium h_clean_32px.png p1: 15.88s CER=0.008
+  rapidocr-v6-medium h_photo_32px.png p1: 14.49s CER=0.006
+  rapidocr-v6-medium h_small_20px.png p1: 14.03s CER=0.008
+  rapidocr-v6-medium v_clean_32px.png p1: 6.31s CER=0.007
+▶ rapidocr-v5-mobile dpi=200 det_side=1600
+  CPU 65.5℃ > 60.0℃ のため冷えるまで待機します…
+  rapidocr-v5-mobile h_clean_32px.png p1: 4.66s CER=0.003
+  rapidocr-v5-mobile h_photo_32px.png p1: 4.45s CER=0.051
+  rapidocr-v5-mobile h_small_20px.png p1: 4.82s CER=0.008
+  rapidocr-v5-mobile v_clean_32px.png p1: 2.00s CER=0.125
+
+| エンジン | DPI | 検出サイズ | 読込(s) | 平均(s/頁) | p95(s/頁) | CER | ピークRSS(MB) | 最高温度(℃) | throttled |
+|---|---|---|---|---|---|---|---|---|---|
+| rapidocr-v6-small | 200 | 1600 | 0.910 | 3.282 | 3.931 | 0.005 | 499.2 | 53.5 | 0x0 |
+| rapidocr-v6-medium | 200 | 1600 | 0.726 | 12.7 | 15.7 | 0.007 | 895.0 | 68.8 | 0x0 |
+| rapidocr-v5-mobile | 200 | 1600 | 0.731 | 3.983 | 4.797 | 0.047 | 444.3 | 53.5 | 0x0 |
+
+結果: /home/shono/docseed/scripts/poc/results/20261107-195930-ocr.jsonl
+
+=== 3. OCR: DPI と検出サイズ（rapidocr-v6-small） ===
+▶ rapidocr-v6-small dpi=150 det_side=960
+  rapidocr-v6-small h_clean_32px.png p1: 2.96s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 2.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 2.69s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.59s CER=0.007
+▶ rapidocr-v6-small dpi=150 det_side=1600
+  rapidocr-v6-small h_clean_32px.png p1: 3.86s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.65s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.52s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.58s CER=0.007
+▶ rapidocr-v6-small dpi=150 det_side=2400
+  CPU 61.7℃ > 60.0℃ のため冷えるまで待機します…
+  rapidocr-v6-small h_clean_32px.png p1: 3.80s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 4.06s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.89s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.63s CER=0.007
+
+| エンジン | DPI | 検出サイズ | 読込(s) | 平均(s/頁) | p95(s/頁) | CER | ピークRSS(MB) | 最高温度(℃) | throttled |
+|---|---|---|---|---|---|---|---|---|---|
+| rapidocr-v6-small | 150 | 960 | 0.718 | 2.457 | 2.922 | 0.005 | 476.9 | 59.0 | 0x0 |
+| rapidocr-v6-small | 150 | 1600 | 0.720 | 3.155 | 3.832 | 0.005 | 517.3 | 63.9 | 0x0 |
+| rapidocr-v6-small | 150 | 2400 | 0.731 | 3.346 | 4.036 | 0.005 | 514.3 | 64.5 | 0x0 |
+
+結果: /home/shono/docseed/scripts/poc/results/20261107-201050-ocr.jsonl
+
+=== 4. OCR: 連続処理 120 秒（温度・スロットリング） ===
+▶ rapidocr-v6-small dpi=200 det_side=1600
+  rapidocr-v6-small h_clean_32px.png p1: 4.53s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.71s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.67s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.61s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.86s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.60s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.38s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.56s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.88s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.65s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.46s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.70s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.98s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.69s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.44s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.72s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.98s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.65s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.49s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.71s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.89s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.63s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.46s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.71s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.88s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.64s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.43s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.71s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.96s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.66s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.43s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.71s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.90s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.63s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.49s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.71s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.88s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.63s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.43s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.72s CER=0.007
+
+| エンジン | DPI | 検出サイズ | 読込(s) | 平均(s/頁) | p95(s/頁) | CER | ピークRSS(MB) | 最高温度(℃) | throttled |
+|---|---|---|---|---|---|---|---|---|---|
+| rapidocr-v6-small | 200 | 1600 | 0.723 | 3.193 | 3.976 | 0.005 | 525.1 | 71.0 | 0x0 |
+
+結果: /home/shono/docseed/scripts/poc/results/20261107-201148-ocr.jsonl
+throttled=0x0
+
+=== 5. 埋め込み ===
+▶ cl-nagoya/ruri-v3-30m backend=torch threads=3
+  CPU 67.2℃ > 60.0℃ のため冷えるまで待機します…
+  11.7 chunks/s, query p50 47ms
+▶ cl-nagoya/ruri-v3-30m backend=onnx threads=3
+  ONNX に変換しています: cl-nagoya/ruri-v3-30m → /home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-30m
+No 'model.onnx' found in 'cl-nagoya/ruri-v3-30m'. Exporting the model to ONNX.
+`torch_dtype` is deprecated! Use `dtype` instead!
+/home/shono/docseed/scripts/poc/.venv/lib/python3.12/site-packages/transformers/modeling_attn_mask_utils.py:196: TracerWarning: torch.tensor results are registered as constants in the trace. You can safely ignore this warning if you use this function to create tensors out of constant variables that would be the same every time you call this function. In any other case, this might cause the trace to be incorrect.
+  inverted_mask = torch.tensor(1.0, dtype=dtype) - expanded_mask
+Saving the exported ONNX model is heavily recommended to avoid having to export it again. Do so with `model.push_to_hub('cl-nagoya/ruri-v3-30m', create_pr=True)`.
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-30m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  12.0 chunks/s, query p50 11ms
+▶ cl-nagoya/ruri-v3-30m backend=onnx-int8 threads=3
+  int8 に量子化しています（arm64）
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-30m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+WARNING:root:Inference failed or unsupported type to quantize for tensor '/Unsqueeze_6_output_0', type is tensor_type {
+  elem_type: 7
+  shape {
+    dim {
+      dim_value: 1
+    }
+    dim {
+      dim_param: "unk__6"
+    }
+  }
+}
+.
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-30m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  16.3 chunks/s, query p50 6ms
+▶ cl-nagoya/ruri-v3-70m backend=torch threads=3
+  4.9 chunks/s, query p50 100ms
+▶ cl-nagoya/ruri-v3-70m backend=onnx threads=3
+  ONNX に変換しています: cl-nagoya/ruri-v3-70m → /home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-70m
+No 'model.onnx' found in 'cl-nagoya/ruri-v3-70m'. Exporting the model to ONNX.
+`torch_dtype` is deprecated! Use `dtype` instead!
+/home/shono/docseed/scripts/poc/.venv/lib/python3.12/site-packages/transformers/modeling_attn_mask_utils.py:196: TracerWarning: torch.tensor results are registered as constants in the trace. You can safely ignore this warning if you use this function to create tensors out of constant variables that would be the same every time you call this function. In any other case, this might cause the trace to be incorrect.
+  inverted_mask = torch.tensor(1.0, dtype=dtype) - expanded_mask
+Saving the exported ONNX model is heavily recommended to avoid having to export it again. Do so with `model.push_to_hub('cl-nagoya/ruri-v3-70m', create_pr=True)`.
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-70m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  4.5 chunks/s, query p50 22ms
+▶ cl-nagoya/ruri-v3-70m backend=onnx-int8 threads=3
+  int8 に量子化しています（arm64）
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-70m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+WARNING:root:Inference failed or unsupported type to quantize for tensor '/Unsqueeze_6_output_0', type is tensor_type {
+  elem_type: 7
+  shape {
+    dim {
+      dim_value: 1
+    }
+    dim {
+      dim_param: "unk__6"
+    }
+  }
+}
+.
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-70m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  7.2 chunks/s, query p50 11ms
+▶ cl-nagoya/ruri-v3-130m backend=torch threads=3
+  1.4 chunks/s, query p50 213ms
+▶ cl-nagoya/ruri-v3-130m backend=onnx threads=3
+  ONNX に変換しています: cl-nagoya/ruri-v3-130m → /home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-130m
+No 'model.onnx' found in 'cl-nagoya/ruri-v3-130m'. Exporting the model to ONNX.
+`torch_dtype` is deprecated! Use `dtype` instead!
+/home/shono/docseed/scripts/poc/.venv/lib/python3.12/site-packages/transformers/modeling_attn_mask_utils.py:196: TracerWarning: torch.tensor results are registered as constants in the trace. You can safely ignore this warning if you use this function to create tensors out of constant variables that would be the same every time you call this function. In any other case, this might cause the trace to be incorrect.
+  inverted_mask = torch.tensor(1.0, dtype=dtype) - expanded_mask
+Saving the exported ONNX model is heavily recommended to avoid having to export it again. Do so with `model.push_to_hub('cl-nagoya/ruri-v3-130m', create_pr=True)`.
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-130m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  2.0 chunks/s, query p50 50ms
+▶ cl-nagoya/ruri-v3-130m backend=onnx-int8 threads=3
+  CPU 60.6℃ > 60.0℃ のため冷えるまで待機します…
+  int8 に量子化しています（arm64）
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-130m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+WARNING:root:Inference failed or unsupported type to quantize for tensor '/Unsqueeze_6_output_0', type is tensor_type {
+  elem_type: 7
+  shape {
+    dim {
+      dim_value: 1
+    }
+    dim {
+      dim_param: "unk__6"
+    }
+  }
+}
+.
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-130m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  3.1 chunks/s, query p50 21ms
+
+| モデル | 実行方式 | スレッド | 次元 | 読込(s) | chunks/s | クエリp50(ms) | クエリp95(ms) | ピークRSS(MB) | torch比cos(最小) | 温度(℃) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| cl-nagoya/ruri-v3-30m | torch | 3 | 256 | 200.7 | 11.7 | 46.7 | 52.2 | 1115.8 | - | 50.1 |
+| cl-nagoya/ruri-v3-30m | onnx | 3 | 256 | 71.0 | 12.0 | 10.8 | 14.5 | 1787.8 | 1.000 | 53.5 |
+| cl-nagoya/ruri-v3-30m | onnx-int8 | 3 | 256 | 16.6 | 16.3 | 5.931 | 6.299 | 1950.5 | 0.989 | 51.8 |
+| cl-nagoya/ruri-v3-70m | torch | 3 | 384 | 245.1 | 4.855 | 100.1 | 109.5 | 1230.2 | - | 59.5 |
+| cl-nagoya/ruri-v3-70m | onnx | 3 | 384 | 79.6 | 4.472 | 22.4 | 23.2 | 2220.1 | 1.000 | 60.6 |
+| cl-nagoya/ruri-v3-70m | onnx-int8 | 3 | 384 | 21.6 | 7.225 | 11.0 | 16.6 | 2745.6 | 0.947 | 57.9 |
+| cl-nagoya/ruri-v3-130m | torch | 3 | 512 | 1115.8 | 1.393 | 213.0 | 216.7 | 1440.6 | - | 67.8 |
+| cl-nagoya/ruri-v3-130m | onnx | 3 | 512 | 87.8 | 1.958 | 50.1 | 55.1 | 3103.6 | 1.000 | 68.8 |
+| cl-nagoya/ruri-v3-130m | onnx-int8 | 3 | 512 | 34.2 | 3.052 | 21.2 | 22.0 | 4067.7 | 0.969 | 61.1 |
+
+結果: /home/shono/docseed/scripts/poc/results/20261107-201358-embed.jsonl
+▶ cl-nagoya/ruri-v3-70m backend=torch threads=1
+  4.3 chunks/s, query p50 90ms
+▶ cl-nagoya/ruri-v3-70m backend=onnx-int8 threads=1
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-70m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  5.1 chunks/s, query p50 12ms
+▶ cl-nagoya/ruri-v3-70m backend=torch threads=3
+  4.7 chunks/s, query p50 107ms
+▶ cl-nagoya/ruri-v3-70m backend=onnx-int8 threads=3
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-70m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  6.8 chunks/s, query p50 11ms
+▶ cl-nagoya/ruri-v3-70m backend=torch threads=4
+  4.4 chunks/s, query p50 104ms
+▶ cl-nagoya/ruri-v3-70m backend=onnx-int8 threads=4
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-70m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  6.5 chunks/s, query p50 11ms
+
+| モデル | 実行方式 | スレッド | 次元 | 読込(s) | chunks/s | クエリp50(ms) | クエリp95(ms) | ピークRSS(MB) | torch比cos(最小) | 温度(℃) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| cl-nagoya/ruri-v3-70m | torch | 1 | 384 | 18.5 | 4.295 | 90.4 | 96.7 | 1205.8 | - | 62.2 |
+| cl-nagoya/ruri-v3-70m | onnx-int8 | 1 | 384 | 9.061 | 5.082 | 12.0 | 12.6 | 1262.3 | 0.947 | 52.4 |
+| cl-nagoya/ruri-v3-70m | torch | 3 | 384 | 53.2 | 4.662 | 107.0 | 116.5 | 1210.0 | - | 61.7 |
+| cl-nagoya/ruri-v3-70m | onnx-int8 | 3 | 384 | 8.813 | 6.822 | 10.5 | 11.1 | 1262.5 | 0.947 | 58.4 |
+| cl-nagoya/ruri-v3-70m | torch | 4 | 384 | 43.1 | 4.386 | 104.5 | 108.7 | 1210.2 | - | 61.7 |
+| cl-nagoya/ruri-v3-70m | onnx-int8 | 4 | 384 | 8.777 | 6.508 | 11.5 | 20.3 | 1258.6 | 0.947 | 62.8 |
+
+結果: /home/shono/docseed/scripts/poc/results/20261107-204922-embed.jsonl
+
+=== 6. ベクトル検索・全文検索 ===
+▶ vector n=10000 float32
+  {"type": "vector", "n": 10000, "vtype": "float32", "k": 200, "insert_s": 0.5, "insert_per_s": 19648.5, "query_ms_p50": 8.8, "query_ms_p95": 9.0, "db_mb": 15.3, "peak_rss_mb": 98.8, "temp_c": 55.1}
+▶ vector n=10000 int8
+  {"type": "vector", "n": 10000, "vtype": "int8", "k": 200, "insert_s": 0.4, "insert_per_s": 28265.8, "query_ms_p50": 13.7, "query_ms_p95": 13.7, "db_mb": 4.0, "peak_rss_mb": 98.8, "temp_c": 55.1}
+▶ fts n=10000
+
+### ベクトル検索（sqlite-vec, 総当たり）
+
+| 件数 | 型 | k | 登録(件/s) | 検索p50(ms) | 検索p95(ms) | DB(MB) |
+|---|---|---|---|---|---|---|
+| 10000 | float32 | 200 | 19648.5 | 8.752 | 8.981 | 15.3 |
+| 10000 | int8 | 200 | 28265.8 | 13.7 | 13.7 | 4.000 |
+
+### 全文検索（FTS5 trigram）
+
+| 件数 | 登録(件/s) | MATCH p50(ms) | MATCH p95(ms) | 2文字語 p95(ms) | 全件LIKE(ms) | DB(MB) |
+|---|---|---|---|---|---|---|
+| 10000 | 1730.6 | 42.0 | 46.3 | 0.779 | 22.4 | 35.3 |
+
+結果: /home/shono/docseed/scripts/poc/results/20261107-205352-vec.jsonl
+
+=== 完了: results/run_all-20261107-195929.log ===

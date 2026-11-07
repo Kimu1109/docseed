@@ -1,0 +1,759 @@
+=== docseed Phase 0 計測 (20261107-214841) ===
+temp=32.3'C
+throttled=0x0
+h_clean_32px: 1654x912
+h_small_20px: 1654x672
+h_photo_32px: 1662x926
+v_clean_32px: 452x968
+→ /home/shono/docseed/scripts/poc/samples/synthetic
+※ samples/real/ が空のため、合成サンプルだけで OCR を計測します
+
+=== 2. OCR: エンジン比較 ===
+▶ rapidocr-v6-small dpi=200 det_side=1600
+  rapidocr-v6-small h_clean_32px.png p1: 3.76s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.60s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.39s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.51s CER=0.007
+▶ rapidocr-v6-medium dpi=200 det_side=1600
+  rapidocr-v6-medium h_clean_32px.png p1: 16.31s CER=0.008
+  rapidocr-v6-medium h_photo_32px.png p1: 14.91s CER=0.006
+  rapidocr-v6-medium h_small_20px.png p1: 14.16s CER=0.008
+  rapidocr-v6-medium v_clean_32px.png p1: 6.17s CER=0.007
+▶ rapidocr-v5-mobile dpi=200 det_side=1600
+  CPU 68.8℃ > 60.0℃ のため冷えるまで待機します…
+  rapidocr-v5-mobile h_clean_32px.png p1: 4.71s CER=0.003
+  rapidocr-v5-mobile h_photo_32px.png p1: 4.52s CER=0.051
+  rapidocr-v5-mobile h_small_20px.png p1: 4.58s CER=0.008
+  rapidocr-v5-mobile v_clean_32px.png p1: 1.86s CER=0.125
+
+| エンジン | DPI | 検出サイズ | 読込(s) | 平均(s/頁) | p95(s/頁) | CER | ピークRSS(MB) | 最高温度(℃) | throttled |
+|---|---|---|---|---|---|---|---|---|---|
+| rapidocr-v6-small | 200 | 1600 | 0.798 | 3.064 | 3.735 | 0.005 | 517.3 | 52.9 | 0x0 |
+| rapidocr-v6-medium | 200 | 1600 | 0.710 | 12.9 | 16.1 | 0.007 | 904.6 | 71.0 | 0x0 |
+| rapidocr-v5-mobile | 200 | 1600 | 0.712 | 3.917 | 4.692 | 0.047 | 445.2 | 65.0 | 0x0 |
+
+結果: /home/shono/docseed/scripts/poc/results/20261107-214841-ocr.jsonl
+
+=== 3. OCR: DPI と検出サイズ（rapidocr-v6-small） ===
+▶ rapidocr-v6-small dpi=150 det_side=960
+  CPU 61.1℃ > 60.0℃ のため冷えるまで待機します…
+  rapidocr-v6-small h_clean_32px.png p1: 2.83s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 2.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 2.62s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.51s CER=0.007
+▶ rapidocr-v6-small dpi=150 det_side=1600
+  CPU 62.8℃ > 60.0℃ のため冷えるまで待機します…
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.65s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.48s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.63s CER=0.007
+▶ rapidocr-v6-small dpi=150 det_side=2400
+  CPU 62.8℃ > 60.0℃ のため冷えるまで待機します…
+  rapidocr-v6-small h_clean_32px.png p1: 3.77s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.94s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.69s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.53s CER=0.007
+
+| エンジン | DPI | 検出サイズ | 読込(s) | 平均(s/頁) | p95(s/頁) | CER | ピークRSS(MB) | 最高温度(℃) | throttled |
+|---|---|---|---|---|---|---|---|---|---|
+| rapidocr-v6-small | 150 | 960 | 0.719 | 2.386 | 2.801 | 0.005 | 476.8 | 66.1 | 0x0 |
+| rapidocr-v6-small | 150 | 1600 | 0.717 | 3.135 | 3.766 | 0.005 | 517.2 | 66.1 | 0x0 |
+| rapidocr-v6-small | 150 | 2400 | 0.722 | 3.234 | 3.916 | 0.005 | 513.7 | 66.7 | 0x0 |
+
+結果: /home/shono/docseed/scripts/poc/results/20261107-215036-ocr.jsonl
+
+=== 4. OCR: 連続処理 1800 秒（温度・スロットリング） ===
+▶ rapidocr-v6-small dpi=200 det_side=1600
+  rapidocr-v6-small h_clean_32px.png p1: 4.22s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.63s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.49s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.55s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.81s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.60s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.32s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.51s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.41s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.70s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.86s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.41s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.80s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.64s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.69s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.77s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.38s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.74s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.69s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.77s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.63s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.83s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.61s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.41s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.80s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.87s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.42s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.84s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.40s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.69s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.34s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.77s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.62s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.69s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.34s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.73s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.81s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.77s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.63s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.34s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.56s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.34s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.84s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.84s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.42s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.71s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.81s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.86s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.42s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.80s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.81s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.64s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.39s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.74s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.33s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.64s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.37s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.86s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.62s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.70s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.61s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.39s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.70s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.83s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.40s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.60s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.81s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.61s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.77s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.38s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.72s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.61s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.72s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.64s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.65s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.83s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.62s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.72s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.34s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.65s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.69s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.77s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.86s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.69s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.41s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.87s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.80s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.42s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.38s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.80s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.67s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.38s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.74s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.81s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.64s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.60s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.69s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.83s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.34s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.39s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.80s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.85s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.81s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.45s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.81s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.60s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.69s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.81s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.61s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.37s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.72s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.81s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.64s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.37s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.69s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.81s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.69s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.80s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.64s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.77s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.86s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.62s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.38s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.41s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.60s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.85s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.44s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.63s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.38s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.75s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.72s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.77s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.34s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.69s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.39s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.70s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.34s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.84s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.43s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.62s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.37s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.69s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.86s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.40s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.81s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.63s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.77s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.38s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.75s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.81s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.37s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.62s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.37s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.71s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.80s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.64s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.37s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.56s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.84s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.34s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.42s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.34s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.86s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.61s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.60s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.41s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.77s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.77s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.65s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.75s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.65s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.84s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.42s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.81s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.34s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.69s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.87s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.60s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.43s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.81s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.61s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.69s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.38s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.73s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.65s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.70s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.82s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.38s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.63s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.39s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.34s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.87s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.46s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.85s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.34s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.41s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.82s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.59s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.64s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.81s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.74s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.80s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.60s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.77s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.65s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.57s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.82s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.81s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.41s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.80s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.84s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.67s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.56s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.41s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.66s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.78s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.58s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.35s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+  rapidocr-v6-small h_clean_32px.png p1: 3.79s CER=0.003
+  rapidocr-v6-small h_photo_32px.png p1: 3.62s CER=0.003
+  rapidocr-v6-small h_small_20px.png p1: 3.36s CER=0.006
+  rapidocr-v6-small v_clean_32px.png p1: 1.68s CER=0.007
+
+| エンジン | DPI | 検出サイズ | 読込(s) | 平均(s/頁) | p95(s/頁) | CER | ピークRSS(MB) | 最高温度(℃) | throttled |
+|---|---|---|---|---|---|---|---|---|---|
+| rapidocr-v6-small | 200 | 1600 | 0.712 | 3.111 | 3.815 | 0.005 | 525.4 | 73.2 | 0x0 |
+
+結果: /home/shono/docseed/scripts/poc/results/20261107-215142-ocr.jsonl
+throttled=0x0
+
+=== 5. 埋め込み ===
+▶ cl-nagoya/ruri-v3-30m backend=torch threads=3
+  CPU 68.8℃ > 60.0℃ のため冷えるまで待機します…
+  10.1 chunks/s, query p50 50ms
+▶ cl-nagoya/ruri-v3-30m backend=onnx threads=3
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-30m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  11.5 chunks/s, query p50 10ms
+▶ cl-nagoya/ruri-v3-30m backend=onnx-int8 threads=3
+  CPU 60.0℃ > 60.0℃ のため冷えるまで待機します…
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-30m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  14.1 chunks/s, query p50 6ms
+▶ cl-nagoya/ruri-v3-70m backend=torch threads=3
+  4.9 chunks/s, query p50 107ms
+▶ cl-nagoya/ruri-v3-70m backend=onnx threads=3
+  CPU 62.8℃ > 60.0℃ のため冷えるまで待機します…
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-70m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  5.0 chunks/s, query p50 22ms
+▶ cl-nagoya/ruri-v3-70m backend=onnx-int8 threads=3
+  CPU 67.2℃ > 60.0℃ のため冷えるまで待機します…
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-70m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  7.7 chunks/s, query p50 11ms
+▶ cl-nagoya/ruri-v3-130m backend=torch threads=3
+  CPU 62.8℃ > 60.0℃ のため冷えるまで待機します…
+  1.5 chunks/s, query p50 241ms
+▶ cl-nagoya/ruri-v3-130m backend=onnx threads=3
+  CPU 65.5℃ > 60.0℃ のため冷えるまで待機します…
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-130m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  2.1 chunks/s, query p50 48ms
+▶ cl-nagoya/ruri-v3-130m backend=onnx-int8 threads=3
+  CPU 71.0℃ > 60.0℃ のため冷えるまで待機します…
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-130m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  3.1 chunks/s, query p50 21ms
+
+| モデル | 実行方式 | スレッド | 次元 | 読込(s) | chunks/s | クエリp50(ms) | クエリp95(ms) | ピークRSS(MB) | torch比cos(最小) | 温度(℃) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| cl-nagoya/ruri-v3-30m | torch | 3 | 256 | 27.0 | 10.1 | 49.9 | 60.8 | 1082.4 | - | 66.7 |
+| cl-nagoya/ruri-v3-30m | onnx | 3 | 256 | 9.866 | 11.5 | 10.4 | 10.7 | 1237.7 | 1.000 | 68.3 |
+| cl-nagoya/ruri-v3-30m | onnx-int8 | 3 | 256 | 8.950 | 14.1 | 6.006 | 6.267 | 1129.2 | 0.987 | 61.7 |
+| cl-nagoya/ruri-v3-70m | torch | 3 | 384 | 35.2 | 4.931 | 106.7 | 113.4 | 1210.2 | - | 74.3 |
+| cl-nagoya/ruri-v3-70m | onnx | 3 | 384 | 9.856 | 5.011 | 22.4 | 23.0 | 1455.8 | 1.000 | 74.9 |
+| cl-nagoya/ruri-v3-70m | onnx-int8 | 3 | 384 | 8.862 | 7.735 | 11.4 | 11.9 | 1263.8 | 0.947 | 66.1 |
+| cl-nagoya/ruri-v3-130m | torch | 3 | 512 | 45.2 | 1.467 | 240.6 | 255.9 | 1422.5 | - | 77.1 |
+| cl-nagoya/ruri-v3-130m | onnx | 3 | 512 | 11.4 | 2.125 | 47.6 | 49.2 | 1764.6 | 1.000 | 78.2 |
+| cl-nagoya/ruri-v3-130m | onnx-int8 | 3 | 512 | 11.9 | 3.136 | 20.5 | 21.3 | 1386.3 | 0.967 | 66.1 |
+
+結果: /home/shono/docseed/scripts/poc/results/20261107-222148-embed.jsonl
+▶ cl-nagoya/ruri-v3-70m backend=torch threads=1
+  CPU 60.0℃ > 60.0℃ のため冷えるまで待機します…
+  4.5 chunks/s, query p50 84ms
+▶ cl-nagoya/ruri-v3-70m backend=onnx-int8 threads=1
+  CPU 61.1℃ > 60.0℃ のため冷えるまで待機します…
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-70m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  5.3 chunks/s, query p50 12ms
+▶ cl-nagoya/ruri-v3-70m backend=torch threads=3
+  4.9 chunks/s, query p50 90ms
+▶ cl-nagoya/ruri-v3-70m backend=onnx-int8 threads=3
+  CPU 63.4℃ > 60.0℃ のため冷えるまで待機します…
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-70m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  8.3 chunks/s, query p50 10ms
+▶ cl-nagoya/ruri-v3-70m backend=torch threads=4
+  CPU 61.1℃ > 60.0℃ のため冷えるまで待機します…
+  5.0 chunks/s, query p50 84ms
+▶ cl-nagoya/ruri-v3-70m backend=onnx-int8 threads=4
+  CPU 65.0℃ > 60.0℃ のため冷えるまで待機します…
+The tokenizer you are loading from '/home/shono/docseed/scripts/poc/models/onnx/cl-nagoya__ruri-v3-70m' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+  7.6 chunks/s, query p50 11ms
+
+| モデル | 実行方式 | スレッド | 次元 | 読込(s) | chunks/s | クエリp50(ms) | クエリp95(ms) | ピークRSS(MB) | torch比cos(最小) | 温度(℃) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| cl-nagoya/ruri-v3-70m | torch | 1 | 384 | 23.0 | 4.472 | 83.5 | 93.8 | 1217.0 | - | 67.8 |
+| cl-nagoya/ruri-v3-70m | onnx-int8 | 1 | 384 | 8.757 | 5.322 | 11.7 | 12.5 | 1262.9 | 0.947 | 50.1 |
+| cl-nagoya/ruri-v3-70m | torch | 3 | 384 | 31.4 | 4.929 | 90.3 | 93.3 | 1210.1 | - | 74.3 |
+| cl-nagoya/ruri-v3-70m | onnx-int8 | 3 | 384 | 8.755 | 8.288 | 10.4 | 10.7 | 1263.4 | 0.947 | 65.0 |
+| cl-nagoya/ruri-v3-70m | torch | 4 | 384 | 48.4 | 4.953 | 84.2 | 87.0 | 1210.3 | - | 76.0 |
+| cl-nagoya/ruri-v3-70m | onnx-int8 | 4 | 384 | 8.914 | 7.645 | 11.3 | 12.1 | 1263.1 | 0.947 | 70.0 |
+
+結果: /home/shono/docseed/scripts/poc/results/20261107-223626-embed.jsonl
+
+=== 6. ベクトル検索・全文検索 ===
+▶ vector n=10000 float32
+  {"type": "vector", "n": 10000, "vtype": "float32", "k": 200, "insert_s": 0.5, "insert_per_s": 19603.1, "query_ms_p50": 8.8, "query_ms_p95": 9.2, "db_mb": 15.3, "peak_rss_mb": 98.7, "temp_c": 60.6}
+▶ vector n=10000 int8
+  {"type": "vector", "n": 10000, "vtype": "int8", "k": 200, "insert_s": 0.3, "insert_per_s": 28927.9, "query_ms_p50": 13.7, "query_ms_p95": 13.7, "db_mb": 4.0, "peak_rss_mb": 98.7, "temp_c": 60.0}
+▶ fts n=10000
+▶ vector n=100000 float32
+  {"type": "vector", "n": 100000, "vtype": "float32", "k": 200, "insert_s": 4.8, "insert_per_s": 21038.2, "query_ms_p50": 77.4, "query_ms_p95": 79.8, "db_mb": 149.4, "peak_rss_mb": 342.7, "temp_c": 56.8}
+▶ vector n=100000 int8
+  {"type": "vector", "n": 100000, "vtype": "int8", "k": 200, "insert_s": 3.5, "insert_per_s": 28943.8, "query_ms_p50": 131.7, "query_ms_p95": 132.0, "db_mb": 39.0, "peak_rss_mb": 342.7, "temp_c": 54.5}
+▶ fts n=100000
+
+### ベクトル検索（sqlite-vec, 総当たり）
+
+| 件数 | 型 | k | 登録(件/s) | 検索p50(ms) | 検索p95(ms) | DB(MB) |
+|---|---|---|---|---|---|---|
+| 10000 | float32 | 200 | 19603.1 | 8.803 | 9.229 | 15.3 |
+| 10000 | int8 | 200 | 28927.9 | 13.7 | 13.7 | 4.000 |
+| 100000 | float32 | 200 | 21038.2 | 77.4 | 79.8 | 149.4 |
+| 100000 | int8 | 200 | 28943.8 | 131.7 | 132.0 | 39.0 |
+
+### 全文検索（FTS5 trigram）
+
+| 件数 | 登録(件/s) | MATCH p50(ms) | MATCH p95(ms) | 2文字語 p95(ms) | 全件LIKE(ms) | DB(MB) |
+|---|---|---|---|---|---|---|
+| 10000 | 1733.9 | 42.2 | 46.3 | 0.807 | 22.6 | 35.3 |
+| 100000 | 1522.9 | 183.3 | 230.2 | 0.929 | 224.8 | 318.4 |
+
+結果: /home/shono/docseed/scripts/poc/results/20261107-224424-vec.jsonl
+
+=== 完了: results/run_all-20261107-214841.log ===
