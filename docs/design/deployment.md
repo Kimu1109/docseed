@@ -133,7 +133,7 @@ FROM python:3.12-slim-bookworm（arm64）
 | `DOCSEED_OCR_DPI` | `200` | PDF のページ画像化の解像度 |
 | `DOCSEED_OCR_THREADS` | `3` | ONNX Runtime のスレッド数 |
 | `DOCSEED_EMBED_MODEL` | `cl-nagoya/ruri-v3-70m` | 埋め込みモデル |
-| `DOCSEED_EMBED_BACKEND` | `torch` | `torch` または `onnx` |
+| `DOCSEED_EMBED_BACKEND` | `onnx` | `onnx`（fp32）、`onnx-int8`、`torch` |
 | `DOCSEED_EMBED_THREADS` | `3`（worker）/ `1`（api） | |
 | `DOCSEED_THERMAL_PAUSE_C` | `80` | worker が一時停止する CPU 温度 |
 | `DOCSEED_INBOX_ENABLED` | `false` | inbox 取り込みの有効化 |

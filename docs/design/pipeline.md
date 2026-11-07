@@ -218,10 +218,10 @@ DB の `chunks.text` には本文だけを保存する（全文検索とハイ�
 | 入力プレフィックス | 文書: `検索文書: `、クエリ: `検索クエリ: ` |
 | 正規化 | L2 正規化（`normalize_embeddings=True`） |
 | バッチ | 長さ順に並べ替えて 16 件ずつ（パディングの無駄を減らす） |
-| 実行 | 初期: sentence-transformers + PyTorch CPU（`torch.set_num_threads(3)`）。Phase 0 の結果次第で ONNX Runtime（int8 動的量子化）に切り替える |
+| 実行 | sentence-transformers の ONNX バックエンド（ONNX Runtime, fp32）。worker は intra-op 3 スレッド。初回起動時に ONNX へ変換して `models/` に保存する。int8 量子化は Phase 3 の検索評価まで保留（Phase 0 で劣化が目安を超えたため） |
 | 書き込み | バッチごとに `chunk_vectors` へ INSERT してコミット |
 
-- api プロセスも検索クエリの埋め込み用に同じモデルを読み込む（`torch.set_num_threads(1)`）。モデル読み込みは起動時に行い、最初の検索が遅くならないようにする。
+- api プロセスも検索クエリの埋め込み用に同じモデルを読み込む（ONNX Runtime の intra-op 1 スレッド。Phase 0 で約 20ms）。モデル読み込みは起動時に行い、最初の検索が遅くならないようにする。
 - モデルファイルは `/srv/docseed/models/` に事前にダウンロードしておき、実行時はオフライン（`HF_HUB_OFFLINE=1`）で読み込む。
 
 ```python
