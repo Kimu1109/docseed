@@ -12,6 +12,7 @@ rapidfuzz>=3.0
 
 # 埋め込み（[onnx] で optimum-onnx も入る）
 sentence-transformers[onnx]>=5.0
+sentencepiece>=0.2   # ruri-v3 のトークナイザーに必要
 
 # ベクトル検索
 sqlite-vec>=0.1.6

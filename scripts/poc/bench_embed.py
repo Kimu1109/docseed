@@ -124,14 +124,19 @@ def load_model(name: str, backend: str, threads: int, models_dir: Path) -> Any:
 
     if backend == "onnx-int8":
         cfg = quant_config_name()
-        qfile = export_dir / "onnx" / f"model_qint8_{cfg}.onnx"
-        if not qfile.exists():
+        # 出力ファイル名は設定により model_qint8_arm64.onnx / model_quint8_avx2.onnx などになる
+        found = sorted((export_dir / "onnx").glob(f"model_*int8_{cfg}.onnx"))
+        if not found:
             from sentence_transformers import export_dynamic_quantized_onnx_model
             print(f"  int8 に量子化しています（{cfg}）", file=sys.stderr)
-            base = SentenceTransformer(str(export_dir), device="cpu", backend="onnx")
+            base = SentenceTransformer(str(export_dir), device="cpu", backend="onnx",
+                                       model_kwargs={"file_name": "onnx/model.onnx"})
             export_dynamic_quantized_onnx_model(base, cfg, str(export_dir))
             del base
-        kwargs["file_name"] = f"onnx/{qfile.name}"
+            found = sorted((export_dir / "onnx").glob(f"model_*int8_{cfg}.onnx"))
+        if not found:
+            raise SystemExit(f"量子化したモデルが見つかりません: {export_dir / 'onnx'}")
+        kwargs["file_name"] = f"onnx/{found[0].name}"
     else:
         kwargs["file_name"] = "onnx/model.onnx"
 
