@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}エラー{% endblock %}
+{% block bare %}
+<main class="login">
+  <div class="login-box">
+    <div class="brand brand-lg"><span class="brand-mark" aria-hidden="true"></span>docseed</div>
+    <h1 class="error-title">{{ detail }}</h1>
+    <p class="muted">コード {{ status }}</p>
+    <p><a class="btn" href="/">マイファイルに戻る</a></p>
+  </div>
+</main>
+{% endblock %}

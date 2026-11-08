@@ -1,0 +1,34 @@
+# docs/design/deployment.md 2 章
+# 初回: cp .env.example .env → 値を設定 → docker compose up -d --build
+#       → docker compose exec api docseed create-admin --username <名前>
+services:
+  caddy:
+    image: caddy:2
+    ports: ["443:443", "80:80"]
+    environment:
+      DOCSEED_HOST: ${DOCSEED_HOST}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${DOCSEED_DATA_DIR:-/srv/docseed}/caddy:/data
+    depends_on: [api]
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: docseed:latest
+    command: ["docseed", "serve", "--port", "8000"]
+    env_file: .env
+    environment:
+      DOCSEED_DATA_DIR: /srv/docseed
+    volumes:
+      - ${DOCSEED_DATA_DIR:-/srv/docseed}:/srv/docseed
+      - /sys/class/thermal:/host/thermal:ro
+    mem_limit: 1536m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    restart: unless-stopped
+
+  # worker（OCR・埋め込み）は Phase 2 で追加する

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ folder.name or "マイファイル" }}{% endblock %}
+{% block main %}
+<div class="page-head">
+  {% set link_last = False %}{% include "_crumbs.html" %}
+  {% if can_edit %}
+  <div class="actions">
+    <button type="button" class="btn" data-open-dialog="dlg-folder">新しいフォルダ</button>
+    <button type="button" class="btn btn-primary" data-upload-pick>アップロード</button>
+  </div>
+  {% endif %}
+</div>
+{% if owner.id != user.id %}
+<p class="note">{{ owner.display_name }} さんのフォルダです。あなたの権限は「{{ {"owner": "所有者", "editor": "編集できる", "viewer": "閲覧のみ"}[role] }}」です。</p>
+{% endif %}
+
+{% if can_edit %}
+<input type="file" id="upload-input" multiple hidden data-folder-id="{{ folder.id }}">
+<section class="uploads" id="uploads" hidden aria-live="polite">
+  <div class="uploads-head"><span id="uploads-title">アップロード中</span>
+    <button type="button" class="linkish" data-uploads-close hidden>閉じる</button></div>
+  <ol class="uploads-list" id="uploads-list"></ol>
+</section>
+<div class="dropzone" id="dropzone" hidden><div>ここにドロップして「{{ folder.name or "マイファイル" }}」にアップロード</div></div>
+{% endif %}
+
+{% include "_listing.html" %}
+
+{% if can_edit %}
+<dialog id="dlg-folder" class="dialog">
+  <form hx-post="/f/{{ folder.id }}/folders" hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
+    <h2>新しいフォルダ</h2>
+    <label>フォルダ名 <input name="name" required maxlength="200" autocomplete="off"></label>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-close-dialog>キャンセル</button>
+      <button type="submit" class="btn btn-primary">作成</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="dlg-rename" class="dialog">
+  <form hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
+    <h2>名前を変更</h2>
+    <input type="hidden" name="current" value="{{ folder.id }}">
+    <label>新しい名前 <input name="name" required maxlength="255" autocomplete="off"></label>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-close-dialog>キャンセル</button>
+      <button type="submit" class="btn btn-primary">変更</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="dlg-move" class="dialog">
+  <form hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
+    <h2>移動</h2>
+    <p class="muted" data-move-name></p>
+    <input type="hidden" name="current" value="{{ folder.id }}">
+    <label>移動先
+      <select name="target" hx-get="/x/folders/{{ folder.id }}/targets" hx-trigger="load-targets" hx-target="this" hx-swap="innerHTML" required></select>
+    </label>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-close-dialog>キャンセル</button>
+      <button type="submit" class="btn btn-primary">移動</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
+{% endblock %}

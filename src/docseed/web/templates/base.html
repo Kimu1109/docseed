@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false, "allowScriptTags": false}'>
+<title>{% block title %}docseed{% endblock %} | docseed</title>
+<link rel="stylesheet" href="/static/app.css?v={{ version }}">
+<script src="/static/htmx-2.0.4.min.js" defer></script>
+<script src="/static/app.js?v={{ version }}" defer></script>
+</head>
+<body hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
+{% if user %}
+<header class="top">
+  <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>docseed</a>
+  <button class="nav-toggle" type="button" aria-controls="side" aria-expanded="false" data-nav-toggle>メニュー</button>
+  <div class="top-right">
+    {% block top_actions %}{% endblock %}
+    <details class="usermenu">
+      <summary>{{ user.display_name }}</summary>
+      <div class="usermenu-panel">
+        <a href="/settings">設定</a>
+        <form method="post" action="/logout">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="linkish">ログアウト</button>
+        </form>
+      </div>
+    </details>
+  </div>
+</header>
+<div class="shell">
+  <nav class="side" id="side" aria-label="メイン">
+    <a href="/f/{{ root_id }}" {% if nav == 'files' %}aria-current="page"{% endif %}>マイファイル</a>
+    <a href="/shared" {% if nav == 'shared' %}aria-current="page"{% endif %}>共有されたフォルダ</a>
+    <a href="/trash" {% if nav == 'trash' %}aria-current="page"{% endif %}>ゴミ箱</a>
+    {% if user.is_admin %}<a href="/admin" {% if nav == 'admin' %}aria-current="page"{% endif %}>管理</a>{% endif %}
+    <div class="side-foot">
+      <div>使用量 <b>{{ usage | filesize }}</b></div>
+      {% if pending %}<div>処理待ち <b>{{ pending }}</b> 件</div>{% endif %}
+    </div>
+  </nav>
+  <main class="main" id="main">
+    {% block main %}{% endblock %}
+  </main>
+</div>
+{% else %}
+{% block bare %}{% endblock %}
+{% endif %}
+<div id="toast" class="toast {% if done %}toast-ok{% endif %}" role="status">{% if done %}{{ done }}{% endif %}</div>
+</body>
+</html>

@@ -1,0 +1,422 @@
+"""REST API（/api/v1）。docs/design/api.md。"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from typing import Any
+
+from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile
+from pydantic import BaseModel, Field
+
+from .. import documents as dm
+from .. import folders as fo
+from .. import security
+from .. import users as um
+from ..audit import audit
+from ..config import Settings
+from ..db import Tx, now, schema_version
+from ..deps import (
+    Auth,
+    client_ip,
+    get_conn,
+    get_settings,
+    get_store,
+    require_admin,
+    require_auth,
+    require_session,
+)
+from ..errors import AppError, NotFound, Unauthenticated, ValidationFailed
+from ..files import file_response
+from ..storage import BlobStore
+
+router = APIRouter(prefix="/api/v1")
+limiter = security.LoginLimiter()
+
+
+# ---------------------------------------------------------------------------
+# 表現
+# ---------------------------------------------------------------------------
+
+def user_json(u: um.User) -> dict[str, Any]:
+    return {"id": u.id, "username": u.username, "display_name": u.display_name, "role": u.role,
+            "is_active": u.is_active}
+
+
+def doc_json(conn: sqlite3.Connection, d: sqlite3.Row, role: str | None = None) -> dict[str, Any]:
+    warnings = json.loads(d["warnings"]) if d["warnings"] else []
+    return {
+        "id": d["id"], "folder_id": d["folder_id"], "filename": d["filename"],
+        "mime_type": d["mime_type"], "size_bytes": d["size_bytes"], "sha256": d["sha256"],
+        "page_count": d["page_count"],
+        "processing": {"status": d["status"],
+                       "progress": {"done": d["progress_done"], "total": d["progress_total"]},
+                       "warnings": warnings, "error": d["error"] if "error" in d.keys() else None},
+        "tags": dm.document_tags(conn, d["id"]),
+        "created_by": d["created_by"], "created_at": d["created_at"], "updated_at": d["updated_at"],
+        "my_role": role,
+    }
+
+
+def folder_json(conn: sqlite3.Connection, f: sqlite3.Row, role: str | None) -> dict[str, Any]:
+    return {"id": f["id"], "parent_id": f["parent_id"], "name": f["name"],
+            "path": [{"id": c.id, "name": c.name} for c in fo.path(conn, f["id"])],
+            "owner_id": f["owner_id"], "my_role": role,
+            "created_at": f["created_at"], "updated_at": f["updated_at"]}
+
+
+# ---------------------------------------------------------------------------
+# 認証
+# ---------------------------------------------------------------------------
+
+class LoginIn(BaseModel):
+    username: str
+    password: str
+    remember: bool = False
+
+
+def do_login(conn: sqlite3.Connection, settings: Settings, request: Request, response: Response,
+             username: str, password: str, remember: bool) -> tuple[um.User, str]:
+    """ログインしてセッション Cookie を設定する（API と画面で共通）。"""
+    ip = client_ip(request) or "-"
+    keys = (f"u:{username.strip().lower()}", f"ip:{ip}")
+    limiter.check(*keys)
+    row = um.find_by_username(conn, username)
+    ok = security.verify_password(row["password_hash"] if row else None, password)
+    if not ok or not row["is_active"]:
+        limiter.failed(*keys)
+        with Tx(conn):
+            audit(conn, "login_failed", user_id=row["id"] if row else None, ip=ip, username=username[:50])
+        raise Unauthenticated("ユーザー名またはパスワードが違います")
+    limiter.succeeded(*keys)
+    raw, sess = security.create_session(
+        conn, row["id"], remember=remember, days=settings.session_days,
+        short_hours=settings.session_hours_short, user_agent=request.headers.get("user-agent"), ip=ip)
+    with Tx(conn):
+        audit(conn, "login", user_id=row["id"], ip=ip)
+    response.set_cookie(
+        security.SESSION_COOKIE, raw, httponly=True, secure=settings.cookie_secure, samesite="lax", path="/",
+        max_age=settings.session_days * 86400 if remember else None,
+    )
+    return um.User.from_row(row), sess.csrf_token
+
+
+@router.post("/auth/login")
+def api_login(body: LoginIn, request: Request, response: Response,
+              conn: sqlite3.Connection = Depends(get_conn), settings: Settings = Depends(get_settings)):
+    user, csrf = do_login(conn, settings, request, response, body.username, body.password, body.remember)
+    return {"user": user_json(user), "csrf_token": csrf}
+
+
+@router.post("/auth/logout", status_code=204)
+def api_logout(request: Request, response: Response, conn: sqlite3.Connection = Depends(get_conn),
+               auth: Auth = Depends(require_session)):
+    raw = request.cookies.get(security.SESSION_COOKIE)
+    if raw:
+        security.delete_session(conn, raw)
+    response.delete_cookie(security.SESSION_COOKIE, path="/")
+
+
+# ---------------------------------------------------------------------------
+# 自分
+# ---------------------------------------------------------------------------
+
+@router.get("/me")
+def api_me(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    return {**user_json(auth.user), "root_folder_id": um.root_folder_id(conn, auth.user.id),
+            "usage_bytes": um.usage_bytes(conn, auth.user.id)}
+
+
+class MePatch(BaseModel):
+    display_name: str
+
+
+@router.patch("/me")
+def api_me_patch(body: MePatch, conn: sqlite3.Connection = Depends(get_conn),
+                 auth: Auth = Depends(require_session)):
+    return user_json(um.update_user(conn, auth.user.id, display_name=body.display_name))
+
+
+class PasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
+def change_password(conn: sqlite3.Connection, auth: Auth, current: str, new: str, ip: str | None) -> None:
+    row = conn.execute("SELECT password_hash FROM users WHERE id = ?", (auth.user.id,)).fetchone()
+    if not security.verify_password(row["password_hash"], current):
+        raise ValidationFailed("現在のパスワードが違います",
+                               errors=[{"field": "current_password", "message": "違います"}])
+    um.set_password(conn, auth.user.id, new)
+    security.delete_other_sessions(conn, auth.user.id, auth.session.id_hash if auth.session else None)
+    with Tx(conn):
+        audit(conn, "password_change", user_id=auth.user.id, ip=ip)
+
+
+@router.post("/me/password", status_code=204)
+def api_password(body: PasswordIn, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                 auth: Auth = Depends(require_session)):
+    change_password(conn, auth, body.current_password, body.new_password, client_ip(request))
+
+
+def token_rows(conn: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:
+    return conn.execute("SELECT * FROM api_tokens WHERE user_id = ? AND revoked_at IS NULL ORDER BY id DESC",
+                        (user_id,)).fetchall()
+
+
+@router.get("/me/tokens")
+def api_tokens(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_session)):
+    return {"tokens": [{"id": r["id"], "name": r["name"], "token_prefix": r["token_prefix"],
+                        "scopes": r["scopes"].split(","), "last_used_at": r["last_used_at"],
+                        "expires_at": r["expires_at"], "created_at": r["created_at"]}
+                       for r in token_rows(conn, auth.user.id)]}
+
+
+class TokenIn(BaseModel):
+    name: str
+    scopes: list[str] = Field(default_factory=lambda: ["read", "write"])
+    expires_at: str | None = None
+
+
+@router.post("/me/tokens", status_code=201)
+def api_token_create(body: TokenIn, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                     auth: Auth = Depends(require_session)):
+    raw, tid = security.create_api_token(conn, auth.user.id, body.name, ",".join(sorted(set(body.scopes))),
+                                         body.expires_at)
+    with Tx(conn):
+        audit(conn, "token_create", user_id=auth.user.id, target_type="api_token", target_id=tid,
+              ip=client_ip(request))
+    return {"id": tid, "token": raw}
+
+
+def revoke_token(conn: sqlite3.Connection, user_id: int, token_id: int) -> None:
+    with Tx(conn):
+        cur = conn.execute("UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL",
+                           (now(), token_id, user_id))
+        if cur.rowcount == 0:
+            raise NotFound("トークンが見つかりません")
+        audit(conn, "token_revoke", user_id=user_id, target_type="api_token", target_id=token_id)
+
+
+@router.delete("/me/tokens/{token_id}", status_code=204)
+def api_token_revoke(token_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                     auth: Auth = Depends(require_session)):
+    revoke_token(conn, auth.user.id, token_id)
+
+
+# ---------------------------------------------------------------------------
+# フォルダ
+# ---------------------------------------------------------------------------
+
+@router.get("/folders/shared-with-me")
+def api_shared(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    return {"folders": [{"id": r["id"], "name": r["name"], "role": r["role"], "owner_name": r["owner_name"]}
+                        for r in fo.shared_with(conn, auth.user)]}
+
+
+@router.get("/folders/{folder_id}")
+def api_folder(folder_id: int, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    role = fo.require_folder_role(conn, auth.user, folder_id, "viewer")
+    return folder_json(conn, fo.get_folder_row(conn, folder_id), role)
+
+
+@router.get("/folders/{folder_id}/children")
+def api_children(folder_id: int, sort: str = "name", order: str = "asc",
+                 conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    role = fo.require_folder_role(conn, auth.user, folder_id, "viewer")
+    folders, docs = fo.list_children(conn, folder_id, sort=sort, order=order)
+    return {
+        "folders": [{"id": f["id"], "name": f["name"], "item_count": f["item_count"],
+                     "updated_at": f["updated_at"]} for f in folders],
+        "documents": [doc_json(conn, d, role) for d in docs],
+    }
+
+
+class FolderIn(BaseModel):
+    parent_id: int
+    name: str
+
+
+@router.post("/folders", status_code=201)
+def api_folder_create(body: FolderIn, conn: sqlite3.Connection = Depends(get_conn),
+                      auth: Auth = Depends(require_auth)):
+    fid = fo.create_folder(conn, auth.user, body.parent_id, body.name)
+    return folder_json(conn, fo.get_folder_row(conn, fid), fo.effective_role(conn, auth.user, fid))
+
+
+class FolderPatch(BaseModel):
+    name: str | None = None
+    parent_id: int | None = None
+
+
+@router.patch("/folders/{folder_id}")
+def api_folder_patch(folder_id: int, body: FolderPatch, conn: sqlite3.Connection = Depends(get_conn),
+                     auth: Auth = Depends(require_auth)):
+    fo.update_folder(conn, auth.user, folder_id, name=body.name, parent_id=body.parent_id)
+    return folder_json(conn, fo.get_folder_row(conn, folder_id), fo.effective_role(conn, auth.user, folder_id))
+
+
+@router.delete("/folders/{folder_id}", status_code=204)
+def api_folder_delete(folder_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                      auth: Auth = Depends(require_auth)):
+    fo.delete_folder(conn, auth.user, folder_id)
+
+
+# ---------------------------------------------------------------------------
+# 文書
+# ---------------------------------------------------------------------------
+
+@router.post("/documents")
+def api_upload(request: Request, folder_id: int = Form(...), on_conflict: str = Form("rename"),
+               files: list[UploadFile] = File(...), relative_paths: list[str] | None = Form(None),
+               conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth),
+               store: BlobStore = Depends(get_store), settings: Settings = Depends(get_settings)):
+    """複数ファイルのアップロード。一部だけ失敗することがあるので、結果はファイルごとに返す。"""
+    results = []
+    for i, f in enumerate(files):
+        rel = relative_paths[i] if relative_paths and i < len(relative_paths) and relative_paths[i] else None
+        try:
+            r = dm.upload(conn, store, auth.user, folder_id, f.filename or "無題", f.file,
+                          max_bytes=settings.max_upload_bytes, on_conflict=on_conflict, relative_path=rel,
+                          ip=client_ip(request))
+            d = dm.get_document(conn, auth.user, r.document_id)
+            results.append({"filename": f.filename, "status": "replaced" if r.replaced else "created",
+                            "deduplicated": r.deduplicated, "document": doc_json(conn, d)})
+        except AppError as e:
+            results.append({"filename": f.filename, "status": "error",
+                            "error": {"code": e.code, "detail": e.detail}})
+    return {"results": results}
+
+
+@router.get("/documents/{doc_id}")
+def api_document(doc_id: int, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    d = dm.get_document(conn, auth.user, doc_id)
+    return doc_json(conn, d, fo.effective_role(conn, auth.user, d["folder_id"]))
+
+
+@router.get("/documents/{doc_id}/content")
+def api_content(doc_id: int, request: Request, inline: int = 0, conn: sqlite3.Connection = Depends(get_conn),
+                auth: Auth = Depends(require_auth), store: BlobStore = Depends(get_store)):
+    d = dm.get_document(conn, auth.user, doc_id)
+    if not inline and "range" not in request.headers:
+        with Tx(conn):
+            audit(conn, "download", user_id=auth.user.id, target_type="document", target_id=doc_id,
+                  ip=client_ip(request))
+    return file_response(store.path(d["storage_path"]), d, inline=bool(inline))
+
+
+class DocPatch(BaseModel):
+    filename: str | None = None
+    folder_id: int | None = None
+    tags: list[str] | None = None
+
+
+@router.patch("/documents/{doc_id}")
+def api_doc_patch(doc_id: int, body: DocPatch, conn: sqlite3.Connection = Depends(get_conn),
+                  auth: Auth = Depends(require_auth)):
+    dm.update_document(conn, auth.user, doc_id, filename=body.filename, folder_id=body.folder_id, tags=body.tags)
+    return api_document(doc_id, conn, auth)
+
+
+class CopyIn(BaseModel):
+    folder_id: int
+    filename: str | None = None
+
+
+@router.post("/documents/{doc_id}/copy", status_code=201)
+def api_doc_copy(doc_id: int, body: CopyIn, conn: sqlite3.Connection = Depends(get_conn),
+                 auth: Auth = Depends(require_auth)):
+    new_id = dm.copy_document(conn, auth.user, doc_id, body.folder_id, body.filename)
+    return api_document(new_id, conn, auth)
+
+
+@router.delete("/documents/{doc_id}", status_code=204)
+def api_doc_delete(doc_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                   auth: Auth = Depends(require_auth)):
+    dm.delete_document(conn, auth.user, doc_id, ip=client_ip(request))
+
+
+# ---------------------------------------------------------------------------
+# ゴミ箱
+# ---------------------------------------------------------------------------
+
+@router.get("/trash")
+def api_trash(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    return {"items": dm.list_trash(conn, auth.user)}
+
+
+@router.post("/trash/{item_type}/{item_id}/restore", status_code=204)
+def api_restore(item_type: str, item_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                auth: Auth = Depends(require_auth)):
+    dm.restore(conn, auth.user, item_type, item_id)
+
+
+@router.delete("/trash/{item_type}/{item_id}", status_code=204)
+def api_purge(item_type: str, item_id: int, conn: sqlite3.Connection = Depends(get_conn),
+              auth: Auth = Depends(require_auth), store: BlobStore = Depends(get_store)):
+    dm.purge(conn, store, auth.user, item_type, item_id)
+
+
+@router.delete("/trash")
+def api_empty_trash(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth),
+                    store: BlobStore = Depends(get_store)):
+    return {"purged": dm.empty_trash(conn, store, auth.user)}
+
+
+# ---------------------------------------------------------------------------
+# 管理
+# ---------------------------------------------------------------------------
+
+class UserIn(BaseModel):
+    username: str
+    display_name: str = ""
+    password: str
+    role: str = "user"
+
+
+@router.get("/admin/users")
+def api_users(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_admin)):
+    return {"users": [user_json(u) for u in um.list_users(conn)]}
+
+
+@router.post("/admin/users", status_code=201)
+def api_user_create(body: UserIn, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                    auth: Auth = Depends(require_admin)):
+    u = um.create_user(conn, body.username, body.display_name, body.password, body.role)
+    with Tx(conn):
+        audit(conn, "user_create", user_id=auth.user.id, target_type="user", target_id=u.id, ip=client_ip(request))
+    return user_json(u)
+
+
+class UserPatch(BaseModel):
+    display_name: str | None = None
+    role: str | None = None
+    is_active: bool | None = None
+    password: str | None = None
+
+
+@router.patch("/admin/users/{user_id}")
+def api_user_patch(user_id: int, body: UserPatch, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                   auth: Auth = Depends(require_admin)):
+    u = um.update_user(conn, user_id, display_name=body.display_name, role=body.role, is_active=body.is_active)
+    if body.password:
+        um.set_password(conn, user_id, body.password)
+        security.delete_other_sessions(conn, user_id, None)
+    with Tx(conn):
+        audit(conn, "user_update", user_id=auth.user.id, target_type="user", target_id=user_id,
+              ip=client_ip(request), fields=[k for k, v in body.model_dump().items() if v is not None
+                                             and k != "password"] + (["password"] if body.password else []))
+    return user_json(u)
+
+
+# ---------------------------------------------------------------------------
+
+health = APIRouter()
+
+
+@health.get("/healthz")
+def healthz(conn: sqlite3.Connection = Depends(get_conn)):
+    conn.execute("SELECT 1").fetchone()
+    hb = conn.execute("SELECT value FROM settings WHERE key = 'worker.heartbeat'").fetchone()
+    return {"status": "ok", "db": "ok", "schema_version": schema_version(conn),
+            "worker_last_seen": hb[0] if hb else None}

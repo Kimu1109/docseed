@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}設定{% endblock %}
+{% block main %}
+<div class="page-head"><h1 class="page-title">設定</h1></div>
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+
+<div class="sections">
+  <section class="panel">
+    <h2>プロフィール</h2>
+    <form method="post" action="/settings/profile" class="form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>ユーザー名 <input value="{{ user.username }}" disabled></label>
+      <label>表示名 <input name="display_name" value="{{ user.display_name }}" required maxlength="50"></label>
+      <button type="submit" class="btn btn-primary">保存</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>パスワード</h2>
+    <form method="post" action="/settings/password" class="form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>現在のパスワード <input name="current_password" type="password" autocomplete="current-password" required></label>
+      <label>新しいパスワード <span class="muted small">（12 文字以上）</span>
+        <input name="new_password" type="password" autocomplete="new-password" minlength="12" required></label>
+      <label>新しいパスワード（確認） <input name="new_password2" type="password" autocomplete="new-password" minlength="12" required></label>
+      <button type="submit" class="btn btn-primary">パスワードを変更</button>
+    </form>
+  </section>
+
+  <section class="panel panel-wide">
+    <h2>API トークン</h2>
+    <p class="muted">スクリプトやコマンドラインからファイルを扱うときに使います。トークンはアカウントと同じ権限を持つので、他人に渡さないでください。</p>
+    {% if new_token %}
+    <div class="token-new">
+      <p><b>トークンを発行しました。</b>この画面を離れると二度と表示されません。今すぐ控えてください。</p>
+      <code class="token-value" data-select-all>{{ new_token }}</code>
+    </div>
+    {% endif %}
+    {% if tokens %}
+    <table class="plain">
+      <thead><tr><th>名前</th><th>先頭</th><th>権限</th><th>最終使用</th><th>発行日</th><th><span class="sr">操作</span></th></tr></thead>
+      <tbody>
+      {% for t in tokens %}
+        <tr>
+          <td>{{ t.name }}</td><td><code>{{ t.token_prefix }}…</code></td>
+          <td>{{ "閲覧・変更" if t.scopes == "read,write" else ("閲覧のみ" if t.scopes == "read" else "変更のみ") }}</td>
+          <td>{{ t.last_used_at | localtime }}</td><td>{{ t.created_at | localtime }}</td>
+          <td>
+            <form method="post" action="/settings/tokens/{{ t.id }}/revoke" data-confirm="トークン「{{ t.name }}」を無効にしますか？">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit" class="btn btn-sm btn-danger">無効にする</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    <form method="post" action="/settings/tokens" class="form form-row">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>名前 <input name="name" required maxlength="100" placeholder="例: ノート PC のバックアップ"></label>
+      <label>権限
+        <select name="scope">
+          <option value="read,write">閲覧・変更</option>
+          <option value="read">閲覧のみ</option>
+        </select>
+      </label>
+      <button type="submit" class="btn">トークンを発行</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

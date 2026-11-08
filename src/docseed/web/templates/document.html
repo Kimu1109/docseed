@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{{ doc.filename }}{% endblock %}
+{% block main %}
+{% set k = kind_of(doc.mime_type, doc.filename) %}
+<div class="page-head">
+  {% set link_last = True %}{% include "_crumbs.html" %}
+</div>
+<div class="doc-title">
+  <span class="kind kind-{{ k }} kind-lg" title="{{ kind_label[k] }}"></span>
+  <h1>{{ doc.filename }}</h1>
+  <a class="btn btn-primary" href="/api/v1/documents/{{ doc.id }}/content">ダウンロード</a>
+</div>
+
+<div class="doc-layout">
+  <section class="preview" aria-label="プレビュー">
+    {% if doc.mime_type == "application/pdf" %}
+      <iframe src="/api/v1/documents/{{ doc.id }}/content?inline=1" title="{{ doc.filename }} のプレビュー"></iframe>
+    {% elif doc.mime_type in ["image/png", "image/jpeg", "image/webp", "image/gif"] %}
+      <img src="/api/v1/documents/{{ doc.id }}/content?inline=1" alt="{{ doc.filename }}">
+    {% elif text_preview is not none %}
+      <pre class="textview">{{ text_preview }}</pre>
+      {% if truncated %}<p class="muted">先頭の 200 KB だけを表示しています。全体はダウンロードして確認してください。</p>{% endif %}
+    {% else %}
+      <div class="nopreview">
+        <p>この形式（{{ kind_label[k] }}）はブラウザで表示できません。</p>
+        <p class="muted">ダウンロードして開いてください。</p>
+      </div>
+    {% endif %}
+  </section>
+
+  <aside class="doc-side">
+    <dl class="facts">
+      <dt>状態</dt><dd><span class="status status-{{ doc.status }}">{{ status_label[doc.status] }}</span>
+        {% if doc.status == "pending" %}<div class="muted small">文字の読み取りと検索の準備を待っています。</div>{% endif %}
+        {% if doc.status == "failed" and doc.error %}<div class="small">{{ doc.error }}</div>{% endif %}</dd>
+      <dt>種類</dt><dd>{{ kind_label[k] }}<div class="muted small">{{ doc.mime_type }}</div></dd>
+      <dt>サイズ</dt><dd>{{ doc.size_bytes | filesize }}</dd>
+      {% if doc.page_count %}<dt>ページ数</dt><dd>{{ doc.page_count }}</dd>{% endif %}
+      <dt>追加した人</dt><dd>{{ doc.created_by_name }}</dd>
+      <dt>追加日時</dt><dd>{{ doc.created_at | localtime }}</dd>
+      <dt>更新日時</dt><dd>{{ doc.updated_at | localtime }}</dd>
+      <dt>タグ</dt><dd>{% for t in tags %}<span class="tag">{{ t }}</span>{% else %}<span class="muted">なし</span>{% endfor %}</dd>
+      <dt>SHA-256</dt><dd class="hash">{{ doc.sha256 }}</dd>
+    </dl>
+
+    {% if can_edit %}
+    <form method="post" action="/d/{{ doc.id }}" class="form form-panel">
+      <h2>編集</h2>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>ファイル名 <input name="filename" value="{{ doc.filename }}" required maxlength="255"></label>
+      <label>フォルダ
+        <select name="folder_id">
+          {% for fid, label in targets %}<option value="{{ fid }}" {% if fid == doc.folder_id %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>タグ <span class="muted small">（カンマ区切り）</span>
+        <input name="tags" value="{{ tags | join(', ') }}" placeholder="例: 経理, 2026">
+      </label>
+      <button type="submit" class="btn btn-primary">保存</button>
+    </form>
+    <form method="post" action="/d/{{ doc.id }}/delete" class="form-inline" data-confirm="「{{ doc.filename }}」をゴミ箱に移動しますか？">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn btn-danger">ゴミ箱に移動</button>
+    </form>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

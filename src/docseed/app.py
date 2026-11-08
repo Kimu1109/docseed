@@ -1,0 +1,106 @@
+"""FastAPI アプリの組み立て。"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from . import __version__
+from .api.routes import health
+from .api.routes import router as api_router
+from .config import Settings
+from .db import connect, migrate
+from .errors import AppError, Unauthenticated
+from .storage import BlobStore
+from .web.routes import render_error
+from .web.routes import router as web_router
+
+log = logging.getLogger("docseed")
+
+APP_CSP = ("default-src 'self'; img-src 'self' data: blob:; frame-src 'self'; object-src 'none'; "
+           "base-uri 'none'; form-action 'self'; frame-ancestors 'self'")
+
+
+class SecurityHeaders(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        resp: Response = await call_next(request)
+        h = resp.headers
+        h.setdefault("X-Content-Type-Options", "nosniff")
+        h.setdefault("Referrer-Policy", "same-origin")
+        # ファイル配信（files.file_response）は独自の CSP / X-Frame-Options を付ける
+        if "content-security-policy" not in h and "x-frame-options" not in h:
+            h["Content-Security-Policy"] = APP_CSP
+            h["X-Frame-Options"] = "SAMEORIGIN"
+        return resp
+
+
+def _wants_json(request: Request) -> bool:
+    return request.url.path.startswith("/api/") or request.url.path == "/healthz"
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or Settings.from_env()
+    if not settings.secret_key:
+        raise RuntimeError("DOCSEED_SECRET_KEY が設定されていません（32 バイト以上の乱数を設定してください）")
+    settings.ensure_dirs()
+    conn = connect(settings.db_path)
+    try:
+        applied = migrate(conn)
+        if applied:
+            log.info("migrations applied: %s", applied)
+    finally:
+        conn.close()
+
+    app = FastAPI(title="docseed", version=__version__, docs_url="/api/docs", redoc_url=None,
+                  openapi_url="/api/v1/openapi.json")
+    app.state.settings = settings
+    app.state.store = BlobStore(settings.files_dir, settings.tmp_dir)
+
+    app.add_middleware(SecurityHeaders)
+    app.mount("/static", StaticFiles(directory=Path(__file__).parent / "web" / "static"), name="static")
+    app.include_router(health)
+    app.include_router(api_router)
+    app.include_router(web_router)
+
+    @app.exception_handler(AppError)
+    async def app_error(request: Request, exc: AppError):
+        if _wants_json(request):
+            body = {"type": f"https://docseed.local/errors/{exc.code}", "title": exc.title, "status": exc.status,
+                    "code": exc.code, "detail": exc.detail, "instance": request.url.path}
+            if exc.errors:
+                body["errors"] = exc.errors
+            headers = {"Retry-After": str(exc.retry_after)} if hasattr(exc, "retry_after") else None
+            return JSONResponse(body, status_code=exc.status, media_type="application/problem+json",
+                                headers=headers)
+        if isinstance(exc, Unauthenticated):
+            if request.headers.get("hx-request"):
+                return Response(status_code=204, headers={"HX-Redirect": "/login"})
+            nxt = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+            return RedirectResponse(f"/login?next={nxt}", status_code=303)
+        return render_error(request, exc.status, exc.detail)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, exc: RequestValidationError):
+        errors = [{"field": ".".join(str(x) for x in e["loc"][1:]), "message": e["msg"]} for e in exc.errors()]
+        if _wants_json(request):
+            return JSONResponse({"type": "https://docseed.local/errors/validation_error",
+                                 "title": "入力内容を確認してください", "status": 422, "code": "validation_error",
+                                 "detail": "入力内容を確認してください", "errors": errors,
+                                 "instance": request.url.path},
+                                status_code=422, media_type="application/problem+json")
+        return render_error(request, 422, "入力内容を確認してください")
+
+    return app
+
+
+def app_factory() -> FastAPI:
+    """uvicorn --factory 用。"""
+    logging.basicConfig(level=Settings.from_env().log_level,
+                        format='{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}')
+    return create_app()

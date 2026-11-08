@@ -1,0 +1,17 @@
+# docs/design/deployment.md 2.2
+# 証明書: LAN のみなら Caddy の内部 CA（tls internal）。Tailscale の名前（*.ts.net）を使う場合は
+# 「tls internal」の行を消すと Caddy が Tailscale から証明書を取得する。
+{$DOCSEED_HOST} {
+	tls internal
+	encode zstd gzip
+	request_body {
+		max_size 1GB
+	}
+	reverse_proxy api:8000 {
+		flush_interval -1
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}

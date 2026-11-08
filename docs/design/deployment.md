@@ -93,7 +93,7 @@ FROM python:3.12-slim-bookworm（arm64）
   └ ENTRYPOINT ["tini", "--"]
 ```
 
-- 依存は `uv` でロックファイル（`uv.lock`）から入れて再現性を保つ。
+- 依存は当面 `pip install .`（`pyproject.toml` の下限指定）で入れる。Phase 2 で依存が増えた時点で `uv` のロックファイル（`uv.lock`）に切り替えて再現性を保つ。
 - モデルはイメージに含めない（大きいため。`/srv/docseed/models` に置く）。
 - Pi 上で直接ビルドするか、GitHub Actions の arm64 ランナーでビルドして GHCR に置く（Phase 1 で決める）。
 

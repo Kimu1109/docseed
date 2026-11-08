@@ -1,0 +1,9 @@
+{#- link_last: 最後の項目もリンクにする（文書詳細ページ） -#}
+<nav class="crumbs{% if link_last %} crumbs-links{% endif %}" aria-label="現在の場所">
+  {%- for c in crumbs %}
+    {%- set label = c.name or ("マイファイル" if owner is not defined or owner.id == user.id else owner.display_name ~ " さんのファイル") %}
+    {%- if not loop.first %}<span class="sep" aria-hidden="true">/</span>{% endif %}
+    {%- if loop.last and not link_last %}<span aria-current="page">{{ label }}</span>
+    {%- else %}<a href="/f/{{ c.id }}">{{ label }}</a>{% endif %}
+  {%- endfor %}
+</nav>

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}共有されたフォルダ{% endblock %}
+{% block main %}
+<div class="page-head"><h1 class="page-title">共有されたフォルダ</h1></div>
+{% if not shared %}
+  <div class="empty">
+    <p>ほかの人から共有されたフォルダはまだありません。</p>
+    <p class="muted">フォルダの所有者があなたをメンバーに追加すると、ここに表示されます。</p>
+  </div>
+{% else %}
+<table class="files">
+  <thead><tr><th class="col-kind"><span class="sr">種類</span></th><th class="col-name">名前</th><th>所有者</th><th>あなたの権限</th></tr></thead>
+  <tbody>
+  {% for f in shared %}
+    <tr>
+      <td class="col-kind"><span class="kind kind-folder"></span></td>
+      <td class="col-name"><a class="name" href="/f/{{ f.id }}">{{ f.name or "（ルート）" }}</a></td>
+      <td>{{ f.owner_name }}</td>
+      <td>{{ {"editor": "編集できる", "viewer": "閲覧のみ"}[f.role] }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}管理{% endblock %}
+{% block main %}
+<div class="page-head"><h1 class="page-title">管理</h1></div>
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+
+<section class="panel panel-wide">
+  <h2>システム</h2>
+  <dl class="stats">
+    <div><dt>ファイル</dt><dd>{{ stats.docs }}</dd></div>
+    <div><dt>保存している実体</dt><dd>{{ stats.blobs }}<span class="unit">件</span> {{ stats.blob_bytes | filesize }}</dd></div>
+    <div><dt>データベース</dt><dd>{{ db_bytes | filesize }}</dd></div>
+    <div><dt>SSD の空き</dt><dd>{{ disk.free | filesize }}<span class="unit">/ {{ disk.total | filesize }}</span></dd></div>
+    <div><dt>処理待ちのジョブ</dt><dd>{{ stats.jobs_waiting }}</dd></div>
+    <div><dt>失敗したジョブ</dt><dd>{{ stats.jobs_failed }}</dd></div>
+  </dl>
+  {% if not worker_seen %}<p class="muted small">文字の読み取りと検索の準備（OCR・埋め込み）を行う処理はまだ動いていません。動き始めるまで、アップロードしたファイルは「処理待ち」のままです。</p>{% endif %}
+</section>
+
+<section class="panel panel-wide">
+  <h2>ユーザー</h2>
+  <table class="plain">
+    <thead><tr><th>ユーザー名</th><th>表示名</th><th>ロール</th><th>状態</th><th><span class="sr">操作</span></th></tr></thead>
+    <tbody>
+    {% for u in users %}
+      <tr {% if not u.is_active %}class="inactive"{% endif %}>
+        <td>{{ u.username }}</td><td>{{ u.display_name }}</td>
+        <td>{{ "管理者" if u.is_admin else "一般" }}</td>
+        <td>{{ "有効" if u.is_active else "無効" }}</td>
+        <td class="row-actions"><div class="row-actions-in">
+          {% if u.id != user.id %}
+          <form method="post" action="/admin/users/{{ u.id }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if u.is_active %}<button name="action" value="disable" class="btn btn-sm">無効にする</button>
+            {% else %}<button name="action" value="enable" class="btn btn-sm">有効にする</button>{% endif %}
+            {% if u.is_admin %}<button name="action" value="make_user" class="btn btn-sm">一般にする</button>
+            {% else %}<button name="action" value="make_admin" class="btn btn-sm">管理者にする</button>{% endif %}
+          </form>
+          <form method="post" action="/admin/users/{{ u.id }}" class="inline-pw">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="password">
+            <input name="password" type="password" minlength="12" placeholder="新しいパスワード" autocomplete="new-password" required aria-label="{{ u.username }} の新しいパスワード">
+            <button class="btn btn-sm">再設定</button>
+          </form>
+          {% else %}<span class="muted small">あなた</span>{% endif %}
+        </div></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <h3>ユーザーを追加</h3>
+  <form method="post" action="/admin/users" class="form form-row">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>ユーザー名 <input name="username" value="{{ form.username or '' }}" required pattern="[A-Za-z0-9][A-Za-z0-9._\-]{1,31}" autocapitalize="none"></label>
+    <label>表示名 <input name="display_name" value="{{ form.display_name or '' }}" maxlength="50"></label>
+    <label>初期パスワード <input name="password" type="password" minlength="12" required autocomplete="new-password"></label>
+    <label>ロール
+      <select name="role"><option value="user">一般</option><option value="admin" {% if form.role == 'admin' %}selected{% endif %}>管理者</option></select>
+    </label>
+    <button type="submit" class="btn btn-primary">追加</button>
+  </form>
+</section>
+{% endblock %}

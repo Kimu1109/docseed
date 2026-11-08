@@ -1,0 +1,78 @@
+{% macro sort_link(key, label) -%}
+  {%- set next_order = "desc" if sort == key and order == "asc" else "asc" -%}
+  <a href="/f/{{ folder.id }}?sort={{ key }}&order={{ next_order }}" hx-get="/f/{{ folder.id }}?sort={{ key }}&order={{ next_order }}"
+     hx-target="#listing" hx-swap="outerHTML" hx-push-url="true"
+     {% if sort == key %}aria-sort="{{ 'ascending' if order == 'asc' else 'descending' }}"{% endif %}>{{ label }}{% if sort == key %}<span class="sort-dir" aria-hidden="true">{{ "↑" if order == "asc" else "↓" }}</span>{% endif %}</a>
+{%- endmacro %}
+<div id="listing" hx-get="/f/{{ folder.id }}?sort={{ sort }}&order={{ order }}" hx-trigger="refresh" hx-swap="outerHTML"
+     {% if docs | selectattr("status", "in", ["pending", "processing"]) | list %}data-has-pending{% endif %}>
+{% if not folders and not docs %}
+  <div class="empty">
+    <p>このフォルダは空です。</p>
+    {% if can_edit %}<p class="muted">ファイルをこの画面にドラッグ＆ドロップするか、「アップロード」から追加できます。</p>{% endif %}
+  </div>
+{% else %}
+<table class="files">
+  <thead>
+    <tr>
+      <th class="col-kind"><span class="sr">種類</span></th>
+      <th class="col-name">{{ sort_link("name", "名前") }}</th>
+      <th class="col-date">{{ sort_link("updated_at", "更新日") }}</th>
+      <th class="col-size">{{ sort_link("size", "サイズ") }}</th>
+      <th class="col-status">状態</th>
+      <th class="col-menu"><span class="sr">操作</span></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for f in folders %}
+    <tr>
+      <td class="col-kind"><span class="kind kind-folder" title="フォルダ"></span></td>
+      <td class="col-name"><a class="name" href="/f/{{ f.id }}">{{ f.name }}</a></td>
+      <td class="col-date">{{ f.updated_at | shortdate }}</td>
+      <td class="col-size muted">{{ f.item_count }} 項目</td>
+      <td class="col-status"></td>
+      <td class="col-menu">
+        {% if can_edit %}
+        <details class="rowmenu">
+          <summary aria-label="「{{ f.name }}」の操作">…</summary>
+          <div class="rowmenu-panel">
+            <button type="button" data-rename="/x/folders/{{ f.id }}/rename" data-name="{{ f.name }}">名前を変更</button>
+            <button type="button" data-move="/x/folders/{{ f.id }}/move" data-name="{{ f.name }}">移動</button>
+            <button type="button" class="danger" hx-post="/x/folders/{{ f.id }}/delete" hx-vals='{"current": {{ folder.id }}}'
+                    hx-target="#listing" hx-swap="outerHTML"
+                    hx-confirm="フォルダ「{{ f.name }}」と中身をゴミ箱に移動しますか？">ゴミ箱に移動</button>
+          </div>
+        </details>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  {% for d in docs %}
+    {% set k = kind_of(d.mime_type, d.filename) %}
+    <tr>
+      <td class="col-kind"><span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span></td>
+      <td class="col-name"><a class="name" href="/d/{{ d.id }}">{{ d.filename }}</a></td>
+      <td class="col-date">{{ d.updated_at | shortdate }}</td>
+      <td class="col-size">{{ d.size_bytes | filesize }}</td>
+      <td class="col-status"><span class="status status-{{ d.status }}">{{ status_label[d.status] }}{% if d.status == "processing" and d.progress_total %} {{ d.progress_done }}/{{ d.progress_total }}{% endif %}</span></td>
+      <td class="col-menu">
+        <details class="rowmenu">
+          <summary aria-label="「{{ d.filename }}」の操作">…</summary>
+          <div class="rowmenu-panel">
+            <a href="/api/v1/documents/{{ d.id }}/content">ダウンロード</a>
+            {% if can_edit %}
+            <button type="button" data-rename="/x/documents/{{ d.id }}/rename" data-name="{{ d.filename }}">名前を変更</button>
+            <button type="button" data-move="/x/documents/{{ d.id }}/move" data-name="{{ d.filename }}">移動</button>
+            <button type="button" class="danger" hx-post="/x/documents/{{ d.id }}/delete" hx-vals='{"current": {{ folder.id }}}'
+                    hx-target="#listing" hx-swap="outerHTML"
+                    hx-confirm="「{{ d.filename }}」をゴミ箱に移動しますか？">ゴミ箱に移動</button>
+            {% endif %}
+          </div>
+        </details>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+</div>
