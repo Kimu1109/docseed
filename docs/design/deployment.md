@@ -111,7 +111,7 @@ FROM python:3.12-slim-bookworm（arm64）
 }
 ```
 
-- 証明書: Tailscale の名前（`*.ts.net`）を使う場合は Tailscale の証明書、LAN のみの場合は Caddy の内部 CA（`tls internal`）を使い、利用する端末に CA 証明書を入れる。
+- 証明書: Tailscale の名前（`*.ts.net`）を使う場合は Tailscale の証明書、LAN のみの場合は Caddy の内部 CA（`tls internal`）を使い、利用する端末に CA 証明書を入れる。Phase 6 で `DOCSEED_TLS_MODE`（`internal` / `tailscale` / `acme_dns`）による切り替えにする（[拡張機能](extensions.md) 2 章）。fetcher と llm のサービスの追加も同じ文書の 1.1 節。
 - 静的ファイル（CSS/JS）はアプリが配信し、長期キャッシュのヘッダを付ける（ファイル名にハッシュを含める）。
 
 ## 3. 設定

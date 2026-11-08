@@ -14,6 +14,8 @@
 
 ## 2. 認証
 
+パスキー・確認コード（TOTP）・OIDC と再認証は Phase 7 で追加する（[拡張機能](extensions.md) 5 章）。
+
 ### 2.1 ユーザー
 
 - 初回起動時に管理者を作る: `docseed create-admin --username <name>`（パスワードは対話入力）。
