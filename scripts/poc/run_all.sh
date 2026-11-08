@@ -49,6 +49,11 @@ $PY bench_ocr.py "${INPUTS[@]}" --engines rapidocr-v6-small --duration "$SOAK" \
   --warmup 0 --cool-to 100 --models-dir models
 command -v vcgencmd >/dev/null && vcgencmd get_throttled || true
 
+if [ "${#INPUTS[@]}" -gt 1 ]; then
+  echo; echo "=== 4b. OCR の目視確認用 HTML（out/review/index.html） ==="
+  $PY review_ocr.py samples/real --max-pages 30 --models-dir models
+fi
+
 echo; echo "=== 5. 埋め込み ==="
 CORPUS=()
 [ -d out/text ] && CORPUS=(--corpus out/text)

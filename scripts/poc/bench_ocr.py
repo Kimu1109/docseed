@@ -225,11 +225,18 @@ def make_engine(name: str, det_side: int, threads: int, models_dir: Path | None,
 
 def reading_order(lines: list[Line], min_score: float) -> tuple[str, bool]:
     """行を読み順に並べてページ本文を作る。戻り値は (本文, 縦書きページか)。"""
+    groups, vertical_page = order_groups(lines, min_score)
+    sep = "" if vertical_page else " "
+    return "\n".join(sep.join(x.text for x in g) for g in groups), vertical_page
+
+
+def order_groups(lines: list[Line], min_score: float) -> tuple[list[list[Line]], bool]:
+    """行を読み順の「行（縦書きなら列）」のまとまりに並べる。戻り値は (まとまりのリスト, 縦書きページか)。"""
     ls = [l for l in lines if l.score >= min_score and l.text.strip()]
     if not ls:
-        return "", False
+        return [], False
     if not np.any([l.box.any() for l in ls]):  # 座標なし（tesseract）
-        return "\n".join(l.text for l in ls), False
+        return [[l] for l in ls], False
 
     def geom(l: Line) -> tuple[float, float, float, float]:
         xs, ys = l.box[:, 0], l.box[:, 1]
@@ -248,7 +255,7 @@ def reading_order(lines: list[Line], min_score: float) -> tuple[str, bool]:
                 cols[-1].append(l)
             else:
                 cols.append([l])
-        out = ["".join(x.text for x in sorted(c, key=lambda l: geom(l)[1])) for c in cols]
+        return [sorted(c, key=lambda l: geom(l)[1]) for c in cols], True
     else:
         # 行ごと（上 → 下）、行内は左 → 右
         items = sorted(ls, key=lambda l: geom(l)[1])
@@ -259,8 +266,7 @@ def reading_order(lines: list[Line], min_score: float) -> tuple[str, bool]:
                 rows[-1].append(l)
             else:
                 rows.append([l])
-        out = [" ".join(x.text for x in sorted(r, key=lambda l: geom(l)[0])) for r in rows]
-    return "\n".join(out), vertical_page
+        return [sorted(r, key=lambda l: geom(l)[0]) for r in rows], False
 
 
 def read_gt(path: Path) -> str:
@@ -285,6 +291,19 @@ def glob_escape(s: str) -> str:
 def normalize_for_cer(s: str) -> str:
     s = unicodedata.normalize("NFKC", s)
     return "".join(ch for ch in s if not ch.isspace())
+
+
+def char_overlap(pred: str, gt: str) -> tuple[float, float]:
+    """読み順を無視した文字単位の (再現率, 適合率)。
+
+    正解と認識結果の文字の多重集合の共通部分で数えるので、段組みや表で読み順が
+    正解と違っても、文字そのものを正しく読めていれば下がらない。
+    再現率 = 正解の文字のうち認識できた割合、適合率 = 認識した文字のうち正しかった割合。
+    """
+    from collections import Counter
+    p, g = Counter(normalize_for_cer(pred)), Counter(normalize_for_cer(gt))
+    common = sum((p & g).values())
+    return (common / max(1, sum(g.values())), common / max(1, sum(p.values())))
 
 
 def cer(pred: str, gt: str) -> float:
@@ -315,6 +334,7 @@ def run_single(args: argparse.Namespace) -> None:
 
     page_secs: list[float] = []
     cers: list[float] = []
+    recalls: list[float] = []
     temps: list[float] = []
     page_texts: dict[tuple[Path, int], str] = {}
     started = time.monotonic()
@@ -338,8 +358,11 @@ def run_single(args: argparse.Namespace) -> None:
                 "temp_c": common.cpu_temp_c(), "freq_mhz": common.cpu_freq_mhz(),
             }
             if p.gt_path.exists():
-                rec["cer"] = cer(text, read_gt(p.gt_path))
+                gt_text = read_gt(p.gt_path)
+                rec["cer"] = cer(text, gt_text)
+                rec["char_recall"], rec["char_precision"] = char_overlap(text, gt_text)
                 cers.append(rec["cer"])
+                recalls.append(rec["char_recall"])
             if args.save_text and rounds == 0:
                 out = args.save_text / args.engine / f"dpi{args.dpi}_det{args.det_side}"
                 out.mkdir(parents=True, exist_ok=True)
@@ -352,7 +375,8 @@ def run_single(args: argparse.Namespace) -> None:
                 temps.append(rec["temp_c"])
             print(json.dumps(rec, ensure_ascii=False), flush=True)
             print(f"  {args.engine} {p.file.name} p{p.page}: {t_ocr.elapsed:.2f}s"
-                  + (f" CER={rec['cer']:.3f}" if "cer" in rec else ""), file=sys.stderr)
+                  + (f" CER={rec['cer']:.3f} 文字再現率={rec['char_recall']:.3f}" if "cer" in rec else ""),
+                  file=sys.stderr)
         rounds += 1
         if not args.duration or time.monotonic() - started >= args.duration:
             break
@@ -363,11 +387,16 @@ def run_single(args: argparse.Namespace) -> None:
             texts = [page_texts.get((pdf, n)) for n in range(a, b + 1)]
             if any(t is None for t in texts):
                 continue  # --max-pages などで対象ページを処理していない
-            value = cer("\n".join(texts), read_gt(gt))  # type: ignore[arg-type]
+            joined, gt_text = "\n".join(texts), read_gt(gt)  # type: ignore[arg-type]
+            value = cer(joined, gt_text)
+            rc, pr = char_overlap(joined, gt_text)
             cers.append(value)
+            recalls.append(rc)
             print(json.dumps({"type": "range_cer", **cfg, "file": str(pdf), "pages": f"{a}-{b}",
-                              "cer": value}, ensure_ascii=False), flush=True)
-            print(f"  {args.engine} {pdf.name} p{a}-{b}: CER={value:.3f}", file=sys.stderr)
+                              "cer": value, "char_recall": rc, "char_precision": pr},
+                             ensure_ascii=False), flush=True)
+            print(f"  {args.engine} {pdf.name} p{a}-{b}: CER={value:.3f} 文字再現率={rc:.3f} 適合率={pr:.3f}",
+                  file=sys.stderr)
 
     s = common.summarize(page_secs)
     summary = {
@@ -377,6 +406,7 @@ def run_single(args: argparse.Namespace) -> None:
         "sec_per_page_mean": s.get("mean"), "sec_per_page_p50": s.get("p50"),
         "sec_per_page_p95": s.get("p95"), "sec_per_page_max": s.get("max"),
         "cer_mean": float(np.mean(cers)) if cers else None,
+        "char_recall_mean": float(np.mean(recalls)) if recalls else None,
         "cer_pages": len(cers),
         "rss_after_load_mb": rss_after_load,
         "peak_rss_mb": common.peak_rss_mb(),
@@ -449,7 +479,7 @@ def main() -> None:
     print(common.md_table(summaries, [
         ("engine", "エンジン"), ("dpi", "DPI"), ("det_side", "検出サイズ"),
         ("load_s", "読込(s)"), ("sec_per_page_mean", "平均(s/頁)"), ("sec_per_page_p95", "p95(s/頁)"),
-        ("cer_mean", "CER"), ("peak_rss_mb", "ピークRSS(MB)"), ("temp_max_c", "最高温度(℃)"),
+        ("cer_mean", "CER"), ("char_recall_mean", "文字再現率"), ("peak_rss_mb", "ピークRSS(MB)"), ("temp_max_c", "最高温度(℃)"),
         ("throttled_after", "throttled"),
     ]))
     print(f"\n結果: {out_path}")
