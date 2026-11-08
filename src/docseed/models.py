@@ -79,7 +79,7 @@ def write_manifest(settings: Settings) -> Path:
 
 
 def fetch_all(settings: Settings, *, force: bool = False) -> None:
-    settings.models_dir.mkdir(parents=True, exist_ok=True)
+    settings.ensure_dirs()
     print("OCR モデル（PP-OCRv6）を取得しています")
     model_type = settings.ocr_engine.removeprefix("ppocrv6_")
     for p in fetch_ocr(settings, model_type):

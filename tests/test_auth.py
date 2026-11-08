@@ -108,3 +108,18 @@ def test_disabled_user_cannot_login(login, users):
     assert alice.get("/api/v1/me").status_code == 401
     r = TestClient(alice.http.app).post("/api/v1/auth/login", json={"username": "alice", "password": PASSWORD})
     assert r.status_code == 401
+
+
+def test_unwritable_data_dir_gives_clear_message(tmp_path, monkeypatch):
+    import pathlib
+
+    import pytest
+
+    from docseed.config import Settings
+
+    def deny(self, *a, **kw):
+        raise PermissionError(13, "Permission denied", str(self))
+    monkeypatch.setattr(pathlib.Path, "mkdir", deny)
+    with pytest.raises(SystemExit) as e:
+        Settings(data_dir=tmp_path / "data", secret_key="x" * 40).ensure_dirs()
+    assert "sudo chown -R" in str(e.value) and "データディレクトリに書き込めません" in str(e.value)

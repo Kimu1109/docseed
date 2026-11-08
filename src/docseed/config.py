@@ -56,8 +56,13 @@ class Settings:
         return self.max_upload_mb * 1024 * 1024
 
     def ensure_dirs(self) -> None:
-        for d in (self.db_path.parent, self.files_dir, self.tmp_dir, self.data_dir / "derived"):
-            d.mkdir(parents=True, exist_ok=True)
+        """データディレクトリの中を作る。書き込めなければ、対処を書いたメッセージで終了する。"""
+        try:
+            for d in (self.db_path.parent, self.files_dir, self.tmp_dir, self.data_dir / "derived",
+                      self.models_dir):
+                d.mkdir(parents=True, exist_ok=True)
+        except PermissionError as e:
+            raise SystemExit(permission_message(self.data_dir, e)) from None
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> Settings:
@@ -78,3 +83,18 @@ class Settings:
             embed_threads=int(e.get("DOCSEED_EMBED_THREADS", "3")),
             thermal_pause_c=float(e.get("DOCSEED_THERMAL_PAUSE_C", "80")),
         )
+
+
+def permission_message(data_dir: Path, err: OSError) -> str:
+    uid = os.getuid() if hasattr(os, "getuid") else -1
+    try:
+        st = data_dir.stat()
+        owner = f"所有者は UID {st.st_uid}"
+    except OSError:
+        owner = "所有者は確認できませんでした"
+    return (
+        f"データディレクトリに書き込めません: {err.filename or data_dir}\n"
+        f"  このプロセスは UID {uid} で動いていますが、{data_dir} の{owner}です。\n"
+        f"  ホスト（Raspberry Pi）で次を実行してから、もう一度起動してください:\n"
+        f"    sudo chown -R {uid}:{uid} <ホスト側のデータディレクトリ（.env の DOCSEED_DATA_DIR、既定 /srv/docseed）>"
+    )
