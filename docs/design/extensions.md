@@ -69,12 +69,15 @@ RAM 8GB での目安は、api 1.5 + worker 3 + llm 2 + Caddy・OS 1 = 7.5GB で�
 | 値 | 使い方 | 証明書 | 必要なもの |
 |---|---|---|---|
 | `internal`（既定。今と同じ） | LAN の中だけで使う | Caddy の内部 CA | 各端末に CA 証明書を入れる |
+| `file`（**実装済み**） | 手元に証明書がある（certbot で取った Let's Encrypt の証明書など） | 指定したファイル | `DOCSEED_TLS_CERT_DIR`（`/certs` にマウント）と、その中の相対パス `DOCSEED_TLS_CERT` / `DOCSEED_TLS_KEY`。更新後に Caddy を再起動する certbot のフック（`scripts/ops/install-cert-hook.sh`） |
 | `tailscale` | Tailscale 経由で使う（推奨） | Let's Encrypt（tailscaled が取得） | Pi に Tailscale、管理画面で MagicDNS と HTTPS を有効化、`DOCSEED_HOST=<機械名>.<tailnet>.ts.net` |
 | `acme_dns` | 自分のドメインを LAN で使う | Let's Encrypt（DNS-01） | ドメイン、DNS 事業者の API トークン、Caddy の独自ビルド |
 
 `DOCSEED_LAN_IP` を設定した場合、IP アドレスで開くサイトは**どの方式でも内部 CA の証明書**で応える（公的な証明書は LAN の IP に出ないため）。IP で開いたときはパスキーを使えない（5.2 節）。
 
 ### 2.2 Caddyfile
+
+> **実装済み（internal / file）:** 方式ごとの設定は、別のファイルではなく Caddyfile の中のスニペット（`(tls_internal)`, `(tls_file)`）にし、`import tls_{$DOCSEED_TLS_MODE:internal}` で切り替える。環境変数は Caddyfile の解析の前に置き換わる（Caddy の公式の文書）ので、スニペットの名前にも使える。`tailscale` と `acme_dns` も同じ形で `(tls_tailscale)`, `(tls_acme_dns)` を足す。下は当初の案。
 
 方式ごとの設定を別のファイルにして、`.env` の値で読み込むファイルを切り替える。
 
@@ -140,7 +143,9 @@ docker/
 
 | 変数 | 既定値 | 説明 |
 |---|---|---|
-| `DOCSEED_TLS_MODE` | `internal` | `internal` / `tailscale` / `acme_dns` |
+| `DOCSEED_TLS_MODE` | `internal` | `internal` / `file` / `tailscale` / `acme_dns` |
+| `DOCSEED_TLS_CERT_DIR` | `./docker/certs` | `file` のとき: 証明書のあるホスト側のディレクトリ（`/certs` に読み取り専用でマウント） |
+| `DOCSEED_TLS_CERT` / `DOCSEED_TLS_KEY` | 空 | `file` のとき: `DOCSEED_TLS_CERT_DIR` からの相対パス |
 | `DOCSEED_ACME_EMAIL` | 空 | Let's Encrypt に登録する連絡先 |
 | `DOCSEED_ACME_DNS_TOKEN` | 空 | `acme_dns` のときの DNS 事業者の API トークン（秘密） |
 | `DOCSEED_ACME_STAGING` | `false` | Let's Encrypt の試験用の環境を使う |

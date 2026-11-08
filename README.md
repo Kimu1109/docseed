@@ -46,7 +46,31 @@ docker compose logs -f worker                           # 処理の様子（Ctrl
 - `tools` イメージは、モデルを ONNX 形式に変換するための torch を含むので大きめです（変換が終われば削除して構いません: `docker image rm docseed-tools`）
 - worker は外部と通信しない設定です。モデルが無いと起動直後のジョブが失敗するので、先に `tools` を実行してください
 
-ブラウザで `https://<DOCSEED_HOST>/` を開きます。Caddy の内部 CA の証明書を使うため、初回はブラウザの警告が出ます（端末に CA を入れるか、Tailscale の名前を使えば解消できます。`docker/Caddyfile` を参照）。
+ブラウザで `https://<DOCSEED_HOST>/` を開きます。既定では Caddy の内部 CA の証明書を使うため、初回はブラウザの警告が出ます（端末に CA を入れれば消えます）。Let's Encrypt などの証明書を持っている場合は、次の「手元の証明書を使う」でその証明書を使えます。
+
+### 手元の証明書を使う（certbot の Let's Encrypt の証明書など）
+
+Pi に certbot などで取った証明書があれば、Caddy にそのファイルを使わせられます。ブラウザの警告が出なくなり、インターネットから届かない環境（LAN や Tailscale 経由だけ）でも使えます。
+
+```bash
+# .env
+DOCSEED_TLS_MODE=file
+DOCSEED_HOST=example.com                           # 証明書に含まれる名前（sudo certbot certificates の Domains）
+DOCSEED_TLS_CERT_DIR=/etc/letsencrypt              # live/ の中は archive/ へのリンクなので、ディレクトリごと渡す
+DOCSEED_TLS_CERT=live/example.com/fullchain.pem    # DOCSEED_TLS_CERT_DIR からの相対パス
+DOCSEED_TLS_KEY=live/example.com/privkey.pem
+```
+
+```bash
+docker compose up -d --force-recreate caddy
+docker compose logs caddy | tail -n 20              # 証明書の読み込みに失敗するとここにエラーが出る
+sudo scripts/ops/install-cert-hook.sh               # certbot の更新のたびに Caddy を再起動して新しい証明書を読ませる
+```
+
+- **証明書の名前で開く**必要があります（`https://example.com:<DOCSEED_HTTPS_PORT>/`）。Tailscale の名前（`*.ts.net`）や IP アドレスで開くと、名前が合わないためブラウザが拒否します
+- その名前が、使う端末から Pi に引けるようにします。例: DNS で `example.com`（またはサブドメイン）の A レコードを Pi の Tailscale の IP（`100.x.y.z`。`tailscale ip -4` で確認）か LAN の IP にする、または端末の hosts ファイルに書く
+- IP アドレス（`DOCSEED_LAN_IP`）で開いたときは、今まで通り内部 CA の証明書になります
+- Caddy は証明書ファイルの変更を監視しないので、更新後の再起動（上の `install-cert-hook.sh`）が必要です。certbot の更新がインターネットからの接続（HTTP-01）を使う場合、WAN から届かないと更新に失敗します。`sudo certbot renew --dry-run` で確かめ、失敗するなら DNS-01 での取得に切り替えてください
 
 ### Phase 4 から更新する場合（Office 文書・バックアップ）
 
@@ -67,6 +91,8 @@ docker compose exec api docseed reprocess unsupported   # 以前に保存した 
 | ファイルが「処理に失敗」になり、ジョブのエラーに「モデルがありません」と出る | `docker compose --profile tools run --rm tools` でモデルを取得し、管理画面の「失敗したファイルをすべて再処理」 |
 | `PermissionError: ... '/srv/docseed/...'` または「データディレクトリに書き込めません」 | コンテナは UID 1000 で動くため、データディレクトリの所有者を合わせる: `sudo chown -R 1000:1000 /srv/docseed`（`.env` の `DOCSEED_DATA_DIR` を変えている場合はその場所） |
 | ポートを変えたのに、開くと Apache など 80 / 443 の別のサービスに飛ぶ・IP アドレスで開けない | `git pull` で最新にし（Caddy が中でも同じポートで待ち受ける設定）、IP で開くなら `.env` の `DOCSEED_LAN_IP` に Pi の IP を設定して `docker compose up -d --force-recreate caddy` |
+| 証明書の警告で先に進めない（「この接続ではプライバシーが保護されません」で例外を追加するボタンが出ない） | 開いた名前と証明書が合っていません。そのドメインに HSTS（以前に Let's Encrypt の証明書で開いたなど）が付いていると、ブラウザは例外を許しません。上の「手元の証明書を使う」でその名前の証明書を Caddy に使わせてください |
+| `caddy` が起動しない・`loading certificates` や `open /certs/...: no such file` のエラー | `.env` の `DOCSEED_TLS_CERT_DIR` と、その中の相対パス `DOCSEED_TLS_CERT` / `DOCSEED_TLS_KEY` を確認（`sudo ls -l /etc/letsencrypt/live/<名前>/`）。`DOCSEED_TLS_MODE` は `internal` か `file` |
 | `api` がすぐ止まる | `docker compose logs api` を確認。`.env` の `DOCSEED_SECRET_KEY` 未設定や、`/srv/docseed` の所有者（UID 1000 が必要）が原因のことが多い |
 
 ## 検索

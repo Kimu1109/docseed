@@ -17,8 +17,13 @@ services:
       DOCSEED_LAN_IP: ${DOCSEED_LAN_IP:-}
       DOCSEED_HTTPS_PORT: ${DOCSEED_HTTPS_PORT:-443}
       DOCSEED_HTTP_PORT: ${DOCSEED_HTTP_PORT:-80}
+      # 証明書の方式（docker/Caddyfile の冒頭を参照）。file のときは DOCSEED_TLS_CERT_DIR を /certs に読み取り専用で入れる
+      DOCSEED_TLS_MODE: ${DOCSEED_TLS_MODE:-internal}
+      DOCSEED_TLS_CERT: ${DOCSEED_TLS_CERT:-}
+      DOCSEED_TLS_KEY: ${DOCSEED_TLS_KEY:-}
     volumes:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${DOCSEED_TLS_CERT_DIR:-./docker/certs}:/certs:ro
       - ${DOCSEED_DATA_DIR:-/srv/docseed}/caddy:/data
     depends_on: [api]
     restart: unless-stopped

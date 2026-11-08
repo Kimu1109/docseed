@@ -6,3 +6,5 @@ __pycache__/
 .ruff_cache/
 .env
 /data/
+/docker/certs/*
+!/docker/certs/.gitkeep

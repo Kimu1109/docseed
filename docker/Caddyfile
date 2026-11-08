@@ -1,13 +1,21 @@
-# docs/design/deployment.md 2.2
+# docs/design/deployment.md 2.2、docs/design/extensions.md 2 章
 #
 # 80 / 443 を Apache などが使っている Pi でも動くよう、Caddy はコンテナの中でも
 # .env の DOCSEED_HTTP_PORT / DOCSEED_HTTPS_PORT と同じ番号で待ち受ける（compose.yaml で同じ番号を公開する）。
 # こうしないと HTTP → HTTPS の転送先や Caddy が組み立てる URL が 443 になり、別のサービスに飛ばされる。
 #
-# 証明書: Caddy の内部 CA（tls internal）。初回はブラウザに警告が出る。
 #   - DOCSEED_HOST   : 名前で開く場合のホスト名（例 docseed.local）。カンマ区切りで複数可
 #   - DOCSEED_LAN_IP : IP アドレスで直接開く場合のアドレス（例 192.168.1.20）。
 #                      IP で開くとブラウザがホスト名（SNI）を送らないため、default_sni にも使う
+#
+# 証明書（DOCSEED_HOST の名前で開いたとき）: .env の DOCSEED_TLS_MODE で選ぶ
+#   - internal（既定）: Caddy の内部 CA。初回はブラウザに警告が出る（端末に CA を入れれば消える）
+#   - file          : 手元の証明書ファイル（certbot で取った Let's Encrypt の証明書など）。
+#                      DOCSEED_TLS_CERT_DIR（ホスト側）をコンテナの /certs に読み取り専用でマウントし、
+#                      DOCSEED_TLS_CERT / DOCSEED_TLS_KEY はその中の相対パスで指定する
+# IP アドレスで開いたときは、どちらの方式でも内部 CA の証明書を使う（公的な証明書は LAN の IP には出ないため）。
+#
+# 環境変数（{$...}）は Caddyfile の解析の前に置き換わるので、import するスニペットの名前にも使える。
 {
 	http_port {$DOCSEED_HTTP_PORT:80}
 	https_port {$DOCSEED_HTTPS_PORT:443}
@@ -15,8 +23,15 @@
 	auto_https disable_redirects
 }
 
-{$DOCSEED_HOST}, {$DOCSEED_LAN_IP:localhost} {
+(tls_internal) {
 	tls internal
+}
+
+(tls_file) {
+	tls /certs/{$DOCSEED_TLS_CERT} /certs/{$DOCSEED_TLS_KEY}
+}
+
+(app) {
 	encode zstd gzip
 	request_body {
 		max_size 1GB
@@ -28,6 +43,16 @@
 		Strict-Transport-Security "max-age=31536000"
 		-Server
 	}
+}
+
+{$DOCSEED_HOST} {
+	import tls_{$DOCSEED_TLS_MODE:internal}
+	import app
+}
+
+{$DOCSEED_LAN_IP:localhost} {
+	tls internal
+	import app
 }
 
 # HTTP で来たら、同じホストの HTTPS のポートへ転送する（ポート番号を保つ）
