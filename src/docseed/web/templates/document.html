@@ -93,8 +93,8 @@
   {% for pg in pages %}
   <details class="pagetext" id="p{{ pg.page_no }}" {% if loop.first %}open{% endif %}>
     <summary>
-      <span class="pg-no">{{ pg.page_no }} ページ</span>
-      <span class="muted small">{{ {"text": "テキスト", "text_layer": "PDF の埋め込みテキスト", "ocr": "画像から読み取り"}[pg.source] }}{% if pg.ocr_confidence is not none %}（信頼度 {{ "%.2f" | format(pg.ocr_confidence) }}）{% endif %}</span>
+      <span class="pg-no">{% if pg.source == "office" and k == "sheet" %}{{ pg.page_no }} 枚目のシート{% elif pg.source == "office" and k == "slide" %}スライド {{ pg.page_no }}{% elif pg.source == "office" %}{{ pg.page_no }} 番目の区切り{% else %}{{ pg.page_no }} ページ{% endif %}</span>
+      <span class="muted small">{{ {"text": "テキスト", "text_layer": "PDF の埋め込みテキスト", "ocr": "画像から読み取り", "office": "Office 文書のテキスト"}[pg.source] }}{% if pg.ocr_confidence is not none %}（信頼度 {{ "%.2f" | format(pg.ocr_confidence) }}）{% endif %}</span>
     </summary>
     {% if pg.text %}<pre class="textview" data-highlight>{{ pg.text }}</pre>{% else %}<p class="muted small pad">文字は見つかりませんでした。</p>{% endif %}
   </details>

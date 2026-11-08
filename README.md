@@ -9,7 +9,7 @@ Raspberry Pi 5 で動くローカルのドキュメントサーバーです。�
 | Phase 2 | OCR・埋め込みの処理（worker） | 完了 |
 | Phase 3 | 検索 | 完了 |
 | Phase 4 | 共有（フォルダのメンバー、共有リンク、受け取り箱） | 完了 |
-| Phase 5 | 運用（バックアップ、監視、Office 文書） | これから |
+| Phase 5 | 運用（バックアップ、監視、Office 文書） | 実装済み（Pi での復旧の練習は導入時に） |
 
 ## Raspberry Pi で動かす（Docker）
 
@@ -48,6 +48,16 @@ docker compose logs -f worker                           # 処理の様子（Ctrl
 
 ブラウザで `https://<DOCSEED_HOST>/` を開きます。Caddy の内部 CA の証明書を使うため、初回はブラウザの警告が出ます（端末に CA を入れるか、Tailscale の名前を使えば解消できます。`docker/Caddyfile` を参照）。
 
+### Phase 4 から更新する場合（Office 文書・バックアップ）
+
+```bash
+git pull
+docker compose up -d --build
+docker compose exec api docseed reprocess unsupported   # 以前に保存した Word / Excel / PowerPoint を処理する
+```
+
+続けて、下の「バックアップと復旧」の設定を行ってください。
+
 ### うまく起動しないとき
 
 | 症状 | 対処 |
@@ -74,6 +84,19 @@ docker compose logs -f worker                           # 処理の様子（Ctrl
 
 自分の文書に対する「質問」と「正解のファイル名」を 20〜30 件ほど JSON に書き、`scripts/eval_search.py` で Recall@5 / MRR を測れます（使い方はスクリプト冒頭のコメント）。
 意味検索で無関係なファイルが多く出る・逆に見つからない場合は、`--sem-min 0.75,0.80,0.85` で類似度の下限を比べ、良かった値を `.env` の `DOCSEED_SEARCH_SEM_MIN` に設定します（既定 0.80）。
+
+## Office 文書
+
+Word（docx）・Excel（xlsx）・PowerPoint（pptx）の文字も検索できます（マクロ付きの docm / xlsm / pptm も同じ）。
+
+| 形式 | 取り出し方 |
+|---|---|
+| Word | 本文と表。見出し 1・2 ごとに区切って表示します |
+| Excel | シートごと。セルの値（数式は計算結果）。1 シート 100 万セルまで |
+| PowerPoint | スライドごと。図形・表・ノート |
+
+- 古い形式（doc / xls / ppt）とパスワード付きのファイルは、保存・共有はできますが文字は取り出しません
+- 画像の中の文字（貼り付けたスクリーンショットなど）は読み取りません。必要なら PDF に変換してアップロードしてください
 
 ## 共有
 
@@ -128,6 +151,53 @@ docker compose logs -f worker                           # 処理の様子（Ctrl
 - 取り込めなかったファイルは `.failed/` に移り、理由が `<ファイル名>.error.txt` に書かれます
 - `force user` でファイルの持ち主を UID 1000 に合わせているので、worker が読み取り・削除できます
 
+## バックアップと復旧
+
+毎日 3:00 に、DB のスナップショットを作ってから、原本（`files/`）・DB のスナップショット・`.env` を restic で別の機器（外付け USB ドライブや NAS）へ送ります。Pi 本体の systemd タイマーで動きます。SSD は 1 台なので、**必ず別の機器に**取ってください。
+
+1. 保存先を用意する（例: 外付け USB ドライブを ext4 でフォーマットし、`/etc/fstab` で `/mnt/backup` にマウント）
+2. 設定する
+   ```bash
+   sudo apt install -y restic
+   sudo scripts/ops/install-backup.sh        # タイマーの登録、/etc/docseed/backup.env とパスワードの生成
+   sudo nano /etc/docseed/backup.env         # RESTIC_REPOSITORY を保存先に合わせる（NAS なら sftp: / rest:）
+   sudo bash -c 'set -a; . /etc/docseed/backup.env; restic init'
+   sudo cat /etc/docseed/restic-password     # 紙やパスワード管理ツールに控える（失うと復元できません）
+   ```
+3. 試しに実行して、復旧できることを確かめる
+   ```bash
+   sudo systemctl start docseed-backup.service && journalctl -u docseed-backup -n 30
+   sudo scripts/ops/restore-drill.sh         # 最新のバックアップを一時ディレクトリに復元し、原本と DB の対応を確認
+   ```
+   「成功: … から復旧できることを確認しました」と出れば完了です。管理画面の「バックアップ」に最終結果が表示されます。
+
+- 毎週日曜 4:30 に `restic check` でバックアップの一部を読み出して確かめます
+- 残す世代は日次 7・週次 4・月次 6（`/etc/docseed/backup.env` で変更）
+- バックアップが失敗したり 36 時間以上成功していなかったりすると、管理画面に警告が出ます
+
+### Pi を作り直して復旧する
+
+1. 新しい SSD に OS・Docker・restic を入れ、このリポジトリを clone する（最初の手順と同じ場所に）
+2. 保存先をつなぎ、控えておいたパスワードを `/etc/docseed/restic-password` に置いて復元する
+   ```bash
+   export RESTIC_REPOSITORY=/mnt/backup/docseed-restic RESTIC_PASSWORD_FILE=/etc/docseed/restic-password
+   sudo -E restic restore latest --tag docseed --target /   # /srv/docseed と .env が元の場所に戻る
+   ```
+3. DB を戻し、モデルを取得して起動する
+   ```bash
+   docker compose run --rm --no-deps api docseed restore-db
+   docker compose --profile tools run --rm --build tools
+   docker compose up -d --build
+   docker compose exec api docseed verify-files               # 「問題はありません」なら完了
+   sudo scripts/ops/install-backup.sh                         # バックアップのタイマーを入れ直す
+   ```
+
+最後のバックアップより後にアップロードしたファイルは戻りません。詳しくは [配置・運用](docs/design/deployment.md) の 5 章。
+
+## 状態の確認
+
+管理画面の「確認が必要な項目」に、worker の停止・失敗したジョブ・SSD の空き不足・バックアップの遅れや失敗・CPU の高温をまとめて表示します。項目があると、左メニューの「管理」に赤いバッジが付きます。同じ内容を `docker compose exec api docseed status` や `GET /api/v1/admin/status`（管理者の API トークン）でも確認できます。
+
 ## 開発
 
 ```bash
@@ -152,10 +222,13 @@ API の仕様は起動後に `/api/docs` で確認できます（ログインが
 | `docseed migrate` | マイグレーションだけを適用 |
 | `docseed create-admin --username NAME` | 管理者を作成 |
 | `docseed purge-trash` | 保持期間を過ぎたゴミ箱の項目を完全に削除 |
-| `docseed backup-db` | DB のスナップショットを `backup/` に作成（7 世代） |
+| `docseed backup-db` | DB のスナップショットを `backup/` に作成（7 世代。整合性を確認してから置き換える） |
+| `docseed restore-db [パス]` | DB をスナップショット（省略時は `backup/` の最新）から戻す。api と worker を止めて実行 |
+| `docseed verify-files [--quick]` | DB と原本ファイルの対応（存在・SHA-256）を確認する。問題があれば終了コード 1 |
+| `docseed status [--json]` | 状態と警告を表示する（管理画面と同じ内容） |
 | `docseed worker` | 文字の読み取り（OCR）と埋め込みの処理を行う |
 | `docseed fetch-models` | OCR と埋め込みのモデルを取得する（`.[tools]` が必要） |
-| `docseed reprocess failed\|outdated\|all` | 文書を再処理する（`--force-ocr` で PDF も画像として読み取る） |
+| `docseed reprocess failed\|outdated\|unsupported\|all` | 文書を再処理する（`--force-ocr` で PDF も画像として読み取る） |
 
 ## 文書
 

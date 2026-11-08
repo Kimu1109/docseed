@@ -1,0 +1,11 @@
+# restic のリポジトリの検査（データの一部を読み出して確かめる）
+[Unit]
+Description=docseed backup check (restic check)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=@DOCSEED_DIR@/scripts/ops/backup.sh check
+Nice=10
+IOSchedulingClass=idle

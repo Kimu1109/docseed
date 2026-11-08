@@ -40,7 +40,7 @@
     <a href="/search" {% if nav == 'search' %}aria-current="page"{% endif %}>検索</a>
     <a href="/shared" {% if nav == 'shared' %}aria-current="page"{% endif %}>共有されたフォルダ</a>
     <a href="/trash" {% if nav == 'trash' %}aria-current="page"{% endif %}>ゴミ箱</a>
-    {% if user.is_admin %}<a href="/admin" {% if nav == 'admin' %}aria-current="page"{% endif %}>管理</a>{% endif %}
+    {% if user.is_admin %}<a href="/admin" {% if nav == 'admin' %}aria-current="page"{% endif %}>管理{% if alert_count %} <span class="alert-badge" title="確認が必要な項目が {{ alert_count }} 件あります" aria-label="警告 {{ alert_count }} 件">!{{ alert_count }}</span>{% endif %}</a>{% endif %}
     <div class="side-foot">
       <div>使用量 <b>{{ usage | filesize }}</b></div>
       {% if pending %}<div>処理待ち <b>{{ pending }}</b> 件</div>{% endif %}

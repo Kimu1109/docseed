@@ -246,8 +246,9 @@ GET /api/v1/search?q=振込先 請求書&mode=hybrid&type=pdf&tag=経理&folder=
 | PATCH | `/admin/users/{id}` | ロール変更、無効化、パスワード再設定 |
 | GET | `/admin/jobs` | ジョブ一覧（`?status=`）と状態ごとの件数 |
 | POST | `/admin/jobs/{id}/retry` | 失敗ジョブの再実行 |
-| POST | `/admin/reprocess` | `{scope: "outdated_pipeline" \| "outdated_embedding" \| "failed"}` で一括再処理 |
-| GET | `/admin/system` | CPU 温度・負荷、メモリ、ディスク使用量、DB サイズ、文書数・チャンク数、モデル名、版 |
+| POST | `/admin/reprocess` | `{scope: "failed" \| "outdated" \| "unsupported" \| "all", force_ocr: bool}` で一括再処理（`unsupported` は対応形式が増えたとき用） |
+| GET | `/admin/status` | 状態と警告（Phase 5）。`alerts`（`level`: error / warning / info、`code`、`message`）、worker の最終応答、ジョブの件数、ディスク、CPU 温度、バックアップ（DB スナップショット・restic の最終結果）。外部の監視からは API トークンで呼ぶ |
+| GET | `/admin/system` | CPU 温度・負荷、メモリ、ディスク使用量、DB サイズ、文書数・チャンク数、モデル名、版（未実装。`/admin/status` と管理画面で代替） |
 | GET | `/admin/audit` | 監査ログ（`?user_id=&action=&from=&to=`） |
 
 ### 3.10 その他

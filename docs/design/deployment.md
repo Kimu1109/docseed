@@ -135,7 +135,7 @@ FROM python:3.12-slim-bookworm（arm64）
 | `DOCSEED_INBOX_ENABLED` | `false` | inbox 取り込みの有効化 |
 | `DOCSEED_LOG_LEVEL` | `INFO` | |
 
-## 4. 初期セットアップ手順（予定）
+## 4. 初期セットアップ手順
 
 ```bash
 # 1. データディレクトリ
@@ -144,14 +144,18 @@ sudo mkdir -p /srv/docseed && sudo chown 1000:1000 /srv/docseed
 # 2. 設定
 cp .env.example .env && $EDITOR .env      # DOCSEED_HOST, DOCSEED_SECRET_KEY を設定
 
-# 3. モデルの取得（チェックサムを確認して /srv/docseed/models に配置）
-docker compose run --rm api docseed fetch-models
+# 3. モデルの取得（ONNX に変換して /srv/docseed/models に配置）
+docker compose --profile tools run --rm --build tools
 
 # 4. 起動
 docker compose up -d
 
 # 5. 管理者の作成
 docker compose exec api docseed create-admin --username kimu
+
+# 6. バックアップ（5 章）
+sudo apt install -y restic
+sudo scripts/ops/install-backup.sh
 ```
 
 ## 5. バックアップと復旧
@@ -160,43 +164,63 @@ docker compose exec api docseed create-admin --username kimu
 
 | 対象 | 方法 | 頻度 |
 |---|---|---|
-| DB | `docseed backup-db` で SQLite のオンラインバックアップ API を使って `backup/docseed-YYYYMMDD.sqlite` を作成（7 日分保持） | 毎日 3:00 |
-| 原本 `files/` と DB スナップショット | restic で外付け USB ドライブ、または別のマシン（SFTP / REST サーバー）へ | 毎日 3:30 |
+| DB | `docseed backup-db` で SQLite のオンラインバックアップ API を使って `backup/docseed-YYYYMMDD.sqlite` を作成（7 日分保持）。一時ファイルに書き、`PRAGMA quick_check` で確かめてから置き換える。写しは WAL を使わない 1 ファイル | 毎日 3:00 |
+| 原本 `files/`、DB スナップショット `backup/`、Caddy のデータ `caddy/`（内部 CA の鍵） | restic で外付け USB ドライブ、または別のマシン（SFTP / REST サーバー）へ | 毎日（DB スナップショットの直後） |
 | `.env`、compose.yaml | restic に含める（`.env` は restic のリポジトリ暗号化で保護） | 毎日 |
-| 対象外 | `derived/`、`models/`（再生成・再取得できる）、`-wal`/`-shm`（スナップショットで代替） | — |
+| 対象外 | `derived/`、`models/`（再生成・再取得できる）、`files/.tmp/`、動いている DB と `-wal`/`-shm`（スナップショットで代替）、`inbox/` | — |
 
-- restic の保持: 日次 7、週次 4、月次 6。
-- ホストの systemd タイマーで実行する（コンテナ内の cron は使わない）。
-- 週 1 回 `restic check` を実行する。
+- 実行はホストの systemd タイマー（コンテナ内の cron は使わない）。`scripts/ops/install-backup.sh` がユニット（`deploy/systemd/`）を置き、設定 `/etc/docseed/backup.env` と restic のパスワードのファイル `/etc/docseed/restic-password` を用意する。
+  - `docseed-backup.timer`（毎日 3:00、最大 10 分ずらす、電源断で逃した分は次の起動時に実行）→ `scripts/ops/backup.sh`: `docker compose exec api docseed backup-db` → `restic backup --tag docseed` → `restic forget --prune`
+  - `docseed-backup-check.timer`（毎週日曜 4:30）→ `backup.sh check`: `restic check --read-data-subset=5%`
+- restic の保持: 日次 7、週次 4、月次 6（`backup.env` で変更可）。
+- `backup.sh` は結果を `backup/restic-status.json`（`{"time", "ok", "snapshot", "message", "host"}`）に書く。管理画面がこれを読み、失敗・36 時間以上の遅れを警告する（6 章）。
+- 設計時は DB を 3:00、restic を 3:30 と分けていたが、スナップショットの完成を待ってから restic を動かせるよう、1 つのスクリプトで順に実行する形にした。
 
 ### 5.2 復旧手順
 
-1. 新しい SSD に OS と Docker を入れ、リポジトリを取得する。
-2. restic で `files/`、DB スナップショット、`.env` を復元する。
-3. DB スナップショットを `db/docseed.sqlite` に配置する。
-4. `docseed fetch-models` でモデルを再取得する。
-5. `docker compose up -d`。サムネイルは表示時に再生成される。
-6. 動作確認: ログイン、検索、ダウンロード。`docseed verify-files` で DB と原本ファイルの対応（存在・SHA-256）を確認する。
+SSD の故障などで Pi を作り直す場合:
 
-最後のバックアップ以降にアップロードされたファイルは失われる。Phase 5 で実際に復旧手順を試す。
+1. 新しい SSD に OS と Docker を入れ、リポジトリを取得する（`git clone`、1 章の準備）。`sudo apt install -y restic`。
+2. バックアップ先（USB ドライブなど）をつなぎ、restic で復元する。パスワードは控えておいたものを使う。
+   ```bash
+   export RESTIC_REPOSITORY=/mnt/backup/docseed-restic RESTIC_PASSWORD_FILE=/etc/docseed/restic-password
+   restic snapshots --tag docseed                      # 復元するスナップショットを選ぶ（既定は最新）
+   sudo -E restic restore latest --tag docseed --target /       # 元と同じ場所（/srv/docseed、リポジトリの .env）に戻る
+   ```
+   リポジトリを別の場所に clone した場合は、`.env` を `--target /tmp/r` などに復元してから移す。
+3. DB をスナップショットから戻す: `docker compose run --rm --no-deps api docseed restore-db`（`backup/` の最新を `db/docseed.sqlite` に置く。既存の DB があれば `*.before-restore-<日時>` に退避し、古い `-wal`/`-shm` も片付ける）。
+4. `docker compose --profile tools run --rm tools` でモデルを再取得する。
+5. `docker compose up -d`。サムネイルは表示時に再生成される。
+6. 動作確認: ログイン、検索、ダウンロード。`docker compose exec api docseed verify-files` で DB と原本ファイルの対応（存在・大きさ・SHA-256）を確認する。DB に記録の無いファイル（スナップショットの後にアップロードされたもの）は一覧に出るが、問題ではない。
+7. バックアップのタイマーを入れ直す（`sudo scripts/ops/install-backup.sh`）。
+
+最後のバックアップ以降にアップロードされたファイルは失われる（原本が残っていても、DB の記録が無いため一覧に出ない）。
+
+### 5.3 復旧の練習
+
+`sudo scripts/ops/restore-drill.sh` で、動いている docseed に触れずに 5.2 の 2・3・6 を試せる。restic の最新スナップショットを一時ディレクトリ（`/var/tmp/docseed-drill.*`）に復元し、そこで `restore-db` と `verify-files` を実行し、終わったら消す（`--keep` で残す）。原本と同じだけの空き容量が必要なので、定期実行はせず、設定を変えたときと数か月に 1 度、手で実行する。
+
+Phase 5 では開発環境で、アップロード → `backup.sh`（restic のローカルリポジトリ）→ `restore-drill.sh` が成功すること、復元した原本を 1 件書き換え・1 件削除すると `verify-files` が検出して失敗することを確かめた。Pi 実機（USB ドライブへのバックアップ）での練習は、導入時に利用者の手元で行う。
 
 ## 6. 監視・ログ
 
 | 項目 | 方法 |
 |---|---|
-| ログ | JSON 形式で標準出力 → Docker の json-file ドライバ（`max-size: 10m`, `max-file: 5`） |
-| 死活 | `/healthz`。Docker の healthcheck に設定 |
-| worker の生存 | worker が 30 秒ごとに `settings.worker.heartbeat` を更新。2 分以上止まっていたら管理画面に警告 |
-| ジョブの滞留・失敗 | 管理画面に件数を表示。失敗が出たらヘッダに管理者向けの警告アイコン |
-| 温度 | 管理画面に表示。`vcgencmd get_throttled` 相当のスロットリング履歴もホスト側スクリプトで確認 |
-| ディスク | 空き容量が 10% を切ったら管理画面に警告。5% を切ったらアップロードを拒否（507） |
+| ログ | 1 行 1 件の JSON（`time`, `level`, `logger`, `msg`, 例外は `exc`）で標準出力 → Docker の json-file ドライバ（`max-size: 10m`, `max-file: 5`）。Uvicorn のアクセスログは Uvicorn の形式のまま |
+| 死活 | `/healthz`。Docker の healthcheck に設定（Dockerfile） |
+| worker の生存 | worker が 30 秒ごとに `settings.worker.heartbeat` を更新。2 分以上止まっていたら警告（error） |
+| ジョブの失敗 | 失敗したジョブがあれば警告（warning） |
+| 温度 | 管理画面に表示。`DOCSEED_THERMAL_PAUSE_C`（既定 80℃）以上なら警告。`vcgencmd get_throttled` 相当のスロットリング履歴はホストで確認 |
+| ディスク | 空き容量が 10% を切ったら警告（warning）。5% を切ったら警告（error）し、アップロードを拒否（507） |
+| バックアップ | DB スナップショットが無い・36 時間以上新しくない、restic の記録が無い（info）・失敗（error）・36 時間以上成功していない（warning） |
 | SSD の状態 | `smartctl` / `nvme smart-log` を週 1 回ホストで実行（任意） |
 
-外部の監視サービスへの通知は初版では行わない（必要になったら ntfy 等への通知を追加）。
+- 警告は `docseed.monitor.status()` で一か所にまとめ、管理画面の「確認が必要な項目」、左メニューの「管理」のバッジ（error と warning の件数）、`GET /api/v1/admin/status`、`docseed status`（error があれば終了コード 1）で同じものを見せる。
+- 外部の監視サービスへの通知は初版では行わない。必要になったら、API トークンで `/api/v1/admin/status` を定期的に取得し、ntfy 等へ送るスクリプトをホストに置く。
 
 ## 7. 更新手順
 
-1. `restic backup` を手動で実行する。
+1. バックアップを手動で実行する（`sudo systemctl start docseed-backup.service`）。
 2. `git pull` → `docker compose build`（または新しいイメージを pull）。
 3. `docker compose up -d`。api が起動時にマイグレーションを適用する。worker は api のマイグレーション完了（`schema_migrations` の版）を待ってから処理を始める。
 4. パイプラインの版や埋め込みモデルが変わった場合は、管理画面から一括再処理を実行する（優先度が低いので通常の利用は妨げない）。

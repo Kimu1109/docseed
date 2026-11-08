@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "docseed"
-version = "0.1.0"
+version = "0.5.0"
 description = "Raspberry Pi 5 で動くローカルのドキュメントサーバー（保存・共有・OCR・検索）"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -26,6 +26,10 @@ dependencies = [
   "pypdfium2>=4.30",
   "pillow>=10.4",
   "huggingface-hub>=0.26",
+  # Office 文書（docx / xlsx / pptx）のテキスト抽出（Phase 5）
+  "python-docx>=1.1",
+  "openpyxl>=3.1",
+  "python-pptx>=1.0",
 ]
 
 [project.optional-dependencies]

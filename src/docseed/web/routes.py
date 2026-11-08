@@ -6,7 +6,6 @@ htmx からの部分更新は HTML の断片を返し、結果のお知らせは
 
 from __future__ import annotations
 
-import datetime as _dt
 import sqlite3
 from pathlib import Path
 from urllib.parse import urlparse
@@ -84,6 +83,9 @@ def base_context(request: Request, conn: sqlite3.Connection, auth: Auth | None, 
             " JOIN folders f ON f.id = d.folder_id"
             " WHERE f.owner_id = ? AND d.deleted_at IS NULL AND b.status IN ('pending', 'processing')",
             (auth.user.id,)).fetchone()[0]
+        if auth.user.is_admin:
+            from ..monitor import alert_count
+            ctx["alert_count"] = alert_count(conn, request.app.state.settings)
     done = request.query_params.get("done")
     if done in DONE_MESSAGES:
         ctx["done"] = DONE_MESSAGES[done]
@@ -567,12 +569,11 @@ def admin_context(request: Request, conn: sqlite3.Connection, auth: Auth, settin
         " (SELECT count(*) FROM jobs WHERE status = 'failed') AS jobs_failed").fetchone()
     db_bytes = sum(p.stat().st_size for p in settings.db_path.parent.glob(settings.db_path.name + "*"))
     from ..api.routes import failed_jobs, job_counts
-    hb = conn.execute("SELECT value FROM settings WHERE key = 'worker.heartbeat'").fetchone()
-    worker_seen = hb[0] if hb else None
-    worker_alive = bool(worker_seen) and (_dt.datetime.now(_dt.UTC) - _dt.datetime.strptime(
-        worker_seen, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=_dt.UTC)).total_seconds() < 120
+    from ..monitor import status
+    st = status(conn, settings)
     return base_context(request, conn, auth, nav="admin", users=um.list_users(conn), stats=stats,
-                        disk=disk, db_bytes=db_bytes, worker_seen=worker_seen, worker_alive=worker_alive,
+                        disk=disk, db_bytes=db_bytes, worker_seen=st["worker"]["last_seen"],
+                        worker_alive=st["worker"]["alive"], sys=st, thermal_pause_c=settings.thermal_pause_c,
                         job_counts=job_counts(conn), failed=failed_jobs(conn, 20), error=None, form={}, **extra)
 
 
@@ -587,7 +588,7 @@ def admin_job_retry(job_id: int, conn: sqlite3.Connection = Depends(get_conn), a
 def admin_reprocess(scope: str = Form(...), conn: sqlite3.Connection = Depends(get_conn),
                     auth: Auth = Depends(require_admin)):
     from ..reprocess import reprocess
-    if scope not in ("failed", "outdated"):
+    if scope not in ("failed", "outdated", "unsupported"):
         raise AppError("不明な範囲です")
     reprocess(conn, scope)
     return RedirectResponse("/admin?done=reprocess", status_code=303)

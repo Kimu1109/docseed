@@ -1,0 +1,11 @@
+[Unit]
+Description=docseed backup (daily 03:00)
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=10min
+# 3:00 に電源が切れていた場合は、次に起動したときに実行する
+Persistent=true
+
+[Install]
+WantedBy=timers.target
