@@ -30,9 +30,11 @@
 
   <aside class="doc-side">
     <dl class="facts">
-      <dt>状態</dt><dd><span class="status status-{{ doc.status }}">{{ status_label[doc.status] }}</span>
+      <dt>状態</dt><dd><span class="status status-{{ doc.status }}">{{ status_label[doc.status] }}{% if doc.status == "processing" and doc.progress_total %} {{ doc.progress_done }}/{{ doc.progress_total }}{% endif %}</span>
         {% if doc.status == "pending" %}<div class="muted small">文字の読み取りと検索の準備を待っています。</div>{% endif %}
-        {% if doc.status == "failed" and doc.error %}<div class="small">{{ doc.error }}</div>{% endif %}</dd>
+        {% if doc.status == "processing" %}<div class="muted small">文字を読み取っています。数字は処理済みのページ数です。</div>{% endif %}
+        {% if error and doc.status in ["failed", "unsupported"] %}<div class="small">{{ error }}</div>{% endif %}
+        {% for w in warnings %}<div class="small warn-text">{{ w }}</div>{% endfor %}</dd>
       <dt>種類</dt><dd>{{ kind_label[k] }}<div class="muted small">{{ doc.mime_type }}</div></dd>
       <dt>サイズ</dt><dd>{{ doc.size_bytes | filesize }}</dd>
       {% if doc.page_count %}<dt>ページ数</dt><dd>{{ doc.page_count }}</dd>{% endif %}
@@ -58,6 +60,15 @@
       </label>
       <button type="submit" class="btn btn-primary">保存</button>
     </form>
+    {% if doc.status in ["ready", "failed", "unsupported"] %}
+    <form method="post" action="/d/{{ doc.id }}/reprocess" class="form form-panel">
+      <h2>文字の読み取り</h2>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <p class="muted small">読み取り結果がおかしいときは、もう一度処理できます。</p>
+      {% if doc.mime_type == "application/pdf" %}<label class="check"><input type="checkbox" name="force_ocr" value="1"> PDF の埋め込みテキストを使わず、画像として読み取る</label>{% endif %}
+      <button type="submit" class="btn">再処理</button>
+    </form>
+    {% endif %}
     <form method="post" action="/d/{{ doc.id }}/delete" class="form-inline" data-confirm="「{{ doc.filename }}」をゴミ箱に移動しますか？">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button type="submit" class="btn btn-danger">ゴミ箱に移動</button>
@@ -65,4 +76,20 @@
     {% endif %}
   </aside>
 </div>
+
+{% if pages %}
+<section class="extracted" aria-label="取り出したテキスト">
+  <h2>取り出したテキスト</h2>
+  <p class="muted small">検索にはこのテキストが使われます。{% if doc.page_count and doc.page_count > pages_shown %}全 {{ doc.page_count }} ページのうち先頭 {{ pages_shown }} ページを表示しています。{% endif %}</p>
+  {% for pg in pages %}
+  <details class="pagetext" {% if loop.first %}open{% endif %}>
+    <summary>
+      <span class="pg-no">{{ pg.page_no }} ページ</span>
+      <span class="muted small">{{ {"text": "テキスト", "text_layer": "PDF の埋め込みテキスト", "ocr": "画像から読み取り"}[pg.source] }}{% if pg.ocr_confidence is not none %}（信頼度 {{ "%.2f" | format(pg.ocr_confidence) }}）{% endif %}</span>
+    </summary>
+    {% if pg.text %}<pre class="textview">{{ pg.text }}</pre>{% else %}<p class="muted small pad">文字は見つかりませんでした。</p>{% endif %}
+  </details>
+  {% endfor %}
+</section>
+{% endif %}
 {% endblock %}

@@ -1,5 +1,7 @@
 # docseed（api / worker 共通イメージ）。docs/design/deployment.md 2.1
-FROM python:3.12-slim-bookworm
+#   base : api と worker。推論は ONNX Runtime（torch なし）
+#   tools: モデルの取得と ONNX への変換（docseed fetch-models）。torch を含むので初回だけ使う
+FROM python:3.12-slim-bookworm AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -22,3 +24,13 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4)"
 ENTRYPOINT ["tini", "--"]
 CMD ["docseed", "serve", "--port", "8000"]
+
+
+FROM base AS tools
+USER root
+# torch は CPU 版を入れる（x86 の PyPI 版は CUDA 込みで巨大なため。arm64 はどちらも CPU 版）
+RUN pip install torch --index-url https://download.pytorch.org/whl/cpu \
+ && pip install ".[tools]"
+USER docseed
+HEALTHCHECK NONE
+CMD ["docseed", "fetch-models"]

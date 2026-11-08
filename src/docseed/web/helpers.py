@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 from zoneinfo import ZoneInfo
 
@@ -71,3 +72,37 @@ def shortdate(iso: str | None) -> str:
     if t.year == dt.datetime.now(TZ).year:
         return t.strftime("%m/%d %H:%M")
     return t.strftime("%Y/%m/%d")
+
+
+WARNING_TEXT = {
+    "too_many_pages": "ページ数が多いため、先頭 {processed} ページだけを処理しました（全 {pages} ページ）",
+    "ocr_slow": "{page} ページ目の文字の読み取りに {seconds} 秒かかりました",
+    "ocr_timeout": "{page} ページ目の文字の読み取りが時間切れになりました",
+}
+
+
+def problem_message(raw: str | None) -> str | None:
+    """blobs.error（JSON）を画面に出す文に変える。"""
+    if not raw:
+        return None
+    try:
+        return json.loads(raw).get("message") or raw
+    except (ValueError, AttributeError):
+        return raw
+
+
+def warning_messages(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    try:
+        items = json.loads(raw)
+    except ValueError:
+        return []
+    out = []
+    for w in items:
+        tmpl = WARNING_TEXT.get(w.get("code"), w.get("code", ""))
+        try:
+            out.append(tmpl.format(**w))
+        except (KeyError, IndexError):
+            out.append(tmpl)
+    return out

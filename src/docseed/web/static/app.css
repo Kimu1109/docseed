@@ -251,6 +251,20 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .form-panel { background: var(--surface); border: 1px solid var(--line); padding: var(--s4); }
 .form-panel h2 { padding-bottom: var(--s2); border-bottom: 1px solid var(--line); }
 
+.extracted { margin-top: var(--s6); }
+.extracted > h2 { padding-bottom: var(--s2); border-bottom: 2px solid var(--ink); margin-bottom: var(--s2); }
+.pagetext { background: var(--surface); border: 1px solid var(--line); margin-top: -1px; }
+.pagetext summary { cursor: pointer; padding: 8px 12px; display: flex; gap: var(--s3); align-items: baseline; }
+.pagetext[open] summary { border-bottom: 1px solid var(--line); }
+.pagetext .pg-no { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 5em; }
+.pagetext .textview { max-height: 480px; }
+.pad { padding: var(--s3); margin: 0; }
+.warn-text { color: var(--warn); margin-top: 4px; }
+.ok-text { color: var(--ok); margin: 0 0 var(--s3); }
+.err-cell { max-width: 420px; overflow-wrap: anywhere; color: var(--danger); }
+.nowrap { white-space: nowrap; }
+.form-panel .check { font-weight: 400; }
+
 /* ---- 設定・管理 -------------------------------------------------------- */
 .sections { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--s5); }
 .panel { background: var(--surface); border: 1px solid var(--line); padding: var(--s5); }

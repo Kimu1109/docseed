@@ -23,6 +23,16 @@ class Settings:
     session_days: int = 14
     session_hours_short: int = 12
     log_level: str = "INFO"
+    # worker（docs/design/pipeline.md、deployment.md 3 章）
+    ocr_engine: str = "ppocrv6_small"
+    ocr_dpi: int = 200
+    ocr_det_side: int = 1600
+    ocr_threads: int = 3
+    ocr_min_score: float = 0.5
+    embed_model: str = "cl-nagoya/ruri-v3-70m"
+    embed_threads: int = 3
+    thermal_pause_c: float = 80.0
+    thermal_resume_c: float = 70.0
     extra: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -36,6 +46,10 @@ class Settings:
     @property
     def tmp_dir(self) -> Path:
         return self.files_dir / ".tmp"
+
+    @property
+    def models_dir(self) -> Path:
+        return self.data_dir / "models"
 
     @property
     def max_upload_bytes(self) -> int:
@@ -55,4 +69,12 @@ class Settings:
             trash_retention_days=int(e.get("DOCSEED_TRASH_RETENTION_DAYS", "30")),
             cookie_secure=_bool(e.get("DOCSEED_COOKIE_SECURE"), True),
             log_level=e.get("DOCSEED_LOG_LEVEL", "INFO"),
+            ocr_engine=e.get("DOCSEED_OCR_ENGINE", "ppocrv6_small"),
+            ocr_dpi=int(e.get("DOCSEED_OCR_DPI", "200")),
+            ocr_det_side=int(e.get("DOCSEED_OCR_DET_SIDE", "1600")),
+            ocr_threads=int(e.get("DOCSEED_OCR_THREADS", "3")),
+            ocr_min_score=float(e.get("DOCSEED_OCR_MIN_SCORE", "0.5")),
+            embed_model=e.get("DOCSEED_EMBED_MODEL", "cl-nagoya/ruri-v3-70m"),
+            embed_threads=int(e.get("DOCSEED_EMBED_THREADS", "3")),
+            thermal_pause_c=float(e.get("DOCSEED_THERMAL_PAUSE_C", "80")),
         )

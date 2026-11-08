@@ -1,0 +1,291 @@
+import hashlib
+import io
+import json
+
+import numpy as np
+import pytest
+from PIL import Image
+
+from docseed.db import connect
+from docseed.jobs.process import Context
+from docseed.jobs.worker import Worker
+from docseed.pipeline import extract
+from docseed.pipeline.ocr import OcrLine, order_lines
+from docseed.pipeline.text import chunk_pages, normalize
+
+# ---------------------------------------------------------------------------
+# 部品
+# ---------------------------------------------------------------------------
+
+def make_pdf(pages: list[str]) -> bytes:
+    """テキスト層つきの最小限の PDF（Helvetica, ASCII）を作る。"""
+    objs: list[bytes] = []
+    n = len(pages)
+    kids = " ".join(f"{3 + i * 2} 0 R" for i in range(n))
+    objs.append(b"<< /Type /Catalog /Pages 2 0 R >>")
+    objs.append(f"<< /Type /Pages /Kids [{kids}] /Count {n} >>".encode())
+    font_id = 3 + n * 2
+    for i, text in enumerate(pages):
+        content = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode()
+        objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {4 + i * 2} 0 R"
+                    f" /Resources << /Font << /F1 {font_id} 0 R >> >> >>".encode())
+        objs.append(b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream")
+    objs.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    out = io.BytesIO()
+    out.write(b"%PDF-1.4\n")
+    offsets = []
+    for k, o in enumerate(objs, start=1):
+        offsets.append(out.tell())
+        out.write(b"%d 0 obj\n" % k + o + b"\nendobj\n")
+    xref = out.tell()
+    out.write(b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1))
+    for off in offsets:
+        out.write(b"%010d 00000 n \n" % off)
+    out.write(b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref))
+    return out.getvalue()
+
+
+def png(size=(200, 100)) -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", size, "white").save(buf, "PNG")
+    return buf.getvalue()
+
+
+class FakeOcr:
+    name = "fake"
+
+    def __init__(self):
+        self.calls = 0
+
+    def recognize(self, image):
+        self.calls += 1
+        return [OcrLine("領収書の再発行には本人確認書類が必要です。", 0.98, [(10, 10), (190, 10), (190, 30), (10, 30)]),
+                OcrLine("ノイズ", 0.2, [(10, 50), (60, 50), (60, 70), (10, 70)])]
+
+
+class FakeEmbedder:
+    model_name = "fake/embed"
+    dim = 384
+
+    def _vec(self, t):
+        seed = int(hashlib.sha256(t.encode()).hexdigest()[:8], 16)
+        v = np.random.default_rng(seed).standard_normal(self.dim).astype(np.float32)
+        return v / np.linalg.norm(v)
+
+    def embed_documents(self, texts):
+        return np.stack([self._vec(t) for t in texts])
+
+    def embed_query(self, text):
+        return self._vec(text)
+
+
+# ---------------------------------------------------------------------------
+# テキスト
+# ---------------------------------------------------------------------------
+
+def test_normalize():
+    assert normalize("ＡＢＣ１２３\r\n行末  \n\n\n\n次") == "ABC123\n行末\n\n次"
+    assert normalize("途中で\n切れた。", join_broken_lines=True) == "途中で切れた。"
+    assert normalize("終わり。\n次の文", join_broken_lines=True) == "終わり。\n次の文"
+
+
+def test_chunk_offsets_and_coverage():
+    page = "\n\n".join(f"第{i}条（目的）\n" + "本契約の有効期間は締結日から一年間とし、自動更新するものとする。" * 6
+                       for i in range(1, 11))
+    chunks = chunk_pages([(1, page)])
+    assert len(chunks) >= 3
+    covered = set()
+    for c in chunks:
+        assert len(c.text) <= 800 + 100
+        assert page[c.char_start:c.char_end].replace("\n", "") == c.text.replace("\n", "")
+        covered.update(range(c.char_start, c.char_end))
+    assert all(i in covered for i, ch in enumerate(page) if not ch.isspace())
+
+
+def test_chunk_short_pages_merge_and_no_page_crossing():
+    chunks = chunk_pages([(1, "表紙"), (2, "本文です。" * 40), (3, "最後のページの本文です。" * 20)])
+    assert chunks[0].page_no == 1 and chunks[0].text.startswith("表紙")
+    assert {c.page_no for c in chunks} == {1, 3}
+
+
+def test_reading_order_two_columns():
+    def ln(t, x, y):
+        return OcrLine(t, 0.99, [(x, y), (x + 200, y), (x + 200, y + 20), (x, y + 20)])
+    # 左右 2 段（同じ高さに左右の行が並ぶ）
+    lines = [ln("右1", 400, 0), ln("左1", 0, 0), ln("左2", 0, 30), ln("右2", 400, 30), ln("左3", 0, 60)]
+    _, text, vertical = order_lines(lines, 0.5)
+    assert not vertical
+    assert text.split("\n\n") == ["左1\n左2\n左3", "右1\n右2"]
+
+
+def test_reading_order_vertical():
+    def col(t, x):
+        return OcrLine(t, 0.99, [(x, 0), (x + 20, 0), (x + 20, 200), (x, 200)])
+    _, text, vertical = order_lines([col("左の列", 0), col("右の列", 100)], 0.5)
+    assert vertical and text.index("右の列") < text.index("左の列")
+
+
+# ---------------------------------------------------------------------------
+# 抽出
+# ---------------------------------------------------------------------------
+
+def test_extract_text_encodings(tmp_path):
+    p = tmp_path / "a.txt"
+    p.write_bytes("日本語のテキスト".encode("cp932"))
+    pages = list(extract.iter_pages(p, "text/plain"))
+    assert pages[0].text == "日本語のテキスト" and pages[0].source == "text"
+
+
+def test_extract_html(tmp_path):
+    p = tmp_path / "a.html"
+    p.write_text("<html><head><title>x</title><script>var a=1</script></head><body><p>本文&amp;記号</p></body></html>")
+    assert list(extract.iter_pages(p, "text/html"))[0].text == "本文&記号"
+
+
+def test_extract_pdf_text_layer_and_image(tmp_path):
+    p = tmp_path / "a.pdf"
+    p.write_bytes(make_pdf(["Hello docseed, this page has a text layer.", "x"]))
+    pages = list(extract.iter_pages(p, "application/pdf", dpi=50))
+    assert pages[0].source == "text_layer" and "text layer" in pages[0].text
+    assert pages[1].source == "ocr" and pages[1].image is not None  # 文字が少ないページは OCR
+    assert [x.page_no for x in extract.iter_pages(p, "application/pdf", dpi=50, skip={1})] == [2]
+
+
+def test_extract_unsupported(tmp_path):
+    p = tmp_path / "a.zip"
+    p.write_bytes(b"PK\x03\x04")
+    with pytest.raises(extract.Unsupported):
+        extract.page_count(p, "application/zip")
+
+
+# ---------------------------------------------------------------------------
+# worker（偽の OCR・埋め込みで端から端まで）
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def worker(settings, app):
+    ocr = FakeOcr()
+    ctx = Context(settings.files_dir, ocr_factory=lambda: ocr, embedder_factory=FakeEmbedder, dpi=50)
+    w = Worker(settings, ctx)
+    w.ocr = ocr
+    return w
+
+
+def run_all(w):
+    while w.run_once():
+        pass
+
+
+def test_worker_processes_text_pdf_and_image(login, worker, settings):
+    alice = login("alice")
+    pdf = alice.upload(alice.root, {"契約.pdf": make_pdf(["This contract is valid for one year from signing."])})
+    img = alice.upload(alice.root, {"領収書.png": png()})
+    run_all(worker)
+    conn = connect(settings.db_path)
+    for r in (pdf, img):
+        d = r.json()["results"][0]["document"]
+        got = alice.get(f"/api/v1/documents/{d['id']}").json()
+        assert got["processing"]["status"] == "ready", got
+    # 全文索引とベクトルができている
+    hit = conn.execute("SELECT c.blob_id FROM chunks_fts JOIN chunks c ON c.id = chunks_fts.rowid"
+                       " WHERE chunks_fts MATCH '\"本人確認書類\"'").fetchall()
+    assert len(hit) == 1
+    n_chunks = conn.execute("SELECT count(*) FROM chunks").fetchone()[0]
+    n_vec = conn.execute("SELECT count(*) FROM chunk_vectors").fetchone()[0]
+    assert n_chunks == n_vec == 2
+    # 低信頼度の行は本文に入らないが ocr_lines には残る
+    page = conn.execute("SELECT * FROM pages WHERE source = 'ocr'").fetchone()
+    assert "ノイズ" not in page["text"]
+    assert conn.execute("SELECT count(*) FROM ocr_lines WHERE page_id = ?", (page["id"],)).fetchone()[0] == 2
+    assert conn.execute("SELECT embedding_model FROM blobs WHERE status = 'ready'").fetchone()[0] == "fake/embed"
+
+
+def test_text_endpoint(login, worker):
+    alice = login("alice")
+    d = alice.upload(alice.root, {"r.png": png()}).json()["results"][0]["document"]
+    run_all(worker)
+    t = alice.get(f"/api/v1/documents/{d['id']}/text").json()
+    assert t["pages"][0]["source"] == "ocr" and "本人確認書類" in t["pages"][0]["text"]
+    o = alice.get(f"/api/v1/documents/{d['id']}/ocr?page=1").json()
+    assert len(o["lines"]) == 2 and o["width"] == 200
+
+
+def test_worker_unsupported_and_corrupt(login, worker, settings):
+    alice = login("alice")
+    z = alice.upload(alice.root, {"a.zip": b"PK\x03\x04" + b"x" * 100}).json()["results"][0]["document"]
+    bad = alice.upload(alice.root, {"b.pdf": b"%PDF-1.4 broken"}).json()["results"][0]["document"]
+    run_all(worker)
+    assert alice.get(f"/api/v1/documents/{z['id']}").json()["processing"]["status"] == "unsupported"
+    b = alice.get(f"/api/v1/documents/{bad['id']}").json()["processing"]
+    assert b["status"] == "failed" and json.loads(b["error"])["code"] == "corrupt_file"
+
+
+def test_worker_retries_then_fails(login, worker, settings):
+    alice = login("alice")
+    d = alice.upload(alice.root, {"r.png": png()}).json()["results"][0]["document"]
+
+    def boom(image):
+        raise RuntimeError("OCR が落ちた")
+    worker.ocr.recognize = boom
+    conn = connect(settings.db_path)
+    for _ in range(3):
+        conn.execute("UPDATE jobs SET run_after = '2000-01-01T00:00:00Z' WHERE status = 'pending'")
+        assert worker.run_once()
+    job = conn.execute("SELECT * FROM jobs").fetchone()
+    assert job["status"] == "failed" and job["attempts"] == 3 and "OCR が落ちた" in job["error"]
+    assert alice.get(f"/api/v1/documents/{d['id']}").json()["processing"]["status"] == "failed"
+
+
+def test_resume_skips_done_pages(login, worker, settings):
+    alice = login("alice")
+    buf = io.BytesIO()
+    frames = [Image.new("RGB", (100, 50), "white") for _ in range(3)]
+    frames[0].save(buf, "TIFF", save_all=True, append_images=frames[1:])
+    alice.upload(alice.root, {"scan.tiff": buf.getvalue()})
+    calls = {"n": 0}
+    orig = worker.ocr.recognize
+
+    def flaky(image):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("途中で落ちた")
+        return orig(image)
+    worker.ocr.recognize = flaky
+    conn = connect(settings.db_path)
+    worker.run_once()  # 1 ページ目は保存、2 ページ目で失敗
+    assert conn.execute("SELECT count(*) FROM pages").fetchone()[0] == 1
+    conn.execute("UPDATE jobs SET run_after = '2000-01-01T00:00:00Z'")
+    worker.run_once()
+    assert calls["n"] == 4  # 1 ページ目はやり直さない（1 + 失敗 1 + 残り 2）
+    assert conn.execute("SELECT status, page_count FROM blobs").fetchone()[:] == ("ready", 3)
+
+
+def test_reprocess_force_ocr(login, worker, settings):
+    alice = login("alice")
+    d = alice.upload(alice.root, {"t.pdf": make_pdf(["This page has a text layer that is long enough."])})
+    doc = d.json()["results"][0]["document"]
+    run_all(worker)
+    assert worker.ocr.calls == 0
+    r = alice.post(f"/api/v1/documents/{doc['id']}/reprocess", json={"force_ocr": True})
+    assert r.status_code == 202
+    assert alice.get(f"/api/v1/documents/{doc['id']}").json()["processing"]["status"] == "pending"
+    run_all(worker)
+    assert worker.ocr.calls == 1
+    t = alice.get(f"/api/v1/documents/{doc['id']}/text").json()
+    assert t["pages"][0]["source"] == "ocr"
+
+
+def test_purged_blob_job_is_harmless(login, worker, settings):
+    alice = login("alice")
+    d = alice.upload(alice.root, {"x.txt": "あいうえお".encode()}).json()["results"][0]["document"]
+    alice.delete(f"/api/v1/documents/{d['id']}")
+    alice.delete(f"/api/v1/trash/document/{d['id']}")
+    run_all(worker)  # 実体が消えた後のジョブ（カスケードで消えている）でも落ちない
+
+
+def test_heartbeat_and_daily(worker, settings):
+    worker.heartbeat(force=True)
+    worker.daily()
+    conn = connect(settings.db_path)
+    keys = {r[0] for r in conn.execute("SELECT key FROM settings")}
+    assert {"worker.heartbeat", "worker.daily"} <= keys

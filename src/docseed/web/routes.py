@@ -6,6 +6,7 @@ htmx からの部分更新は HTML の断片を返し、結果のお知らせは
 
 from __future__ import annotations
 
+import datetime as _dt
 import sqlite3
 from pathlib import Path
 from urllib.parse import urlparse
@@ -57,6 +58,8 @@ DONE_MESSAGES = {
     "user_created": "ユーザーを作成しました",
     "user_updated": "ユーザーを更新しました",
     "token_revoked": "トークンを無効にしました",
+    "reprocess": "再処理を受け付けました。順番に処理されます",
+    "retried": "ジョブをやり直します",
 }
 
 
@@ -255,6 +258,7 @@ def shared_page(request: Request, conn: sqlite3.Connection = Depends(get_conn), 
 # ---------------------------------------------------------------------------
 
 TEXT_PREVIEW_BYTES = 200_000
+PAGES_SHOWN = 30
 
 
 @router.get("/d/{doc_id}", response_class=HTMLResponse)
@@ -273,11 +277,27 @@ def document_page(doc_id: int, request: Request, conn: sqlite3.Connection = Depe
             text_preview = raw[:TEXT_PREVIEW_BYTES].decode("utf-8", "replace")
     targets = [(fid, label) for fid, label in fo.folders_of_owner(conn, d["owner_id"])
                if fo.effective_role(conn, auth.user, fid) in ("editor", "owner")]
+    pages = conn.execute("SELECT page_no, source, text, ocr_confidence FROM pages WHERE blob_id = ?"
+                         " ORDER BY page_no LIMIT ?", (d["blob_id"], PAGES_SHOWN)).fetchall()
     return templates.TemplateResponse(request, "document.html", base_context(
         request, conn, auth, doc=d, role=role, can_edit=role in ("editor", "owner"),
         crumbs=fo.path(conn, d["folder_id"]), tags=dm.document_tags(conn, doc_id), text_preview=text_preview,
         truncated=truncated, targets=targets, owner=um.get_user(conn, d["owner_id"]),
+        pages=pages, pages_shown=PAGES_SHOWN, error=h.problem_message(d["error"]),
+        warnings=h.warning_messages(d["warnings"]),
         nav="files" if d["owner_id"] == auth.user.id else "shared"))
+
+
+@router.post("/d/{doc_id}/reprocess")
+def document_reprocess(doc_id: int, request: Request, force_ocr: str | None = Form(None),
+                       conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from ..reprocess import enqueue_reprocess
+    d = dm.get_document(conn, auth.user, doc_id, "editor")
+    enqueue_reprocess(conn, [d["blob_id"]], force_ocr=bool(force_ocr))
+    with Tx(conn):
+        audit(conn, "reprocess", user_id=auth.user.id, target_type="document", target_id=doc_id,
+              ip=client_ip(request), force_ocr=bool(force_ocr))
+    return RedirectResponse(f"/d/{doc_id}?done=reprocess", status_code=303)
 
 
 @router.post("/d/{doc_id}")
@@ -412,9 +432,31 @@ def admin_context(request: Request, conn: sqlite3.Connection, auth: Auth, settin
         " (SELECT count(*) FROM jobs WHERE status IN ('pending', 'running')) AS jobs_waiting,"
         " (SELECT count(*) FROM jobs WHERE status = 'failed') AS jobs_failed").fetchone()
     db_bytes = sum(p.stat().st_size for p in settings.db_path.parent.glob(settings.db_path.name + "*"))
-    worker_seen = conn.execute("SELECT value FROM settings WHERE key = 'worker.heartbeat'").fetchone()
+    from ..api.routes import failed_jobs, job_counts
+    hb = conn.execute("SELECT value FROM settings WHERE key = 'worker.heartbeat'").fetchone()
+    worker_seen = hb[0] if hb else None
+    worker_alive = bool(worker_seen) and (_dt.datetime.now(_dt.UTC) - _dt.datetime.strptime(
+        worker_seen, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=_dt.UTC)).total_seconds() < 120
     return base_context(request, conn, auth, nav="admin", users=um.list_users(conn), stats=stats,
-                        disk=disk, db_bytes=db_bytes, worker_seen=worker_seen, error=None, form={}, **extra)
+                        disk=disk, db_bytes=db_bytes, worker_seen=worker_seen, worker_alive=worker_alive,
+                        job_counts=job_counts(conn), failed=failed_jobs(conn, 20), error=None, form={}, **extra)
+
+
+@router.post("/admin/jobs/{job_id}/retry")
+def admin_job_retry(job_id: int, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_admin)):
+    from ..api.routes import retry_job
+    retry_job(conn, job_id)
+    return RedirectResponse("/admin?done=retried", status_code=303)
+
+
+@router.post("/admin/reprocess")
+def admin_reprocess(scope: str = Form(...), conn: sqlite3.Connection = Depends(get_conn),
+                    auth: Auth = Depends(require_admin)):
+    from ..reprocess import reprocess
+    if scope not in ("failed", "outdated"):
+        raise AppError("不明な範囲です")
+    reprocess(conn, scope)
+    return RedirectResponse("/admin?done=reprocess", status_code=303)
 
 
 @router.get("/admin", response_class=HTMLResponse)

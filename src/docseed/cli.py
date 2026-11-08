@@ -60,6 +60,29 @@ def cmd_purge_trash(args: argparse.Namespace) -> None:
     print(f"{n} 件を完全に削除しました（{settings.trash_retention_days} 日より前に削除されたもの）")
 
 
+def cmd_worker(args: argparse.Namespace) -> None:
+    import logging
+
+    from .jobs.worker import Worker
+    settings = Settings.from_env()
+    logging.basicConfig(level=settings.log_level,
+                        format='{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}')
+    settings.ensure_dirs()
+    Worker(settings).run()
+
+
+def cmd_fetch_models(args: argparse.Namespace) -> None:
+    from .models import fetch_all
+    fetch_all(Settings.from_env(), force=args.force)
+
+
+def cmd_reprocess(args: argparse.Namespace) -> None:
+    from .reprocess import reprocess
+    conn = _conn(Settings.from_env())
+    n = reprocess(conn, args.scope, force_ocr=args.force_ocr)
+    print(f"{n} 件を再処理の待ち行列に入れました")
+
+
 def cmd_backup_db(args: argparse.Namespace) -> None:
     """SQLite のオンラインバックアップ API で DB のスナップショットを作る（deployment.md 5.1）。"""
     settings = Settings.from_env()
@@ -98,6 +121,19 @@ def main(argv: list[str] | None = None) -> None:
 
     s = sub.add_parser("purge-trash", help="保持期間を過ぎたゴミ箱の項目を完全に削除する")
     s.set_defaults(func=cmd_purge_trash)
+
+    s = sub.add_parser("worker", help="OCR・埋め込みの処理を行う worker を起動する")
+    s.set_defaults(func=cmd_worker)
+
+    s = sub.add_parser("fetch-models", help="OCR と埋め込みのモデルを取得する（初回に 1 度）")
+    s.add_argument("--force", action="store_true", help="取得済みでも取り直す")
+    s.set_defaults(func=cmd_fetch_models)
+
+    s = sub.add_parser("reprocess", help="文書を再処理する")
+    s.add_argument("scope", choices=["failed", "outdated", "all"],
+                   help="failed: 失敗したもの / outdated: 古い版で処理したもの / all: すべて")
+    s.add_argument("--force-ocr", action="store_true", help="テキスト層のある PDF も OCR する")
+    s.set_defaults(func=cmd_reprocess)
 
     s = sub.add_parser("backup-db", help="データベースのスナップショットを作る")
     s.add_argument("--keep", type=int, default=7, help="残す世代数")

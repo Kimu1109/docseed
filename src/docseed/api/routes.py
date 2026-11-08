@@ -336,6 +336,49 @@ def api_doc_delete(doc_id: int, request: Request, conn: sqlite3.Connection = Dep
     dm.delete_document(conn, auth.user, doc_id, ip=client_ip(request))
 
 
+@router.get("/documents/{doc_id}/text")
+def api_doc_text(doc_id: int, page: int | None = None, conn: sqlite3.Connection = Depends(get_conn),
+                 auth: Auth = Depends(require_auth)):
+    d = dm.get_document(conn, auth.user, doc_id)
+    q = "SELECT page_no, source, text, ocr_confidence FROM pages WHERE blob_id = ?"
+    args: list[Any] = [d["blob_id"]]
+    if page is not None:
+        q += " AND page_no = ?"
+        args.append(page)
+    rows = conn.execute(q + " ORDER BY page_no", args).fetchall()
+    return {"status": d["status"], "pages": [dict(r) for r in rows]}
+
+
+@router.get("/documents/{doc_id}/ocr")
+def api_doc_ocr(doc_id: int, page: int = 1, conn: sqlite3.Connection = Depends(get_conn),
+                auth: Auth = Depends(require_auth)):
+    d = dm.get_document(conn, auth.user, doc_id)
+    pg = conn.execute("SELECT * FROM pages WHERE blob_id = ? AND page_no = ?", (d["blob_id"], page)).fetchone()
+    if pg is None or pg["source"] != "ocr":
+        raise NotFound("このページの OCR 結果はありません")
+    lines = conn.execute("SELECT line_no, text, confidence, bbox, vertical FROM ocr_lines WHERE page_id = ?"
+                         " ORDER BY line_no", (pg["id"],)).fetchall()
+    return {"page_no": page, "width": pg["width"], "height": pg["height"],
+            "lines": [{"line_no": r["line_no"], "text": r["text"], "confidence": r["confidence"],
+                       "bbox": json.loads(r["bbox"]), "vertical": bool(r["vertical"])} for r in lines]}
+
+
+class ReprocessIn(BaseModel):
+    force_ocr: bool = False
+
+
+@router.post("/documents/{doc_id}/reprocess", status_code=202)
+def api_doc_reprocess(doc_id: int, body: ReprocessIn, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                      auth: Auth = Depends(require_auth)):
+    from ..reprocess import enqueue_reprocess
+    d = dm.get_document(conn, auth.user, doc_id, "editor")
+    queued = enqueue_reprocess(conn, [d["blob_id"]], force_ocr=body.force_ocr)
+    with Tx(conn):
+        audit(conn, "reprocess", user_id=auth.user.id, target_type="document", target_id=doc_id,
+              ip=client_ip(request), force_ocr=body.force_ocr)
+    return {"queued": bool(queued)}
+
+
 # ---------------------------------------------------------------------------
 # ゴミ箱
 # ---------------------------------------------------------------------------
@@ -407,6 +450,53 @@ def api_user_patch(user_id: int, body: UserPatch, request: Request, conn: sqlite
               ip=client_ip(request), fields=[k for k, v in body.model_dump().items() if v is not None
                                              and k != "password"] + (["password"] if body.password else []))
     return user_json(u)
+
+
+def job_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    return {r[0]: r[1] for r in conn.execute("SELECT status, count(*) FROM jobs GROUP BY status")}
+
+
+def failed_jobs(conn: sqlite3.Connection, limit: int = 50) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT j.*, (SELECT filename FROM documents d WHERE d.blob_id = j.blob_id ORDER BY d.id LIMIT 1) AS filename"
+        " FROM jobs j WHERE j.status = 'failed' ORDER BY j.finished_at DESC LIMIT ?", (limit,)).fetchall()
+
+
+@router.get("/admin/jobs")
+def api_jobs(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_admin)):
+    return {"counts": job_counts(conn),
+            "failed": [{"id": r["id"], "type": r["type"], "blob_id": r["blob_id"], "filename": r["filename"],
+                        "attempts": r["attempts"], "error": r["error"], "finished_at": r["finished_at"]}
+                       for r in failed_jobs(conn)]}
+
+
+def retry_job(conn: sqlite3.Connection, job_id: int) -> None:
+    with Tx(conn):
+        cur = conn.execute("UPDATE jobs SET status = 'pending', attempts = 0, run_after = ?, error = NULL,"
+                           " finished_at = NULL WHERE id = ? AND status = 'failed'", (now(), job_id))
+        if cur.rowcount == 0:
+            raise NotFound("失敗したジョブが見つかりません")
+        conn.execute("UPDATE blobs SET status = 'pending', updated_at = ? WHERE id ="
+                     " (SELECT blob_id FROM jobs WHERE id = ?)", (now(), job_id))
+
+
+@router.post("/admin/jobs/{job_id}/retry", status_code=204)
+def api_job_retry(job_id: int, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_admin)):
+    retry_job(conn, job_id)
+
+
+class BulkReprocessIn(BaseModel):
+    scope: str
+    force_ocr: bool = False
+
+
+@router.post("/admin/reprocess")
+def api_bulk_reprocess(body: BulkReprocessIn, conn: sqlite3.Connection = Depends(get_conn),
+                       auth: Auth = Depends(require_admin)):
+    from ..reprocess import reprocess
+    if body.scope not in ("failed", "outdated", "all"):
+        raise ValidationFailed("scope は failed / outdated / all のいずれかです")
+    return {"queued": reprocess(conn, body.scope, force_ocr=body.force_ocr)}
 
 
 # ---------------------------------------------------------------------------

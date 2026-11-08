@@ -225,11 +225,11 @@ DB の `chunks.text` には本文だけを保存する（全文検索とハイ�
 | 入力プレフィックス | 文書: `検索文書: `、クエリ: `検索クエリ: ` |
 | 正規化 | L2 正規化（`normalize_embeddings=True`） |
 | バッチ | 長さ順に並べ替えて 16 件ずつ（パディングの無駄を減らす） |
-| 実行 | sentence-transformers の ONNX バックエンド（ONNX Runtime, fp32）。worker は intra-op 3 スレッド。初回起動時に ONNX へ変換して `models/` に保存する。int8 量子化は不採用（Phase 0 で、実際の長さのチャンクでは速くならず、torch との cos 最小 0.85 と劣化が大きかった） |
+| 実行 | ONNX Runtime（fp32）と tokenizers で推論し、平均プーリング + L2 正規化を自前で行う（torch 不要。sentence-transformers の出力とコサイン類似度 1.000 で一致することを確認）。worker は intra-op 3 スレッド。公式の配布物に ONNX が無いため、`docseed fetch-models`（tools イメージ, torch あり）で初回だけ ONNX に変換して `models/embed/` に保存する。int8 量子化は不採用（Phase 0 で、実際の長さのチャンクでは速くならず、torch との cos 最小 0.85 と劣化が大きかった） |
 | 書き込み | バッチごとに `chunk_vectors` へ INSERT してコミット |
 
 - api プロセスも検索クエリの埋め込み用に同じモデルを読み込む（ONNX Runtime の intra-op 1 スレッド。Phase 0 で約 20ms）。モデル読み込みは起動時に行い、最初の検索が遅くならないようにする。
-- モデルファイルは `/srv/docseed/models/` に事前にダウンロードしておき、実行時はオフライン（`HF_HUB_OFFLINE=1`）で読み込む。
+- モデルファイルは `docseed fetch-models` で `/srv/docseed/models/` に事前に取得し（SHA-256 を `models/manifest.json` に記録）、worker は外部と通信しないネットワークで動かす。
 
 ```python
 class Embedder(Protocol):

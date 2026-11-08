@@ -1,6 +1,9 @@
 # docs/design/deployment.md 2 章
-# 初回: cp .env.example .env → 値を設定 → docker compose up -d --build
-#       → docker compose exec api docseed create-admin --username <名前>
+# 初回:
+#   cp .env.example .env → 値を設定
+#   docker compose --profile tools run --rm tools     # モデルの取得（初回だけ。数分）
+#   docker compose up -d --build
+#   docker compose exec api docseed create-admin --username <名前>
 services:
   caddy:
     image: caddy:2
@@ -20,6 +23,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
+      target: base
     image: docseed:latest
     command: ["docseed", "serve", "--port", "8000"]
     env_file: .env
@@ -29,9 +33,46 @@ services:
       - ${DOCSEED_DATA_DIR:-/srv/docseed}:/srv/docseed
       - /sys/class/thermal:/host/thermal:ro
     mem_limit: 1536m
-    logging:
+    logging: &logging
       driver: json-file
       options: { max-size: "10m", max-file: "5" }
     restart: unless-stopped
 
-  # worker（OCR・埋め込み）は Phase 2 で追加する
+  # 文字の読み取り（OCR）と埋め込み。外部へは通信しない（モデルは tools で事前に取得する）
+  worker:
+    image: docseed:latest
+    command: ["docseed", "worker"]
+    env_file: .env
+    environment:
+      DOCSEED_DATA_DIR: /srv/docseed
+    volumes:
+      - ${DOCSEED_DATA_DIR:-/srv/docseed}:/srv/docseed
+      - /sys/class/thermal:/host/thermal:ro
+    mem_limit: 3g
+    networks: [internal]
+    depends_on: [api]
+    healthcheck:
+      disable: true
+    stop_grace_period: 30s
+    logging: *logging
+    restart: unless-stopped
+
+  # モデルの取得と ONNX への変換（初回とモデル変更時だけ）: docker compose --profile tools run --rm tools
+  tools:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: tools
+    image: docseed-tools:latest
+    command: ["docseed", "fetch-models"]
+    env_file: .env
+    environment:
+      DOCSEED_DATA_DIR: /srv/docseed
+    volumes:
+      - ${DOCSEED_DATA_DIR:-/srv/docseed}:/srv/docseed
+
+networks:
+  default: {}
+  internal:
+    internal: true

@@ -18,9 +18,23 @@ dependencies = [
   "sqlite-vec>=0.1.6",
   "filetype>=1.2",
   "tzdata>=2024.1",
+  # worker（OCR・埋め込み）。torch は使わない（ONNX Runtime + tokenizers で推論する）
+  "numpy>=1.26",
+  "onnxruntime>=1.20",
+  "tokenizers>=0.20",
+  "rapidocr>=3.10",
+  "pypdfium2>=4.30",
+  "pillow>=10.4",
+  "huggingface-hub>=0.26",
 ]
 
 [project.optional-dependencies]
+# モデルの取得と ONNX への変換（docseed fetch-models）だけで使う。初回に 1 度だけ必要
+tools = [
+  "torch>=2.4",
+  "sentence-transformers[onnx]>=5.0",
+  "sentencepiece>=0.2",
+]
 dev = [
   "pytest>=8.3",
   "httpx>=0.27",
