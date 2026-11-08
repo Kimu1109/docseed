@@ -5,7 +5,7 @@
 | 版 | 1.1 |
 | 日付 | 2026-11-08 |
 | 状態 | ドラフト |
-| 関連 | [ローカル OCR / Embedding モデル調査](research/ocr-embedding-models.md)、[Phase 0 計測結果](research/phase0-results.md) |
+| 関連 | [ローカル OCR / Embedding モデル調査](research/ocr-embedding-models.md)、[Phase 0 計測結果](research/phase0-results.md)、[新機能の実現手段の調査](research/new-features.md) |
 
 ### 詳細設計
 

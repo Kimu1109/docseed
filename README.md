@@ -235,3 +235,4 @@ API の仕様は起動後に `/api/docs` で確認できます（ログインが
 - [設計書](docs/design.md)（詳細設計は `docs/design/`）
 - [ローカル OCR / Embedding モデル調査](docs/research/ocr-embedding-models.md)
 - [Phase 0 計測結果](docs/research/phase0-results.md)
+- [新機能の実現手段の調査](docs/research/new-features.md)（URL 取り込み・小型 LLM・画像形式・アイコン・HTTPS・ログイン）
