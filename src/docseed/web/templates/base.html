@@ -14,6 +14,12 @@
 <header class="top">
   <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>docseed</a>
   <button class="nav-toggle" type="button" aria-controls="side" aria-expanded="false" data-nav-toggle>メニュー</button>
+  {% if nav != "search" %}
+  <form class="topsearch" method="get" action="/search" role="search">
+    <input type="search" name="q" placeholder="ファイルの中身を検索" aria-label="検索" autocomplete="off" data-search-shortcut>
+    <kbd class="kbd" aria-hidden="true">/</kbd>
+  </form>
+  {% endif %}
   <div class="top-right">
     {% block top_actions %}{% endblock %}
     <details class="usermenu">
@@ -31,6 +37,7 @@
 <div class="shell">
   <nav class="side" id="side" aria-label="メイン">
     <a href="/f/{{ root_id }}" {% if nav == 'files' %}aria-current="page"{% endif %}>マイファイル</a>
+    <a href="/search" {% if nav == 'search' %}aria-current="page"{% endif %}>検索</a>
     <a href="/shared" {% if nav == 'shared' %}aria-current="page"{% endif %}>共有されたフォルダ</a>
     <a href="/trash" {% if nav == 'trash' %}aria-current="page"{% endif %}>ゴミ箱</a>
     {% if user.is_admin %}<a href="/admin" {% if nav == 'admin' %}aria-current="page"{% endif %}>管理</a>{% endif %}

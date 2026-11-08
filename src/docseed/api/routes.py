@@ -380,6 +380,44 @@ def api_doc_reprocess(doc_id: int, body: ReprocessIn, request: Request, conn: sq
 
 
 # ---------------------------------------------------------------------------
+# 検索
+# ---------------------------------------------------------------------------
+
+def run_search(request: Request, conn: sqlite3.Connection, auth: Auth, q: str, mode: str, limit: int, offset: int,
+               filters: dict[str, str], sem_min: float | None = None):
+    from ..search import search
+    embedder, err = request.app.state.query_embedder.get() if mode != "keyword" else (None, None)
+    floor = request.app.state.settings.search_sem_min if sem_min is None else max(0.0, min(sem_min, 1.0))
+    return search(conn, auth.user, q, mode=mode, embedder=embedder, embed_error=err, limit=limit, offset=offset,
+                  filters=filters, sem_min=floor)
+
+
+def folder_label(conn: sqlite3.Connection, folder_id: int, cache: dict[int, str]) -> str:
+    if folder_id not in cache:
+        cache[folder_id] = "/" + "/".join(c.name for c in fo.path(conn, folder_id) if c.name)
+    return cache[folder_id]
+
+
+@router.get("/search")
+def api_search(request: Request, q: str = "", mode: str = "hybrid", type: str | None = None,
+               tag: str | None = None, folder: str | None = None, after: str | None = None,
+               before: str | None = None, limit: int = 20, offset: int = 0, sem_min: float | None = None,
+               conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    """sem_min: 意味検索の類似度の下限を一時的に変える（評価スクリプト用。省略時は設定値）。"""
+    filters = {"type": type, "tag": tag, "folder": folder, "after": after, "before": before}
+    r = run_search(request, conn, auth, q, mode, limit, offset, {k: v for k, v in filters.items() if v}, sem_min)
+    labels: dict[int, str] = {}
+    return {
+        "query": r.query, "mode": r.mode, "total": r.total, "took_ms": r.took_ms, "notices": r.notices,
+        "results": [{"document": {**h.document, "path": folder_label(conn, h.document["folder_id"], labels)},
+                     "score": h.score,
+                     "snippets": [{"chunk_id": s.chunk_id, "page_no": s.page_no, "text": s.html, "match": s.match}
+                                  for s in h.snippets]}
+                    for h in r.hits],
+    }
+
+
+# ---------------------------------------------------------------------------
 # ゴミ箱
 # ---------------------------------------------------------------------------
 

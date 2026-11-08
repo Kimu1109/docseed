@@ -203,6 +203,8 @@ GET /api/v1/search?q=振込先 請求書&mode=hybrid&type=pdf&tag=経理&folder=
 
 - `text` は HTML エスケープ済みで、`<mark>` タグだけを含む。
 - `q` 内の `type:` `tag:` `folder:` `after:` `before:` もパラメータと同じ意味で解釈する（[検索設計](search.md) 2 章）。
+- `sem_min`（0〜1、省略可）: 意味検索の類似度の下限を一時的に変える。評価スクリプト用で、省略時は設定値（既定 0.80）。
+- 実装では `total_estimate` ではなく `total`（絞り込み後の文書数）を返す。
 
 ### 3.6 タグ
 

@@ -17,6 +17,7 @@ from .api.routes import router as api_router
 from .config import Settings
 from .db import connect, migrate
 from .errors import AppError, Unauthenticated
+from .search import QueryEmbedder
 from .storage import BlobStore
 from .web.routes import render_error
 from .web.routes import router as web_router
@@ -61,6 +62,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                   openapi_url="/api/v1/openapi.json")
     app.state.settings = settings
     app.state.store = BlobStore(settings.files_dir, settings.tmp_dir)
+    app.state.query_embedder = QueryEmbedder(settings.models_dir, settings.embed_model,
+                                             threads=settings.query_threads)
+    # 最初の検索が遅くならないよう、モデルがあれば裏で読み込んでおく
+    from .pipeline.embed import model_dir
+    if (model_dir(settings.models_dir, settings.embed_model) / "onnx" / "model.onnx").exists():
+        import threading
+        threading.Thread(target=app.state.query_embedder.get, name="preload-embedder", daemon=True).start()
 
     app.add_middleware(SecurityHeaders)
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "web" / "static"), name="static")

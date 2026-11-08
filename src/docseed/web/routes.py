@@ -317,6 +317,53 @@ def document_delete(doc_id: int, request: Request, conn: sqlite3.Connection = De
 
 
 # ---------------------------------------------------------------------------
+# 検索
+# ---------------------------------------------------------------------------
+
+PER_PAGE = 20
+
+
+def display_location(conn: sqlite3.Connection, auth: Auth, folder_id: int, cache: dict[int, str]) -> str:
+    """「マイファイル / 経理 / 2026」や「Hanako さんのファイル / 共有」のような場所の表示。"""
+    if folder_id not in cache:
+        crumbs = fo.path(conn, folder_id)
+        owner_id = fo.get_folder_row(conn, folder_id)["owner_id"]
+        if owner_id == auth.user.id:
+            root = "マイファイル"
+        else:
+            root = um.get_user(conn, owner_id).display_name + " さんのファイル"
+        cache[folder_id] = " / ".join([root] + [c.name for c in crumbs if c.name])
+    return cache[folder_id]
+MODE_LABEL = {"hybrid": "すべて", "semantic": "意味が近い", "keyword": "キーワード"}
+TYPE_OPTIONS = ["pdf", "image", "text", "doc", "sheet", "slide"]
+
+
+@router.get("/search", response_class=HTMLResponse)
+def search_page(request: Request, q: str = "", mode: str = "hybrid", type: str = "", tag: str = "",
+                after: str = "", before: str = "", folder: str = "", page: int = 1,
+                conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from ..api.routes import folder_label, run_search
+    page = max(1, min(page, 1 + 500 // PER_PAGE))
+    filters = {k: v for k, v in {"type": type, "tag": tag, "after": after, "before": before,
+                                 "folder": folder}.items() if v}
+    result = run_search(request, conn, auth, q, mode, PER_PAGE, (page - 1) * PER_PAGE, filters) if q.strip() else None
+    labels: dict[int, str] = {}
+    paths = {h.document["folder_id"]: display_location(conn, auth, h.document["folder_id"], labels)
+             for h in (result.hits if result else [])}
+    tags = [r[0] for r in conn.execute(
+        "SELECT DISTINCT t.name FROM tags t JOIN document_tags dt ON dt.tag_id = t.id"
+        " JOIN documents d ON d.id = dt.document_id AND d.deleted_at IS NULL ORDER BY t.name")]
+    folder_name = None
+    if folder.isdigit() and fo.effective_role(conn, auth.user, int(folder)):
+        folder_name = folder_label(conn, int(folder), labels)
+    return templates.TemplateResponse(request, "search.html", base_context(
+        request, conn, auth, nav="search", q=q, mode=mode if mode in MODE_LABEL else "hybrid", result=result,
+        paths=paths, page=page, per_page=PER_PAGE, mode_label=MODE_LABEL, type_options=TYPE_OPTIONS,
+        type=type, tag=tag, after=after, before=before, folder=folder, folder_name=folder_name, tags=tags,
+        params={k: v for k, v in {"q": q, "mode": mode, **filters}.items() if v}))
+
+
+# ---------------------------------------------------------------------------
 # ゴミ箱
 # ---------------------------------------------------------------------------
 

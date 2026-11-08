@@ -103,6 +103,71 @@
     if (msg && !confirm(msg)) e.preventDefault();
   });
 
+  // ---- 検索 --------------------------------------------------------------
+  // 「/」で検索欄へ（入力中は除く）
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target;
+    if (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName)) return;
+    const box = $("[data-search-shortcut]") || $(".search-form input[name=q]");
+    if (box) { e.preventDefault(); box.focus(); box.select(); }
+  });
+  // 絞り込みを変えたらすぐ検索し直す
+  document.addEventListener("change", (e) => {
+    const form = e.target.closest?.("form[data-autosubmit]");
+    if (form && e.target.name !== "q" && form.q.value.trim()) form.requestSubmit();
+  });
+
+  // 文書詳細: #p3 のページを開き、検索語を強調する
+  function searchTerms() {
+    const q = new URL(location.href).searchParams.get("q");
+    if (!q) return [];
+    const out = [];
+    for (const m of q.normalize("NFKC").matchAll(/-?"[^"]*"|\S+/g)) {
+      let t = m[0];
+      if (t.startsWith("-") || /^(type|tag|folder|after|before):/.test(t)) continue;
+      t = t.replace(/^"|"$/g, "").trim();
+      if (t) out.push(t);
+    }
+    return out.sort((a, b) => b.length - a.length);
+  }
+  function highlight(el, terms) {
+    const text = el.textContent;
+    const lower = text.toLowerCase();
+    const marks = [];
+    for (const t of terms) {
+      const tl = t.toLowerCase();
+      for (let i = lower.indexOf(tl); i >= 0; i = lower.indexOf(tl, i + tl.length)) {
+        if (!marks.some(([s, e]) => i < e && i + tl.length > s)) marks.push([i, i + tl.length]);
+      }
+    }
+    if (!marks.length) return 0;
+    marks.sort((a, b) => a[0] - b[0]);
+    const frag = document.createDocumentFragment();
+    let pos = 0;
+    for (const [s, e] of marks) {
+      frag.append(text.slice(pos, s));
+      const m = document.createElement("mark");
+      m.textContent = text.slice(s, e);
+      frag.append(m);
+      pos = e;
+    }
+    frag.append(text.slice(pos));
+    el.replaceChildren(frag);
+    return marks.length;
+  }
+  document.addEventListener("DOMContentLoaded", () => {
+    const terms = searchTerms();
+    if (terms.length) $$("[data-highlight]").forEach((el) => highlight(el, terms));
+    const m = location.hash.match(/^#p(\d+)$/);
+    const target = m ? document.getElementById("p" + m[1]) : null;
+    if (target) {
+      target.open = true;
+      const first = $("mark", target);
+      (first || target).scrollIntoView({ block: first ? "center" : "start" });
+    }
+  });
+
   // ---- 処理状況の自動更新 -----------------------------------------------
   setInterval(() => {
     const listing = $("#listing[data-has-pending]");

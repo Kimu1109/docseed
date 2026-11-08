@@ -31,6 +31,8 @@ class Settings:
     ocr_min_score: float = 0.5
     embed_model: str = "cl-nagoya/ruri-v3-70m"
     embed_threads: int = 3
+    query_threads: int = 1
+    search_sem_min: float = 0.80
     thermal_pause_c: float = 80.0
     thermal_resume_c: float = 70.0
     extra: dict[str, str] = field(default_factory=dict)
@@ -81,6 +83,8 @@ class Settings:
             ocr_min_score=float(e.get("DOCSEED_OCR_MIN_SCORE", "0.5")),
             embed_model=e.get("DOCSEED_EMBED_MODEL", "cl-nagoya/ruri-v3-70m"),
             embed_threads=int(e.get("DOCSEED_EMBED_THREADS", "3")),
+            query_threads=int(e.get("DOCSEED_QUERY_THREADS", "1")),
+            search_sem_min=float(e.get("DOCSEED_SEARCH_SEM_MIN", "0.80")),
             thermal_pause_c=float(e.get("DOCSEED_THERMAL_PAUSE_C", "80")),
         )
 

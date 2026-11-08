@@ -302,6 +302,46 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .toast-error { border-left-color: #e2685f; }
 .toast.hide { opacity: 0; transition: opacity .3s; }
 
+/* ---- 検索 -------------------------------------------------------------- */
+.topsearch { position: relative; flex: 1; max-width: 520px; margin-left: var(--s4); }
+.topsearch input { height: 34px; padding-right: 36px; background: var(--bg); }
+.topsearch input:focus { background: var(--surface); }
+.kbd { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font: 12px/1 var(--mono);
+       color: var(--muted); border: 1px solid var(--line-strong); padding: 2px 6px; background: var(--surface); }
+.topsearch input:focus + .kbd { display: none; }
+mark { background: #ffe58a; color: inherit; padding: 0 1px; }
+
+.search-form { margin-bottom: var(--s5); }
+.search-main { display: flex; gap: var(--s2); }
+.search-main input { height: 44px; font-size: 16px; border-width: 2px; border-color: var(--ink); }
+.search-main .btn { height: 44px; padding: 0 22px; }
+.search-filters { display: flex; flex-wrap: wrap; gap: var(--s3); margin-top: var(--s3); align-items: end; }
+.search-filters label { display: grid; gap: 2px; font-size: 13px; color: var(--muted); }
+.search-filters select, .search-filters input[type=date] { height: 34px; min-width: 140px; }
+.search-filters .folder-filter { display: flex; align-items: center; gap: 6px; color: var(--ink); height: 34px; }
+.result-count { margin: 0 0 var(--s3); }
+.results { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); background: var(--surface); }
+.result { display: grid; grid-template-columns: 6px minmax(0, 1fr); border-bottom: 1px solid var(--line); }
+.result:last-child { border-bottom: 0; }
+.result .kind { width: 6px; }
+.result-body { padding: var(--s3) var(--s4); min-width: 0; }
+.result-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s3); margin-bottom: 6px; }
+.result-name { font-size: 16px; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
+.result-name:hover { color: var(--accent); }
+.snippet { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: var(--s3); align-items: baseline;
+           padding: 6px 8px; margin: 0 -8px; color: var(--ink); font-size: 14px; border-left: 2px solid transparent; }
+.snippet:hover { background: var(--bg); border-left-color: var(--accent); text-decoration: none; }
+.snip-page { grid-column: 1; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.snip-text { grid-column: 2; overflow-wrap: anywhere; }
+.badge { grid-column: 3; font-size: 12px; color: var(--accent); border: 1px solid #b9c6dc; padding: 0 6px; white-space: nowrap; }
+.pager { display: flex; align-items: center; justify-content: center; gap: var(--s4); margin-top: var(--s4); }
+.search-help { margin-top: var(--s6); background: var(--surface); border: 1px solid var(--line); }
+.search-help summary { cursor: pointer; padding: 8px 12px; font-weight: 700; }
+.search-help dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px var(--s4); margin: 0; padding: 0 12px 4px; }
+.search-help dt { font-family: var(--mono); font-size: 13px; }
+.search-help dd { margin: 0; font-size: 14px; }
+.search-help p { padding: 0 12px 12px; margin: 8px 0 0; }
+
 /* ---- 狭い画面 ---------------------------------------------------------- */
 @media (max-width: 860px) {
   :root { --side-w: 0px; }
@@ -313,12 +353,19 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
   .main { padding: var(--s4) var(--s4) 64px; }
   .doc-layout { grid-template-columns: minmax(0, 1fr); }
   .files .col-date { display: none; }
+  .topsearch { margin-left: 0; }
+  .kbd { display: none; }
+  .snippet { grid-template-columns: minmax(0, 1fr); }
+  .snip-page, .snip-text, .badge { grid-column: 1; }
+  .badge { justify-self: start; }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .uploads-list li { grid-template-columns: minmax(0, 1fr) 80px; }
   .uploads-list progress { display: none; }
   .dropzone { left: 0; }
 }
 @media (max-width: 520px) {
+  .brand { gap: 6px; }
+  .topsearch input::placeholder { color: transparent; }
   .files .col-size, .files .col-status { display: none; }
   .usermenu summary { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .brand { font-size: 15px; }
