@@ -1,0 +1,11 @@
+# docseed のバックアップ（DB スナップショット → restic）。scripts/ops/install-backup.sh で配置する
+[Unit]
+Description=docseed backup (DB snapshot + restic)
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=@DOCSEED_DIR@/scripts/ops/backup.sh backup
+Nice=10
+IOSchedulingClass=idle

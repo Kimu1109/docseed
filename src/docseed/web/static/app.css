@@ -407,3 +407,17 @@ mark { background: #ffe58a; color: inherit; padding: 0 1px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; }
 }
+
+/* ---- 管理: 警告 ------------------------------------------------------- */
+.alert-badge { display: inline-block; margin-left: var(--s1); padding: 0 5px; font-size: 12px; line-height: 18px;
+               color: #fff; background: var(--danger); font-weight: 700; }
+.alert-list { list-style: none; margin: 0; padding: 0; }
+.alert-list li { padding: var(--s2) var(--s3); margin-bottom: var(--s2); border-left: 3px solid var(--line-strong);
+                 background: var(--bg); }
+.alert-list li.alert-error { border-left-color: var(--danger); background: var(--danger-soft); }
+.alert-list li.alert-warning { border-left-color: var(--warn); background: #fbf3e2; }
+.alert-level { font-weight: 700; margin-right: var(--s2); }
+.alert-error .alert-level { color: var(--danger); }
+.alert-warning .alert-level { color: var(--warn); }
+.alert-info .alert-level { color: var(--muted); }
+.err-text { color: var(--danger); }

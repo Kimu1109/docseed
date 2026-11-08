@@ -8,12 +8,13 @@ from __future__ import annotations
 import html
 import re
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
 
 from PIL import Image
 
+from . import office
 from .text import looks_garbled, normalize
 
 MAX_PAGES = 2000
@@ -39,6 +40,7 @@ class Page:
     source: str                    # text / text_layer / ocr
     text: str | None = None        # source が text / text_layer のとき
     image: Image.Image | None = None  # source が ocr のとき（OCR する画像）
+    warnings: list[dict] = field(default_factory=list)  # blobs.warnings に加える警告
 
 
 def kind(mime: str) -> str:
@@ -48,6 +50,8 @@ def kind(mime: str) -> str:
         return "image"
     if mime == "text/html" or mime == "application/xhtml+xml":
         return "html"
+    if mime.lower() in office.MIME_KIND:
+        return office.MIME_KIND[mime.lower()]
     if mime.startswith("text/") or mime in TEXT_TYPES:
         return "text"
     return "unsupported"
@@ -67,7 +71,28 @@ def page_count(path: Path, mime: str) -> int:
             return getattr(im, "n_frames", 1)
     if k in ("text", "html"):
         return 1
+    if k in OFFICE_KINDS:
+        return len(_office(path, k).pages)
     raise _unsupported(mime)
+
+
+OFFICE_KINDS = ("docx", "xlsx", "pptx")
+_office_cache: tuple[tuple, office.OfficeText] | None = None
+
+
+def _office(path: Path, k: str) -> office.OfficeText:
+    """Office 文書の本文（page_count と iter_pages で 2 回読まないよう、直前の 1 件だけ覚えておく）。"""
+    global _office_cache
+    st = path.stat()
+    key = (str(path), st.st_size, st.st_mtime_ns, k)
+    if _office_cache is not None and _office_cache[0] == key:
+        return _office_cache[1]
+    try:
+        result = office.read_office(path, k)
+    except office.OfficeError as e:
+        raise Unsupported(e.code, str(e)) from e
+    _office_cache = (key, result)
+    return result
 
 
 def _unsupported(mime: str) -> Unsupported:
@@ -143,6 +168,15 @@ def iter_pages(path: Path, mime: str, *, dpi: int = 200, skip: set[int] | None =
         if k == "html":
             text = html_to_text(text)
         yield Page(1, "text", text=normalize(text))
+        return
+
+    if k in OFFICE_KINDS:
+        result = _office(path, k)
+        for i, text in enumerate(result.pages[:MAX_PAGES]):
+            if i + 1 in skip:
+                continue
+            # 警告は最初のページに付ける（途中再開で重複しないよう、そのページを処理したときだけ）
+            yield Page(i + 1, "office", text=normalize(text), warnings=result.warnings if i == 0 else [])
         return
 
     if k == "image":

@@ -650,9 +650,16 @@ class BulkReprocessIn(BaseModel):
 def api_bulk_reprocess(body: BulkReprocessIn, conn: sqlite3.Connection = Depends(get_conn),
                        auth: Auth = Depends(require_admin)):
     from ..reprocess import reprocess
-    if body.scope not in ("failed", "outdated", "all"):
-        raise ValidationFailed("scope は failed / outdated / all のいずれかです")
+    if body.scope not in ("failed", "outdated", "unsupported", "all"):
+        raise ValidationFailed("scope は failed / outdated / unsupported / all のいずれかです")
     return {"queued": reprocess(conn, body.scope, force_ocr=body.force_ocr)}
+
+
+@router.get("/admin/status")
+def api_status(request: Request, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_admin)):
+    """状態と警告（deployment.md 6 章）。外部の監視から使う場合は API トークンで呼ぶ。"""
+    from ..monitor import status
+    return status(conn, request.app.state.settings)
 
 
 # ---------------------------------------------------------------------------

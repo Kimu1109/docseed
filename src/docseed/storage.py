@@ -23,6 +23,8 @@ mimetypes.add_type("text/markdown", ".md")
 mimetypes.add_type("text/csv", ".csv")
 mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/heic", ".heic")
+# ZIP を使う形式（中身の判定で application/zip になった場合は拡張子で補う）
+_OOXML_EXTS = {".docx", ".docm", ".dotx", ".xlsx", ".xlsm", ".xltx", ".pptx", ".pptm", ".potx"}
 _TEXT_EXTS = {".txt", ".md", ".csv", ".tsv", ".json", ".log", ".xml", ".yaml", ".yml", ".ini", ".toml"}
 
 
@@ -41,15 +43,17 @@ def blob_rel_path(sha: str) -> str:
 
 def detect_mime(head: bytes, filename: str) -> str:
     kind = filetype.guess(head)
-    if kind is not None:
-        return kind.mime
     ext = Path(filename).suffix.lower()
     guessed, _ = mimetypes.guess_type(filename)
+    if kind is not None:
+        if kind.mime == "application/zip" and ext in _OOXML_EXTS and guessed:
+            return guessed.lower()
+        return kind.mime
     if ext in _TEXT_EXTS or (guessed and guessed.startswith("text/")):
         return guessed or "text/plain"
     if _looks_like_text(head):
         return guessed or "text/plain"
-    return guessed or "application/octet-stream"
+    return (guessed or "application/octet-stream").lower()
 
 
 def _looks_like_text(head: bytes) -> bool:

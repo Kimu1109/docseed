@@ -9,12 +9,12 @@ import signal
 import sqlite3
 import time
 import traceback
-from pathlib import Path
 
 from .. import db
 from ..config import Settings
 from ..db import Tx, now
 from ..documents import purge_expired
+from ..monitor import cpu_temp
 from ..storage import BlobStore
 from . import queue
 from .process import Context, process_blob, reembed_blob, reset_blob
@@ -24,20 +24,10 @@ log = logging.getLogger("docseed.worker")
 IDLE_SLEEP = 2.0
 HEARTBEAT_EVERY = 30.0
 INBOX_EVERY = 30.0
-THERMAL_PATHS = [Path("/host/thermal/thermal_zone0/temp"), Path("/sys/class/thermal/thermal_zone0/temp")]
 
 
 class Interrupted(Exception):
     """停止の合図（SIGTERM）を受けた。処理中のジョブはやり直しに回す。"""
-
-
-def cpu_temp() -> float | None:
-    for p in THERMAL_PATHS:
-        try:
-            return int(p.read_text().strip()) / 1000.0
-        except (OSError, ValueError):
-            continue
-    return None
 
 
 class Worker:

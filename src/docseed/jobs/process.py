@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 
 from ..db import Tx, now
-from ..pipeline import extract
+from ..pipeline import extract, office
 from ..pipeline.embed import Embedder
 from ..pipeline.ocr import OcrEngine, order_lines, prepare_image
 from ..pipeline.text import chunk_pages, normalize
@@ -129,6 +129,7 @@ def _give_up(conn: sqlite3.Connection, blob_id: int, e: extract.Unsupported) -> 
 
 def _store_page(conn: sqlite3.Connection, ctx: Context, blob_id: int, page: extract.Page,
                 warnings: list[dict]) -> None:
+    warnings.extend(page.warnings)
     if page.source != "ocr":
         with Tx(conn):
             conn.execute("INSERT OR REPLACE INTO pages(blob_id, page_no, source, text) VALUES (?,?,?,?)",
@@ -160,7 +161,7 @@ def _store_page(conn: sqlite3.Connection, ctx: Context, blob_id: int, page: extr
 
 
 def embed_chunks(conn: sqlite3.Connection, ctx: Context, blob_id: int) -> int:
-    rows = conn.execute("SELECT id, text FROM chunks WHERE blob_id = ? ORDER BY seq", (blob_id,)).fetchall()
+    rows = conn.execute("SELECT id, page_no, text FROM chunks WHERE blob_id = ? ORDER BY seq", (blob_id,)).fetchall()
     todo = [r for r in rows if conn.execute("SELECT 1 FROM chunk_vectors WHERE rowid = ?", (r["id"],)).fetchone()
             is None]
     if not todo:
@@ -169,9 +170,21 @@ def embed_chunks(conn: sqlite3.Connection, ctx: Context, blob_id: int) -> int:
         "SELECT filename FROM documents WHERE blob_id = ? ORDER BY deleted_at IS NOT NULL, id LIMIT 1",
         (blob_id,)).fetchone()
     title = name[0] if name else ""
+    # Excel のシートは、途中から始まるチャンクにもシート名と見出し行を文脈として付ける（pipeline.md 5.2）
+    headers = {r[0]: office.table_header(r[1]) for r in conn.execute(
+        "SELECT page_no, text FROM pages WHERE blob_id = ? AND source = 'office' AND substr(text, 1, ?) = ?",
+        (blob_id, len(office.SHEET_PREFIX), office.SHEET_PREFIX))}
+
+    def embed_input(r: sqlite3.Row) -> str:
+        parts = [title] if title else []
+        head = headers.get(r["page_no"])
+        if head and not r["text"].startswith(office.SHEET_PREFIX):
+            parts.append(head)
+        return "\n".join([*parts, r["text"]])
+
     for k in range(0, len(todo), EMBED_COMMIT_EVERY):
         part = todo[k:k + EMBED_COMMIT_EVERY]
-        vecs = ctx.embedder.embed_documents([f"{title}\n{r['text']}" if title else r["text"] for r in part])
+        vecs = ctx.embedder.embed_documents([embed_input(r) for r in part])
         with Tx(conn):
             conn.executemany("INSERT OR REPLACE INTO chunk_vectors(rowid, embedding) VALUES (?, ?)",
                              [(r["id"], v.astype(np.float32).tobytes()) for r, v in zip(part, vecs, strict=True)])

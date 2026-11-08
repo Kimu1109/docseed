@@ -4,6 +4,17 @@
 <div class="page-head"><h1 class="page-title">管理</h1></div>
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 
+{% if sys.alerts %}
+<section class="panel panel-wide" aria-label="確認が必要な項目">
+  <h2>確認が必要な項目</h2>
+  <ul class="alert-list">
+  {% for a in sys.alerts %}
+    <li class="alert-{{ a.level }}"><span class="alert-level">{{ {"error": "異常", "warning": "注意", "info": "情報"}[a.level] }}</span> {{ a.message }}</li>
+  {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
 <section class="panel panel-wide">
   <h2>システム</h2>
   <dl class="stats">
@@ -13,7 +24,22 @@
     <div><dt>SSD の空き</dt><dd>{{ disk.free | filesize }}<span class="unit">/ {{ disk.total | filesize }}</span></dd></div>
     <div><dt>処理待ちのジョブ</dt><dd>{{ stats.jobs_waiting }}</dd></div>
     <div><dt>失敗したジョブ</dt><dd>{{ stats.jobs_failed }}</dd></div>
+    {% if sys.cpu_temp_c is not none %}<div><dt>CPU 温度</dt><dd>{{ "%.1f" | format(sys.cpu_temp_c) }}<span class="unit">℃（{{ thermal_pause_c | int }}℃ で処理を一時停止）</span></dd></div>{% endif %}
   </dl>
+</section>
+
+<section class="panel panel-wide">
+  <h2>バックアップ</h2>
+  <dl class="stats">
+    <div><dt>データベースのスナップショット</dt><dd class="small">{% if sys.backup.db_snapshot %}{{ sys.backup.db_snapshot_at | localtime("%m/%d %H:%M") }}<div class="muted small">{{ sys.backup.db_snapshot }}</div>{% else %}まだありません{% endif %}</dd></div>
+    <div><dt>別の機器へのバックアップ（restic）</dt><dd class="small">
+      {% if sys.backup.restic %}
+        {{ sys.backup.restic_at | localtime("%m/%d %H:%M") }} {% if sys.backup.restic.ok %}<span class="ok-text">成功</span>{% else %}<span class="err-text">失敗</span>{% endif %}
+        {% if sys.backup.restic.snapshot %}<div class="muted small">スナップショット {{ sys.backup.restic.snapshot }}</div>{% endif %}
+      {% else %}記録がありません{% endif %}
+    </dd></div>
+  </dl>
+  <p class="muted small">バックアップはホスト（Raspberry Pi）の systemd タイマーが毎日行います。設定と復旧の手順は README の「バックアップと復旧」を参照してください。</p>
 </section>
 
 <section class="panel panel-wide">
@@ -50,6 +76,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button name="scope" value="failed" class="btn btn-sm">失敗したファイルをすべて再処理</button>
     <button name="scope" value="outdated" class="btn btn-sm">古い版で処理したファイルを再処理</button>
+    <button name="scope" value="unsupported" class="btn btn-sm">形式が未対応だったファイルを再処理</button>
   </form>
 </section>
 

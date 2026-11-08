@@ -32,6 +32,9 @@ def reprocess(conn: sqlite3.Connection, scope: str, *, force_ocr: bool = False) 
         q = "SELECT id FROM blobs WHERE status = 'failed'"
     elif scope == "outdated":
         q = f"SELECT id FROM blobs WHERE status = 'ready' AND coalesce(pipeline_version, 0) < {PIPELINE_VERSION}"
+    elif scope == "unsupported":
+        # 対応形式が増えたとき（Phase 5 の Office 文書など）。未対応のままのものはすぐ unsupported に戻る
+        q = "SELECT id FROM blobs WHERE status = 'unsupported'"
     elif scope == "all":
         q = "SELECT id FROM blobs WHERE status IN ('ready', 'failed', 'unsupported')"
     else:

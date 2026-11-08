@@ -32,11 +32,11 @@ def kind_of(mime: str | None, filename: str = "") -> str:
         return "image"
     if m.startswith(("audio/", "video/")):
         return "media"
-    if "wordprocessingml" in m or m == "application/msword" or ext in ("doc", "docx", "odt", "rtf"):
+    if "wordprocessingml" in m or m == "application/msword" or ext in ("doc", "docx", "docm", "odt", "rtf"):
         return "doc"
-    if "spreadsheetml" in m or m == "application/vnd.ms-excel" or ext in ("xls", "xlsx", "ods", "csv", "tsv"):
+    if "spreadsheetml" in m or m == "application/vnd.ms-excel" or ext in ("xls", "xlsx", "xlsm", "ods", "csv", "tsv"):
         return "sheet"
-    if "presentationml" in m or m == "application/vnd.ms-powerpoint" or ext in ("ppt", "pptx", "odp"):
+    if "presentationml" in m or m == "application/vnd.ms-powerpoint" or ext in ("ppt", "pptx", "pptm", "odp"):
         return "slide"
     if m in ("application/zip", "application/x-7z-compressed", "application/x-tar", "application/gzip",
              "application/x-rar-compressed") or ext in ("zip", "7z", "tar", "gz", "rar"):
@@ -78,6 +78,7 @@ WARNING_TEXT = {
     "too_many_pages": "ページ数が多いため、先頭 {processed} ページだけを処理しました（全 {pages} ページ）",
     "ocr_slow": "{page} ページ目の文字の読み取りに {seconds} 秒かかりました",
     "ocr_timeout": "{page} ページ目の文字の読み取りが時間切れになりました",
+    "sheet_truncated": "シート「{sheet}」はセルが多いため、先頭 {cells} セルだけを検索の対象にしました",
 }
 
 

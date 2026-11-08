@@ -116,6 +116,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 def app_factory() -> FastAPI:
     """uvicorn --factory 用。"""
-    logging.basicConfig(level=Settings.from_env().log_level,
-                        format='{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}')
+    from .logs import setup
+    setup(Settings.from_env().log_level)
     return create_app()

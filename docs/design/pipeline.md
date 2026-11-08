@@ -83,13 +83,16 @@ RETURNING *;
 | HTML | `text/html` | タグを除去して本文のみ（selectolax 等） | Phase 2 |
 | PDF | `application/pdf` | pypdfium2 でページごとにテキスト層を抽出 → 必要なら OCR（3.2） | Phase 2 |
 | 画像（jpeg, png, webp, tiff, gif, bmp, heic） | `image/*` | 前処理 → OCR。複数ページ TIFF はページごと | Phase 2（HEIC は検証後） |
-| Word（docx） | OOXML | python-docx で段落・表を抽出。見出しで区切った単位を「ページ」とみなす | Phase 5 |
-| Excel（xlsx） | OOXML | openpyxl でシートごとに 1 ページ（セルをタブ区切り） | Phase 5 |
-| PowerPoint（pptx） | OOXML | python-pptx でスライドごとに 1 ページ（ノートも含める） | Phase 5 |
+| Word（docx, docm） | OOXML | python-docx で段落・表を抽出。見出しで区切った単位を「ページ」とみなす（3.4） | Phase 5 |
+| Excel（xlsx, xlsm） | OOXML | openpyxl でシートごとに 1 ページ（セルをタブ区切り。3.4） | Phase 5 |
+| PowerPoint（pptx, pptm） | OOXML | python-pptx でスライドごとに 1 ページ（ノートも含める。3.4） | Phase 5 |
+| 古い Office 形式（doc, xls, ppt）、パスワード付きの Office 文書 | OLE の複合ファイル | 抽出しない（`encrypted_office`） | — |
 | その他 | — | 保存・共有のみ。`blobs.status = 'unsupported'` | — |
 
 - パスワード付き・暗号化 PDF は抽出せず `unsupported`（エラーメッセージで理由を表示）。
 - 上限: 1 ファイル 2000 ページまで。超えた分は処理しない（警告を表示）。
+
+- Office 文書の MIME は内容（`filetype`）で判定する。判定が `application/zip` になった場合だけ拡張子で補う。
 
 ### 3.2 PDF ページで OCR するかの判定
 
@@ -111,6 +114,21 @@ RETURNING *;
 - 制御文字（`\n` と `\t` 以外）を除去
 
 検索クエリにも同じ NFKC 正規化をかける。
+
+### 3.4 Office 文書（Phase 5）
+
+`pages.source = 'office'`。OCR はしない（埋め込まれた画像の中の文字は対象外）。
+
+| 形式 | 「ページ」の単位 | 本文の作り方 |
+|---|---|---|
+| Word | 見出し 1・見出し 2・タイトルの段落で区切る（見出し 3 以下では区切らない）。見出しの無い文書は 1 ページ | 本文の段落と表を文書の順に並べる。表は 1 行をタブ区切りの 1 行にし、結合セルで続けて同じ値が並ぶものは 1 つにする。ヘッダー・フッター・脚注・コメントは含めない |
+| Excel | シートごと（非表示のシートも含める） | 1 行目に `シート: <シート名>`、以降は値の入った行をタブ区切りで（空の行・行末の空のセルは飛ばす）。数式は保存されている計算結果を使う。日付は `2026-04-01`（時刻があれば `2026-04-01 13:30`）、整数値の小数は整数、真偽値は `TRUE` / `FALSE`。1 シート 100 万セルまで（超えた分は `sheet_truncated` の警告） |
+| PowerPoint | スライドごと | タイトル → 他の図形を上から（同じ高さなら左から）の順。グループの中の図形と表も含める。ノートは末尾に `ノート:` に続けて付ける |
+
+- 安全策（security.md 6 章）: ZIP の展開後の合計 500MB・圧縮率 200 倍・項目数 2 万を超えるものは `office_too_large`（`unsupported`）。部品が足りない・XML が壊れているものは `corrupt_file`（`failed`）。
+- 原本は拡張子の無い名前（`files/ab/cd/<sha256>`）で保存しているため、各ライブラリにはファイルオブジェクトで渡す（openpyxl はパスの拡張子で形式を判定する）。
+- 画面の「取り出したテキスト」では、ページの代わりに「N 番目の区切り」「N 枚目のシート」「スライド N」と表示する。
+- Phase 5 より前に保存した Office 文書は `unsupported` になっているので、管理画面の「形式が未対応だったファイルを再処理」（`docseed reprocess unsupported`）で処理し直す。
 
 ## 4. OCR（PP-OCRv6）
 
@@ -203,7 +221,7 @@ for 各ページ:
 ```
 
 - チャンクはページをまたがない（検索結果からページへ移動できるようにするため）。短いページ（100 文字未満）は次のページとまとめ、`page_no` には最初のページを入れる。
-- 表形式（xlsx, csv）は行の途中で切らない。先頭行（見出し行）を各チャンクの先頭に付ける。
+- 表形式（xlsx, csv）は行の途中で切らない（改行で文を区切るので、1 行が 800 文字を超えない限り切れない）。先頭行（見出し行）は、xlsx では埋め込みの入力にだけ付ける（5.2）。csv は未対応。
 - ruri-v3-70m の最大長は 8192 トークンなので、800 文字なら切り捨ては起きない。
 
 ### 5.2 チャンクに付ける文脈
@@ -216,6 +234,8 @@ for 各ページ:
 ```
 
 DB の `chunks.text` には本文だけを保存する（全文検索とハイライトに使うため）。
+
+Excel のシートでは、シートの途中から始まるチャンクの埋め込みの入力に、ファイル名の次にそのシートの先頭 2 行（`シート: <名前>` と見出し行）を付ける（5.1 の「先頭行を各チャンクの先頭に付ける」を、全文検索・ハイライトの位置をずらさない形で実現したもの）。
 
 ## 6. 埋め込み（ruri-v3-70m）
 
@@ -252,10 +272,13 @@ class Embedder(Protocol):
 | コード | 状況 | 結果 |
 |---|---|---|
 | `encrypted_pdf` | パスワード付き PDF | `unsupported` |
+| `encrypted_office` | パスワード付き、または古い形式（doc / xls / ppt）の Office 文書 | `unsupported` |
+| `office_too_large` | 展開すると大きすぎる Office 文書（ZIP 爆弾対策） | `unsupported` |
 | `unsupported_type` | 対応していない形式 | `unsupported`（保存・共有は可能） |
 | `corrupt_file` | ファイルが読めない | `failed`（リトライしない） |
 | `too_many_pages` | 2000 ページ超 | 2000 ページまで処理して `ready`（警告つき） |
 | `ocr_timeout` | 1 ページの OCR が 120 秒超 | そのページを空にして続行（警告つき） |
+| `sheet_truncated` | Excel の 1 シートが 100 万セル超 | 先頭 100 万セルまで処理して `ready`（警告つき） |
 | `out_of_memory` | メモリ不足 | リトライ。3 回失敗で `failed` |
 | `internal_error` | その他の例外 | リトライ。3 回失敗で `failed` |
 
