@@ -8,8 +8,17 @@
 <div class="doc-title">
   <span class="kind kind-{{ k }} kind-lg" title="{{ kind_label[k] }}"></span>
   <h1>{{ doc.filename }}</h1>
+  <button type="button" class="btn" data-open-dialog="dlg-share" hx-get="/x/share?type=document&id={{ doc.id }}"
+          hx-target="#share-body" hx-swap="outerHTML">共有</button>
   <a class="btn btn-primary" href="/api/v1/documents/{{ doc.id }}/content">ダウンロード</a>
 </div>
+<dialog id="dlg-share" class="dialog dialog-wide">
+  <div class="dialog-in">
+    <h2>「{{ doc.filename }}」を共有</h2>
+    <div id="share-body"><p class="muted">読み込んでいます…</p></div>
+    <div class="dialog-actions"><button type="button" class="btn" data-close-dialog>閉じる</button></div>
+  </div>
+</dialog>
 
 <div class="doc-layout">
   <section class="preview" aria-label="プレビュー">

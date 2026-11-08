@@ -19,6 +19,7 @@ from .db import connect, migrate
 from .errors import AppError, Unauthenticated
 from .search import QueryEmbedder
 from .storage import BlobStore
+from .web.public import router as public_router
 from .web.routes import render_error
 from .web.routes import router as web_router
 
@@ -38,6 +39,11 @@ class SecurityHeaders(BaseHTTPMiddleware):
         if "content-security-policy" not in h and "x-frame-options" not in h:
             h["Content-Security-Policy"] = APP_CSP
             h["X-Frame-Options"] = "SAMEORIGIN"
+        if request.url.path.startswith("/s/"):
+            # 共有リンクのトークンを Referer で外部に漏らさない・検索エンジンに載せない・キャッシュさせない
+            h["Referrer-Policy"] = "no-referrer"
+            h["X-Robots-Tag"] = "noindex, nofollow"
+            h["Cache-Control"] = "no-store"
         return resp
 
 
@@ -74,6 +80,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "web" / "static"), name="static")
     app.include_router(health)
     app.include_router(api_router)
+    app.include_router(public_router)
     app.include_router(web_router)
 
     @app.exception_handler(AppError)

@@ -8,8 +8,8 @@ Raspberry Pi 5 で動くローカルのドキュメントサーバーです。�
 | Phase 1 | ログイン、フォルダ、アップロード / ダウンロード、ゴミ箱、ユーザー管理、画面 | 完了 |
 | Phase 2 | OCR・埋め込みの処理（worker） | 完了 |
 | Phase 3 | 検索 | 完了 |
-| Phase 4 | 共有（フォルダのメンバー、共有リンク、Samba） | これから |
-| Phase 5 | 運用（バックアップ、監視、Office 文書） | |
+| Phase 4 | 共有（フォルダのメンバー、共有リンク、受け取り箱） | 完了 |
+| Phase 5 | 運用（バックアップ、監視、Office 文書） | これから |
 
 ## Raspberry Pi で動かす（Docker）
 
@@ -73,6 +73,59 @@ docker compose logs -f worker                           # 処理の様子（Ctrl
 
 自分の文書に対する「質問」と「正解のファイル名」を 20〜30 件ほど JSON に書き、`scripts/eval_search.py` で Recall@5 / MRR を測れます（使い方はスクリプト冒頭のコメント）。
 意味検索で無関係なファイルが多く出る・逆に見つからない場合は、`--sem-min 0.75,0.80,0.85` で類似度の下限を比べ、良かった値を `.env` の `DOCSEED_SEARCH_SEM_MIN` に設定します（既定 0.80）。
+
+## 共有
+
+フォルダやファイルの画面の「共有」から設定します。
+
+| 相手 | 方法 | できること |
+|---|---|---|
+| docseed のほかのユーザー | フォルダの「共有」→ ユーザーを追加 | 「閲覧のみ」か「編集できる」。下のフォルダにも引き継がれます。追加・変更は所有者だけ |
+| docseed のアカウントが無い人 | 「共有」→ リンクを作成 | 閲覧・ダウンロード用、またはフォルダへファイルを送ってもらう受け取り用。有効期限（既定 7 日）・パスワード・ダウンロード回数の上限を付けられます |
+
+- リンクはいつでも「無効にする」で止められます。自分が作ったリンクの一覧は「設定」にあります
+- リンクを作った人がそのフォルダの権限を失うと、そのリンクは自動的に使えなくなります
+- フォルダの「ZIP」で、中身をまとめてダウンロードできます（2GB まで）
+- 外部の人にリンクを渡すには、docseed にインターネットから届く必要があります。Tailscale を使う場合は Tailscale Funnel などで公開範囲を慎重に決めてください
+
+## 受け取り箱（LAN からファイルを放り込む）
+
+`/srv/docseed/inbox/<ユーザー名>/` に置いたファイルが、そのユーザーの「Inbox」フォルダに自動で取り込まれます（30 秒ごと。サブフォルダの構造も保ちます）。スキャナーの保存先や PC からのドラッグ＆ドロップに使えます。
+
+1. `.env` で有効にして worker を再起動する
+   ```bash
+   # .env
+   DOCSEED_INBOX_ENABLED=true
+   docker compose up -d worker
+   ```
+   有効にすると、ユーザーごとのフォルダ（`/srv/docseed/inbox/<ユーザー名>/`）が作られます。
+
+2. Pi の Samba で LAN に公開する（Pi 本体に入れます）
+   ```bash
+   sudo apt install -y samba
+   getent passwd 1000 | cut -d: -f1       # UID 1000 のユーザー名（多くは最初に作ったユーザー）を確認
+   sudo smbpasswd -a <そのユーザー名>      # LAN から接続するときのパスワードを設定
+   ```
+   `/etc/samba/smb.conf` の末尾に、使う人ごとに追記します（`kimu` は docseed のユーザー名、`<UID1000のユーザー名>` は上で確認した名前）。
+   ```ini
+   [docseed-kimu]
+      path = /srv/docseed/inbox/kimu
+      read only = no
+      valid users = <UID1000のユーザー名>
+      force user = <UID1000のユーザー名>
+      create mask = 0644
+      directory mask = 0755
+   ```
+   ```bash
+   sudo systemctl restart smbd
+   sudo ufw allow from 192.168.0.0/16 to any port 445 proto tcp   # ufw を使っている場合（LAN の範囲に合わせる）
+   ```
+   Windows なら `\\<Pi の IP アドレス>\docseed-kimu`、Mac なら Finder の「サーバへ接続」で `smb://<Pi の IP アドレス>/docseed-kimu` を開きます。
+
+- 書き込み中のファイルを避けるため、置いてから 30〜60 秒ほどで取り込まれます
+- 取り込んだファイルは受け取り箱から消えます（`DOCSEED_INBOX_KEEP=true` なら `.imported/` に残す）
+- 取り込めなかったファイルは `.failed/` に移り、理由が `<ファイル名>.error.txt` に書かれます
+- `force user` でファイルの持ち主を UID 1000 に合わせているので、worker が読み取り・削除できます
 
 ## 開発
 

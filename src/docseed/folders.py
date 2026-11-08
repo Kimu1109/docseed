@@ -111,7 +111,8 @@ def list_children(conn: sqlite3.Connection, folder_id: int, *, sort: str = "name
     """(子フォルダ, 文書) を返す。フォルダは常に名前順で先頭。"""
     folders = conn.execute(
         "SELECT f.*, (SELECT count(*) FROM documents d WHERE d.folder_id = f.id AND d.deleted_at IS NULL)"
-        " + (SELECT count(*) FROM folders c WHERE c.parent_id = f.id AND c.deleted_at IS NULL) AS item_count"
+        " + (SELECT count(*) FROM folders c WHERE c.parent_id = f.id AND c.deleted_at IS NULL) AS item_count,"
+        " (SELECT count(*) FROM folder_members m WHERE m.folder_id = f.id) AS member_count"
         " FROM folders f WHERE f.parent_id = ? AND f.deleted_at IS NULL ORDER BY f.name COLLATE NOCASE",
         (folder_id,),
     ).fetchall()
@@ -269,3 +270,62 @@ def delete_folder(conn: sqlite3.Connection, user: User, folder_id: int) -> None:
             f"UPDATE documents SET deleted_at = ?, deleted_by = ? WHERE folder_id IN ({q}) AND deleted_at IS NULL",
             (t, user.id, *ids),
         )
+
+
+# ---------------------------------------------------------------------------
+# メンバー（ユーザー間のフォルダ共有）
+# ---------------------------------------------------------------------------
+
+def list_members(conn: sqlite3.Connection, user: User, folder_id: int) -> list[dict]:
+    """このフォルダに対して権限を持つ人（所有者・このフォルダのメンバー・上位フォルダから継承したメンバー）。"""
+    require_folder_role(conn, user, folder_id, "viewer")
+    f = get_folder_row(conn, folder_id)
+    owner = conn.execute("SELECT id, username, display_name FROM users WHERE id = ?", (f["owner_id"],)).fetchone()
+    out = [{"user_id": owner["id"], "username": owner["username"], "display_name": owner["display_name"],
+            "role": "owner", "inherited_from": None}]
+    crumbs = path(conn, folder_id)
+    names = {c.id: (c.name or "マイファイル") for c in crumbs}
+    rows = conn.execute(
+        f"SELECT m.folder_id, m.role, u.id, u.username, u.display_name, u.is_active FROM folder_members m"
+        f" JOIN users u ON u.id = m.user_id WHERE m.folder_id IN ({','.join('?' * len(crumbs))})"
+        f" ORDER BY u.display_name", [c.id for c in crumbs]).fetchall()
+    best: dict[int, dict] = {}
+    for r in rows:
+        cur = best.get(r["id"])
+        if cur is None or ROLE_RANK[r["role"]] > ROLE_RANK[cur["role"]] or \
+                (r["role"] == cur["role"] and r["folder_id"] == folder_id):
+            best[r["id"]] = {"user_id": r["id"], "username": r["username"], "display_name": r["display_name"],
+                             "role": r["role"], "active": bool(r["is_active"]),
+                             "inherited_from": None if r["folder_id"] == folder_id else names[r["folder_id"]]}
+    return out + sorted(best.values(), key=lambda x: x["display_name"])
+
+
+def set_member(conn: sqlite3.Connection, user: User, folder_id: int, member_id: int, role: str) -> None:
+    if role not in ("viewer", "editor"):
+        raise ValidationFailed("権限は viewer か editor です")
+    with Tx(conn):
+        require_folder_role(conn, user, folder_id, "owner")
+        f = get_folder_row(conn, folder_id)
+        target = conn.execute("SELECT id, is_active FROM users WHERE id = ?", (member_id,)).fetchone()
+        if target is None or not target["is_active"]:
+            raise NotFound("ユーザーが見つかりません")
+        if member_id == f["owner_id"]:
+            raise ValidationFailed("所有者はメンバーに追加できません")
+        conn.execute(
+            "INSERT INTO folder_members(folder_id, user_id, role, granted_by, created_at) VALUES (?,?,?,?,?)"
+            " ON CONFLICT(folder_id, user_id) DO UPDATE SET role = excluded.role, granted_by = excluded.granted_by",
+            (folder_id, member_id, role, user.id, now()))
+        from .audit import audit
+        audit(conn, "member_grant", user_id=user.id, target_type="folder", target_id=folder_id,
+              member=member_id, role=role)
+
+
+def remove_member(conn: sqlite3.Connection, user: User, folder_id: int, member_id: int) -> None:
+    with Tx(conn):
+        require_folder_role(conn, user, folder_id, "owner")
+        cur = conn.execute("DELETE FROM folder_members WHERE folder_id = ? AND user_id = ?", (folder_id, member_id))
+        if cur.rowcount == 0:
+            raise NotFound("このフォルダのメンバーではありません"
+                           "（上位のフォルダで共有されている場合は、そちらで削除してください）")
+        from .audit import audit
+        audit(conn, "member_revoke", user_id=user.id, target_type="folder", target_id=folder_id, member=member_id)

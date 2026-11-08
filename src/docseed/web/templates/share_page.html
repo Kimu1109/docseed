@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}{{ doc.filename if doc else (folder.name if folder else "ファイルの受け取り") }}{% endblock %}
+{% block bare %}
+<header class="top">
+  <span class="brand"><span class="brand-mark" aria-hidden="true"></span>docseed</span>
+  <div class="top-right muted small">
+    {{ creator.display_name }} さんが共有{% if share.expires_at %}（{{ share.expires_at | localtime }} まで有効）{% endif %}
+  </div>
+</header>
+<main class="public">
+
+{% if doc %}
+  {% set k = kind_of(doc.mime_type, doc.filename) %}
+  <div class="doc-title">
+    <span class="kind kind-{{ k }} kind-lg" title="{{ kind_label[k] }}"></span>
+    <h1>{{ doc.filename }}</h1>
+    <a class="btn btn-primary" href="/s/{{ token }}/download">ダウンロード（{{ doc.size_bytes | filesize }}）</a>
+  </div>
+  <section class="preview" aria-label="プレビュー">
+    {% if doc.mime_type == "application/pdf" %}
+      <iframe src="/s/{{ token }}/preview/{{ doc.id }}" title="{{ doc.filename }} のプレビュー"></iframe>
+    {% elif doc.mime_type in ["image/png", "image/jpeg", "image/webp", "image/gif"] %}
+      <img src="/s/{{ token }}/preview/{{ doc.id }}" alt="{{ doc.filename }}">
+    {% elif can_preview(doc.mime_type) %}
+      <iframe class="textframe" src="/s/{{ token }}/preview/{{ doc.id }}" title="{{ doc.filename }} のプレビュー"></iframe>
+    {% else %}
+      <div class="nopreview"><p>この形式（{{ kind_label[k] }}）はブラウザで表示できません。ダウンロードして開いてください。</p></div>
+    {% endif %}
+  </section>
+
+{% elif upload_to %}
+  <div class="page-head"><h1 class="page-title">ファイルを送る</h1></div>
+  <p class="note">{{ creator.display_name }} さんの「{{ upload_to.name or "マイファイル" }}」にファイルを送ります。送ったファイルの一覧は、この画面には表示されません。</p>
+  {% if results %}
+  <ul class="sent">
+    {% for r in results %}
+      <li class="{{ 'ok' if r.ok else 'ng' }}">{{ r.name }}<span class="small">{{ "送信しました" if r.ok else r.error }}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <form method="post" action="/s/{{ token }}/upload" enctype="multipart/form-data" class="form form-panel upload-form">
+    <label>送るファイル（複数選べます。1 ファイル 1GB まで）<input type="file" name="files" multiple required></label>
+    <button type="submit" class="btn btn-primary">送信</button>
+  </form>
+
+{% else %}
+  <div class="page-head">
+    <nav class="crumbs" aria-label="現在の場所">
+      {%- for c in crumbs %}
+        {%- if not loop.first %}<span class="sep" aria-hidden="true">/</span>{% endif %}
+        {%- if loop.last %}<span aria-current="page">{{ c.name or "共有フォルダ" }}</span>
+        {%- else %}<a href="/s/{{ token }}?folder={{ c.id }}">{{ c.name or "共有フォルダ" }}</a>{% endif %}
+      {%- endfor %}
+    </nav>
+    {% if folders or docs %}<div class="actions"><a class="btn" href="/s/{{ token }}/archive?folder={{ folder.id }}">まとめてダウンロード（ZIP）</a></div>{% endif %}
+  </div>
+  {% if not folders and not docs %}
+    <div class="empty"><p>このフォルダは空です。</p></div>
+  {% else %}
+  <table class="files">
+    <thead><tr><th class="col-kind"><span class="sr">種類</span></th><th class="col-name">名前</th><th class="col-date">更新日</th><th class="col-size">サイズ</th><th class="col-actions"><span class="sr">操作</span></th></tr></thead>
+    <tbody>
+    {% for f in folders %}
+      <tr>
+        <td class="col-kind"><span class="kind kind-folder"></span></td>
+        <td class="col-name"><a class="name" href="/s/{{ token }}?folder={{ f.id }}">{{ f.name }}</a></td>
+        <td class="col-date">{{ f.updated_at | shortdate }}</td><td class="col-size muted">{{ f.item_count }} 項目</td><td></td>
+      </tr>
+    {% endfor %}
+    {% for d in docs %}
+      {% set k = kind_of(d.mime_type, d.filename) %}
+      <tr>
+        <td class="col-kind"><span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span></td>
+        <td class="col-name">{% if can_preview(d.mime_type) %}<a class="name" href="/s/{{ token }}/preview/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% else %}<span class="name">{{ d.filename }}</span>{% endif %}</td>
+        <td class="col-date">{{ d.updated_at | shortdate }}</td>
+        <td class="col-size">{{ d.size_bytes | filesize }}</td>
+        <td class="col-actions"><a class="btn btn-sm" href="/s/{{ token }}/download/{{ d.id }}">ダウンロード</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+{% endif %}
+</main>
+{% endblock %}

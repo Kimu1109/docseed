@@ -39,7 +39,8 @@ def file_response(path: Path, doc: sqlite3.Row, *, inline: bool) -> FileResponse
         # PDF はブラウザの PDF ビューアで表示する。sandbox を付けるとビューアが動かないため付けない
         headers["X-Frame-Options"] = "SAMEORIGIN"
     else:
-        headers["Content-Security-Policy"] = "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox"
+        headers["Content-Security-Policy"] = ("default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox;"
+                                              " frame-ancestors 'self'")
     return FileResponse(
         path, media_type=media if inline else (mime or "application/octet-stream"),
         filename=doc["filename"], content_disposition_type="inline" if inline else "attachment",

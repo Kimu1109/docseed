@@ -241,10 +241,10 @@ class Embedder(Protocol):
 
 ## 7. inbox フォルダからの取り込み（任意機能）
 
-- Samba で `/srv/docseed/inbox/<username>/` を各ユーザーに公開する。
+- Samba で `/srv/docseed/inbox/<username>/` を各ユーザーに公開する（Pi 本体の samba。設定は README）。`DOCSEED_INBOX_ENABLED=true` のときだけ動き、有効なユーザーごとのフォルダを worker が作る。
 - worker が 30 秒ごとに走査し、サイズと更新時刻が 10 秒以上変わっていないファイルを取り込む（書き込み中のファイルを避ける）。
 - 取り込み先: そのユーザーのルート直下の `Inbox` フォルダ（無ければ作成）。inbox 内のサブフォルダ構造は保つ。
-- 取り込み後、元ファイルは削除する（設定で `inbox/<username>/.imported/` への移動にも変更可）。
+- 取り込み後、元ファイルは削除する（設定で `inbox/<username>/.imported/` への移動にも変更可）。取り込めなかったファイル（サイズ超過など）は `.failed/` へ移し、理由を `<名前>.error.txt` に書く。
 - `.` で始まるファイルと、`~$` で始まる Office の一時ファイルは無視する。
 
 ## 8. エラー一覧

@@ -28,6 +28,31 @@
   </section>
 
   <section class="panel panel-wide">
+    <h2>自分が作った共有リンク</h2>
+    {% if my_shares %}
+    <table class="plain">
+      <thead><tr><th>対象</th><th>種類</th><th>期限</th><th>ダウンロード</th><th><span class="sr">操作</span></th></tr></thead>
+      <tbody>
+      {% for l in my_shares %}
+        <tr>
+          <td><a href="{{ ('/f/' if l.target_type == 'folder' else '/d/') ~ l.target_id }}">{{ l.target_name or "（マイファイル）" }}</a>
+            <div class="small"><input class="link-url" value="{{ base_url }}/s/{{ l.token }}" readonly aria-label="リンク"></div></td>
+          <td>{{ "受け取り用" if l.permission == "upload" else "閲覧" }}{% if l.password_hash %}・パスワードあり{% endif %}</td>
+          <td>{{ (l.expires_at | localtime) if l.expires_at else "無期限" }}</td>
+          <td>{{ l.download_count }}{% if l.max_downloads %} / {{ l.max_downloads }}{% endif %}</td>
+          <td><form method="post" action="/settings/shares/{{ l.id }}/revoke" data-confirm="このリンクを無効にしますか？">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn btn-sm btn-danger">無効にする</button></form></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">有効な共有リンクはありません。フォルダやファイルの「共有」から作れます。</p>
+    {% endif %}
+  </section>
+
+  <section class="panel panel-wide">
     <h2>API トークン</h2>
     <p class="muted">スクリプトやコマンドラインからファイルを扱うときに使います。トークンはアカウントと同じ権限を持つので、他人に渡さないでください。</p>
     {% if new_token %}

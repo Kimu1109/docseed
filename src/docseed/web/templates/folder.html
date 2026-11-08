@@ -3,12 +3,15 @@
 {% block main %}
 <div class="page-head">
   {% set link_last = False %}{% include "_crumbs.html" %}
-  {% if can_edit %}
   <div class="actions">
+    <a class="btn" href="/api/v1/folders/{{ folder.id }}/archive" title="このフォルダをまとめてダウンロード">ZIP</a>
+    <button type="button" class="btn" data-open-dialog="dlg-share" hx-get="/x/share?type=folder&id={{ folder.id }}"
+            hx-target="#share-body" hx-swap="outerHTML">共有</button>
+    {% if can_edit %}
     <button type="button" class="btn" data-open-dialog="dlg-folder">新しいフォルダ</button>
     <button type="button" class="btn btn-primary" data-upload-pick>アップロード</button>
+    {% endif %}
   </div>
-  {% endif %}
 </div>
 {% if owner.id != user.id %}
 <p class="note">{{ owner.display_name }} さんのフォルダです。あなたの権限は「{{ {"owner": "所有者", "editor": "編集できる", "viewer": "閲覧のみ"}[role] }}」です。</p>
@@ -26,6 +29,13 @@
 
 {% include "_listing.html" %}
 
+<dialog id="dlg-share" class="dialog dialog-wide">
+  <div class="dialog-in">
+    <h2>「{{ folder.name or "マイファイル" }}」を共有</h2>
+    <div id="share-body"><p class="muted">読み込んでいます…</p></div>
+    <div class="dialog-actions"><button type="button" class="btn" data-close-dialog>閉じる</button></div>
+  </div>
+</dialog>
 {% if can_edit %}
 <dialog id="dlg-folder" class="dialog">
   <form hx-post="/f/{{ folder.id }}/folders" hx-target="#listing" hx-swap="outerHTML" data-close-on-success>

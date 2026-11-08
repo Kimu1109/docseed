@@ -65,13 +65,9 @@ services:
     networks: [internal]                   # 外部へ通信させない
     restart: unless-stopped
 
-  samba:                                    # 任意（profiles で有効化）
-    profiles: ["samba"]
-    image: <arm64 対応の Samba イメージ>
-    ports: ["445:445"]
-    volumes:
-      - /srv/docseed/inbox:/shares/inbox
-    restart: unless-stopped
+  # Samba はコンテナにせず、Pi 本体の samba パッケージで /srv/docseed/inbox/<ユーザー名> を公開する（Phase 4 で決定）。
+  # 理由: 保守されている arm64 のイメージの選択肢が少ないこと、ファイルの持ち主（UID 1000）を
+  # force user で合わせるだけで済み、設定が単純なこと。手順は README の「受け取り箱」。
 
 networks:
   default: {}

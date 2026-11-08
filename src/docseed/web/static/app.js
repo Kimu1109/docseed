@@ -67,6 +67,13 @@
       htmx.trigger($("select[name=target]", form), "load-targets");
     });
 
+    const copy = e.target.closest("[data-copy]");
+    if (copy) {
+      navigator.clipboard?.writeText(copy.dataset.copy).then(
+        () => showToast("リンクをコピーしました"),
+        () => showToast("コピーできませんでした。リンクを選んでコピーしてください", "error"));
+    }
+
     const toggle = e.target.closest("[data-nav-toggle]");
     if (toggle) {
       const side = $("#side");

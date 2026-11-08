@@ -23,6 +23,7 @@ log = logging.getLogger("docseed.worker")
 
 IDLE_SLEEP = 2.0
 HEARTBEAT_EVERY = 30.0
+INBOX_EVERY = 30.0
 THERMAL_PATHS = [Path("/host/thermal/thermal_zone0/temp"), Path("/sys/class/thermal/thermal_zone0/temp")]
 
 
@@ -49,6 +50,12 @@ class Worker:
             ctx.between_pages = self._between_pages
         self.stopping = False
         self._last_beat = 0.0
+        self._last_inbox = 0.0
+        self.inbox = None
+        if settings.inbox_enabled:
+            from ..inbox import InboxScanner
+            self.inbox = InboxScanner(settings.inbox_dir, self.store, max_bytes=settings.max_upload_bytes,
+                                      keep=settings.inbox_keep)
 
     # ---- 合間の処理（ページごと・埋め込みのバッチごと） -------------------
     def _between_pages(self) -> None:
@@ -93,6 +100,19 @@ class Worker:
             self.conn.execute("INSERT INTO settings(key, value) VALUES ('worker.daily', ?)"
                               " ON CONFLICT(key) DO UPDATE SET value = excluded.value", (today,))
         log.info("daily: ゴミ箱から %d 件を完全に削除しました", n)
+
+    def scan_inbox(self, force: bool = False) -> int:
+        if self.inbox is None:
+            return 0
+        t = time.monotonic()
+        if not force and t - self._last_inbox < INBOX_EVERY:
+            return 0
+        self._last_inbox = t
+        try:
+            return self.inbox.scan(self.conn)
+        except OSError as e:
+            log.warning("inbox: %s", e)
+            return 0
 
     # ---- ジョブ ------------------------------------------------------------
     def run_once(self) -> bool:
@@ -146,6 +166,7 @@ class Worker:
             try:
                 self.heartbeat()
                 self.daily()
+                self.scan_inbox()
                 if not self.run_once():
                     time.sleep(IDLE_SLEEP)
                 else:

@@ -7,6 +7,7 @@ import sqlite3
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .. import documents as dm
@@ -260,6 +261,123 @@ def api_folder_patch(folder_id: int, body: FolderPatch, conn: sqlite3.Connection
 def api_folder_delete(folder_id: int, conn: sqlite3.Connection = Depends(get_conn),
                       auth: Auth = Depends(require_auth)):
     fo.delete_folder(conn, auth.user, folder_id)
+
+
+@router.get("/folders/{folder_id}/members")
+def api_members(folder_id: int, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    return {"members": fo.list_members(conn, auth.user, folder_id)}
+
+
+class MemberIn(BaseModel):
+    role: str
+
+
+@router.put("/folders/{folder_id}/members/{user_id}", status_code=204)
+def api_member_set(folder_id: int, user_id: int, body: MemberIn, conn: sqlite3.Connection = Depends(get_conn),
+                   auth: Auth = Depends(require_auth)):
+    fo.set_member(conn, auth.user, folder_id, user_id, body.role)
+
+
+@router.delete("/folders/{folder_id}/members/{user_id}", status_code=204)
+def api_member_remove(folder_id: int, user_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                      auth: Auth = Depends(require_auth)):
+    fo.remove_member(conn, auth.user, folder_id, user_id)
+
+
+def zip_response(conn: sqlite3.Connection, store: BlobStore, folder_id: int, name: str):
+    from starlette.background import BackgroundTask
+
+    from ..archive import build_zip
+    path = build_zip(conn, store, folder_id)
+    return FileResponse(path, media_type="application/zip", filename=f"{name or 'マイファイル'}.zip",
+                        background=BackgroundTask(path.unlink, missing_ok=True),
+                        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
+
+
+@router.get("/folders/{folder_id}/archive")
+def api_folder_archive(folder_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                       auth: Auth = Depends(require_auth), store: BlobStore = Depends(get_store)):
+    fo.require_folder_role(conn, auth.user, folder_id, "viewer")
+    f = fo.get_folder_row(conn, folder_id)
+    with Tx(conn):
+        audit(conn, "download", user_id=auth.user.id, target_type="folder", target_id=folder_id,
+              ip=client_ip(request), archive=True)
+    return zip_response(conn, store, folder_id, f["name"])
+
+
+@router.get("/users")
+def api_user_directory(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    """フォルダを共有する相手を選ぶための一覧（有効なユーザーの表示名だけ）。"""
+    rows = conn.execute("SELECT id, username, display_name FROM users WHERE is_active = 1 AND id <> ?"
+                        " ORDER BY display_name", (auth.user.id,)).fetchall()
+    return {"users": [dict(r) for r in rows]}
+
+
+# ---------------------------------------------------------------------------
+# 共有リンク
+# ---------------------------------------------------------------------------
+
+def share_json(request: Request, r: sqlite3.Row) -> dict[str, Any]:
+    return {"id": r["id"], "url": str(request.base_url).rstrip("/") + "/s/" + r["token"],
+            "target_type": r["target_type"], "target_id": r["target_id"],
+            "target_name": r["target_name"] if "target_name" in r.keys() else None,
+            "permission": r["permission"], "has_password": bool(r["password_hash"]),
+            "expires_at": r["expires_at"], "max_downloads": r["max_downloads"],
+            "download_count": r["download_count"], "created_by": r["created_by"], "created_at": r["created_at"],
+            "revoked_at": r["revoked_at"]}
+
+
+@router.get("/shares")
+def api_shares(request: Request, target_type: str | None = None, target_id: int | None = None,
+               conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_session)):
+    from ..shares import list_shares
+    if (target_type is None) != (target_id is None):
+        raise ValidationFailed("target_type と target_id は両方指定してください")
+    return {"shares": [share_json(request, r)
+                       for r in list_shares(conn, auth.user, target_type=target_type, target_id=target_id)]}
+
+
+class ShareIn(BaseModel):
+    target_type: str
+    target_id: int
+    permission: str = "read"
+    expires: str | None = "7d"
+    password: str | None = None
+    max_downloads: int | None = None
+
+
+@router.post("/shares", status_code=201)
+def api_share_create(body: ShareIn, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                     auth: Auth = Depends(require_session)):
+    from ..shares import create_share
+    r = create_share(conn, auth.user, body.target_type, body.target_id, permission=body.permission,
+                     expires=body.expires, password=body.password, max_downloads=body.max_downloads)
+    return share_json(request, r)
+
+
+class SharePatch(BaseModel):
+    expires: str | None = None
+    password: str | None = None
+    clear_password: bool = False
+    max_downloads: int | None = None
+    clear_max_downloads: bool = False
+
+
+@router.patch("/shares/{share_id}")
+def api_share_patch(share_id: int, body: SharePatch, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                    auth: Auth = Depends(require_session)):
+    from ..shares import get_share_for_manage, update_share
+    update_share(conn, auth.user, share_id, expires=body.expires, password=body.password,
+                 clear_password=body.clear_password, max_downloads=body.max_downloads,
+                 clear_max=body.clear_max_downloads)
+    return share_json(request, get_share_for_manage(conn, auth.user, share_id))
+
+
+@router.delete("/shares/{share_id}", status_code=204)
+def api_share_revoke(share_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                     auth: Auth = Depends(require_session)):
+    from ..shares import revoke_share
+    revoke_share(conn, auth.user, share_id)
 
 
 # ---------------------------------------------------------------------------

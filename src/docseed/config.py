@@ -33,6 +33,8 @@ class Settings:
     embed_threads: int = 3
     query_threads: int = 1
     search_sem_min: float = 0.80
+    inbox_enabled: bool = False
+    inbox_keep: bool = False
     thermal_pause_c: float = 80.0
     thermal_resume_c: float = 70.0
     extra: dict[str, str] = field(default_factory=dict)
@@ -52,6 +54,10 @@ class Settings:
     @property
     def models_dir(self) -> Path:
         return self.data_dir / "models"
+
+    @property
+    def inbox_dir(self) -> Path:
+        return self.data_dir / "inbox"
 
     @property
     def max_upload_bytes(self) -> int:
@@ -85,6 +91,8 @@ class Settings:
             embed_threads=int(e.get("DOCSEED_EMBED_THREADS", "3")),
             query_threads=int(e.get("DOCSEED_QUERY_THREADS", "1")),
             search_sem_min=float(e.get("DOCSEED_SEARCH_SEM_MIN", "0.80")),
+            inbox_enabled=_bool(e.get("DOCSEED_INBOX_ENABLED"), False),
+            inbox_keep=_bool(e.get("DOCSEED_INBOX_KEEP"), False),
             thermal_pause_c=float(e.get("DOCSEED_THERMAL_PAUSE_C", "80")),
         )
 

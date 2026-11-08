@@ -59,6 +59,9 @@ class Client:
     def post(self, url, **kw):
         return self.http.post(url, **self._h(kw))
 
+    def put(self, url, **kw):
+        return self.http.put(url, **self._h(kw))
+
     def patch(self, url, **kw):
         return self.http.patch(url, **self._h(kw))
 

@@ -106,7 +106,7 @@ def _register_blob(conn: sqlite3.Connection, store: BlobStore, f: StoredFile) ->
 
 def upload(conn: sqlite3.Connection, store: BlobStore, user: User, folder_id: int, filename: str,
            src: BinaryIO, *, max_bytes: int, on_conflict: str = "rename", relative_path: str | None = None,
-           ip: str | None = None) -> UploadResult:
+           ip: str | None = None, via_share_id: int | None = None) -> UploadResult:
     if on_conflict not in ON_CONFLICT:
         raise ValidationFailed("on_conflict は rename / replace / error のいずれかです")
     fo.require_folder_role(conn, user, folder_id, "editor")
@@ -140,8 +140,9 @@ def upload(conn: sqlite3.Connection, store: BlobStore, user: User, folder_id: in
                     name = free_doc_name(conn, target, name)
             if not replaced:
                 cur = conn.execute(
-                    "INSERT INTO documents(folder_id, blob_id, filename, created_by, created_at, updated_at)"
-                    " VALUES (?,?,?,?,?,?)", (target, blob_id, name, user.id, t, t),
+                    "INSERT INTO documents(folder_id, blob_id, filename, created_by, created_at, updated_at,"
+                    " uploaded_via_share_id) VALUES (?,?,?,?,?,?,?)",
+                    (target, blob_id, name, user.id, t, t, via_share_id),
                 )
                 doc_id = int(cur.lastrowid)
             audit(conn, "upload", user_id=user.id, target_type="document", target_id=doc_id, ip=ip,
