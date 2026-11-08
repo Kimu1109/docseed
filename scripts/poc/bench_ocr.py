@@ -15,6 +15,8 @@
     正解テキストがあれば文字誤り率（CER）を計算する:
       画像  foo.png  → foo.gt.txt
       PDF   foo.pdf  → foo.p1.gt.txt, foo.p2.gt.txt, …（ページごと）
+                     または foo.p1-2.gt.txt（複数ページ分をまとめた正解。ページを順に連結して比較）
+      正解テキストの「!」または「#」で始まる行はコメントとして無視する
 
 出力:
     results/<日時>-ocr.jsonl  … ページごとの記録と設定ごとの集計
@@ -27,6 +29,7 @@ from __future__ import annotations
 import argparse
 import itertools
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -260,6 +263,25 @@ def reading_order(lines: list[Line], min_score: float) -> tuple[str, bool]:
     return "\n".join(out), vertical_page
 
 
+def read_gt(path: Path) -> str:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return "\n".join(l for l in lines if not l.lstrip().startswith(("!", "#")))
+
+
+def range_gt_files(pdf: Path) -> list[tuple[int, int, Path]]:
+    """foo.p1-2.gt.txt 形式の正解ファイルを (開始, 終了, パス) で返す。"""
+    out = []
+    for f in pdf.parent.glob(f"{glob_escape(pdf.stem)}.p*-*.gt.txt"):
+        m = re.fullmatch(re.escape(pdf.stem) + r"\.p(\d+)-(\d+)\.gt\.txt", f.name)
+        if m:
+            out.append((int(m.group(1)), int(m.group(2)), f))
+    return sorted(out)
+
+
+def glob_escape(s: str) -> str:
+    return re.sub(r"([*?\[])", r"[\1]", s)
+
+
 def normalize_for_cer(s: str) -> str:
     s = unicodedata.normalize("NFKC", s)
     return "".join(ch for ch in s if not ch.isspace())
@@ -294,6 +316,7 @@ def run_single(args: argparse.Namespace) -> None:
     page_secs: list[float] = []
     cers: list[float] = []
     temps: list[float] = []
+    page_texts: dict[tuple[Path, int], str] = {}
     started = time.monotonic()
     rounds = 0
     while True:
@@ -315,13 +338,15 @@ def run_single(args: argparse.Namespace) -> None:
                 "temp_c": common.cpu_temp_c(), "freq_mhz": common.cpu_freq_mhz(),
             }
             if p.gt_path.exists():
-                rec["cer"] = cer(text, p.gt_path.read_text(encoding="utf-8"))
+                rec["cer"] = cer(text, read_gt(p.gt_path))
                 cers.append(rec["cer"])
             if args.save_text and rounds == 0:
                 out = args.save_text / args.engine / f"dpi{args.dpi}_det{args.det_side}"
                 out.mkdir(parents=True, exist_ok=True)
                 suffix = f".p{p.page}" if p.is_pdf else ""
                 (out / f"{p.file.stem}{suffix}.txt").write_text(text + "\n", encoding="utf-8")
+            if p.is_pdf and rounds == 0:
+                page_texts[(p.file, p.page)] = text
             page_secs.append(t_ocr.elapsed)
             if rec["temp_c"] is not None:
                 temps.append(rec["temp_c"])
@@ -331,6 +356,18 @@ def run_single(args: argparse.Namespace) -> None:
         rounds += 1
         if not args.duration or time.monotonic() - started >= args.duration:
             break
+
+    # 複数ページをまとめた正解（foo.p1-2.gt.txt）
+    for pdf in sorted({p.file for p in pages if p.is_pdf}):
+        for a, b, gt in range_gt_files(pdf):
+            texts = [page_texts.get((pdf, n)) for n in range(a, b + 1)]
+            if any(t is None for t in texts):
+                continue  # --max-pages などで対象ページを処理していない
+            value = cer("\n".join(texts), read_gt(gt))  # type: ignore[arg-type]
+            cers.append(value)
+            print(json.dumps({"type": "range_cer", **cfg, "file": str(pdf), "pages": f"{a}-{b}",
+                              "cer": value}, ensure_ascii=False), flush=True)
+            print(f"  {args.engine} {pdf.name} p{a}-{b}: CER={value:.3f}", file=sys.stderr)
 
     s = common.summarize(page_secs)
     summary = {
