@@ -29,6 +29,14 @@ docker compose exec api docseed create-admin --username <名前>   # パスワ�
 
 ブラウザで `https://<DOCSEED_HOST>/` を開きます。Caddy の内部 CA の証明書を使うため、初回はブラウザの警告が出ます（端末に CA を入れるか、Tailscale の名前を使えば解消できます。`docker/Caddyfile` を参照）。
 
+### うまく起動しないとき
+
+| 症状 | 対処 |
+|---|---|
+| `permission denied ... docker.sock` | `sudo usermod -aG docker $USER` のあと、ログインし直す |
+| `failed to bind host port 0.0.0.0:80`（または `:443`）`: address already in use` | 他のサービスがポートを使っています。`sudo ss -ltnp 'sport = :80'` で確認し、そのサービスを止めるか、`.env` の `DOCSEED_HTTP_PORT` / `DOCSEED_HTTPS_PORT` を空いている番号に変えて `docker compose up -d` |
+| `api` がすぐ止まる | `docker compose logs api` を確認。`.env` の `DOCSEED_SECRET_KEY` 未設定や、`/srv/docseed` の所有者（UID 1000 が必要）が原因のことが多い |
+
 ## 開発
 
 ```bash
