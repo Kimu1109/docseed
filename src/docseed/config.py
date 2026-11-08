@@ -89,12 +89,12 @@ def permission_message(data_dir: Path, err: OSError) -> str:
     uid = os.getuid() if hasattr(os, "getuid") else -1
     try:
         st = data_dir.stat()
-        owner = f"所有者は UID {st.st_uid}"
+        owner = f"UID {st.st_uid}"
     except OSError:
-        owner = "所有者は確認できませんでした"
+        owner = "不明"
     return (
         f"データディレクトリに書き込めません: {err.filename or data_dir}\n"
-        f"  このプロセスは UID {uid} で動いていますが、{data_dir} の{owner}です。\n"
+        f"  このプロセスは UID {uid} で動いていますが、{data_dir} の所有者は {owner} です。\n"
         f"  ホスト（Raspberry Pi）で次を実行してから、もう一度起動してください:\n"
         f"    sudo chown -R {uid}:{uid} <ホスト側のデータディレクトリ（.env の DOCSEED_DATA_DIR、既定 /srv/docseed）>"
     )
