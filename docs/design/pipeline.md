@@ -80,9 +80,10 @@ RETURNING *;
 | 形式 | 判定 | 処理 | 対応フェーズ |
 |---|---|---|---|
 | テキスト（txt, md, csv, tsv, json, log） | `text/*` 等 | 文字コード判定（charset-normalizer）→ UTF-8 で 1 ページとして保存 | Phase 2 |
-| HTML | `text/html` | タグを除去して本文のみ（selectolax 等） | Phase 2 |
+| HTML | `text/html` | タグを除去して本文のみ（Phase 8 で trafilatura に変更。[拡張機能](extensions.md) 6.5） | Phase 2 |
 | PDF | `application/pdf` | pypdfium2 でページごとにテキスト層を抽出 → 必要なら OCR（3.2） | Phase 2 |
-| 画像（jpeg, png, webp, tiff, gif, bmp, heic） | `image/*` | 前処理 → OCR。複数ページ TIFF はページごと | Phase 2（HEIC は検証後） |
+| 画像（jpeg, png, webp, tiff, gif, bmp） | `image/*` | 前処理 → OCR。複数ページ TIFF はページごと | Phase 2 |
+| 画像（heic, heif, avif） | `image/heic`, `image/avif` | pillow-heif / Pillow 11.3 以上で読み込み → 前処理 → OCR。プレビュー用の WebP も作る（[拡張機能](extensions.md) 4 章） | Phase 6 |
 | Word（docx, docm） | OOXML | python-docx で段落・表を抽出。見出しで区切った単位を「ページ」とみなす（3.4） | Phase 5 |
 | Excel（xlsx, xlsm） | OOXML | openpyxl でシートごとに 1 ページ（セルをタブ区切り。3.4） | Phase 5 |
 | PowerPoint（pptx, pptm） | OOXML | python-pptx でスライドごとに 1 ページ（ノートも含める。3.4） | Phase 5 |

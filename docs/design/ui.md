@@ -21,6 +21,7 @@
 - 書体は BIZ UDPゴシック（なければ IBM Plex Sans JP → Noto Sans JP）。サーバーはオフラインで動くため Web フォントは配信しない。
 - 目立たせる要素は 1 つだけ: ファイル一覧の左端の **種類ごとの色の縦帯**（フォルダ = 藍、PDF = 赤、画像 = 緑、表計算 = 黄緑、スライド = 橙 など）。
 - 色はすべて `src/docseed/web/static/app.css` の `:root` にまとめている。
+- アイコンは Phase 6 で Material Symbols（Sharp）の SVG スプライトにする（[拡張機能](extensions.md) 3 章）。下の画面の図の絵文字は仮の表記。
 
 画面から API を直接呼ぶのではなく、画面用のルート（`/`, `/f/{id}` など）が HTML の断片を返す。データの処理は API と同じサービス層の関数を使う。
 
