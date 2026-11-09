@@ -57,6 +57,19 @@ def filesize(n: int | None) -> str:
     return f"{size:.1f} TB"
 
 
+def taken_at(iso: str | None) -> str:
+    """EXIF の撮影日時（時差つきなら画面のタイムゾーンに直す。無ければそのまま）。"""
+    if not iso:
+        return "—"
+    try:
+        t = dt.datetime.fromisoformat(iso)
+    except ValueError:
+        return iso
+    if t.tzinfo is not None:
+        t = t.astimezone(TZ)
+    return t.strftime("%Y/%m/%d %H:%M")
+
+
 def localtime(iso: str | None, fmt: str = "%Y/%m/%d %H:%M") -> str:
     if not iso:
         return "—"
@@ -79,6 +92,7 @@ WARNING_TEXT = {
     "ocr_slow": "{page} ページ目の文字の読み取りに {seconds} 秒かかりました",
     "ocr_timeout": "{page} ページ目の文字の読み取りが時間切れになりました",
     "sheet_truncated": "シート「{sheet}」はセルが多いため、先頭 {cells} セルだけを検索の対象にしました",
+    "thumbnail_failed": "サムネイル・プレビューを作れませんでした（文字の読み取りと検索には影響しません）",
 }
 
 

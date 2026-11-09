@@ -23,6 +23,8 @@ mimetypes.add_type("text/markdown", ".md")
 mimetypes.add_type("text/csv", ".csv")
 mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/heic", ".heic")
+mimetypes.add_type("image/heif", ".heif")
+mimetypes.add_type("image/avif", ".avif")
 # ZIP を使う形式（中身の判定で application/zip になった場合は拡張子で補う）
 _OOXML_EXTS = {".docx", ".docm", ".dotx", ".xlsx", ".xlsm", ".xltx", ".pptx", ".pptm", ".potx"}
 _TEXT_EXTS = {".txt", ".md", ".csv", ".tsv", ".json", ".log", ".xml", ".yaml", ".yml", ".ini", ".toml"}
@@ -48,6 +50,8 @@ def detect_mime(head: bytes, filename: str) -> str:
     if kind is not None:
         if kind.mime == "application/zip" and ext in _OOXML_EXTS and guessed:
             return guessed.lower()
+        if kind.mime == "image/heif":
+            return "image/heic"   # HEIF と HEIC は同じに扱う（extensions.md 4.1）
         return kind.mime
     if ext in _TEXT_EXTS or (guessed and guessed.startswith("text/")):
         return guessed or "text/plain"
@@ -119,3 +123,12 @@ class BlobStore:
 
     def delete(self, rel_path: str) -> None:
         self.path(rel_path).unlink(missing_ok=True)
+
+    def derived_path(self, rel_path: str) -> Path:
+        """派生ファイル（blobs.thumb_path / view_path。data_dir からの相対パス）の場所。"""
+        return self.files_dir.parent / rel_path
+
+    def delete_derived(self, *rel_paths: str | None) -> None:
+        for rel in rel_paths:
+            if rel:
+                self.derived_path(rel).unlink(missing_ok=True)

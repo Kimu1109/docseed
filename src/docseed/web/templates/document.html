@@ -24,8 +24,8 @@
   <section class="preview" aria-label="プレビュー">
     {% if doc.mime_type == "application/pdf" %}
       <iframe src="/api/v1/documents/{{ doc.id }}/content?inline=1" title="{{ doc.filename }} のプレビュー"></iframe>
-    {% elif doc.mime_type in ["image/png", "image/jpeg", "image/webp", "image/gif"] %}
-      <img src="/api/v1/documents/{{ doc.id }}/content?inline=1" alt="{{ doc.filename }}">
+    {% elif image_src(doc, "/api/v1/documents/" ~ doc.id) %}
+      <img src="{{ image_src(doc, '/api/v1/documents/' ~ doc.id) }}" alt="{{ doc.filename }}">
     {% elif text_preview is not none %}
       <pre class="textview">{{ text_preview }}</pre>
       {% if truncated %}<p class="muted">先頭の 200 KB だけを表示しています。全体はダウンロードして確認してください。</p>{% endif %}
@@ -46,7 +46,13 @@
         {% for w in warnings %}<div class="small warn-text">{{ w }}</div>{% endfor %}</dd>
       <dt>種類</dt><dd>{{ kind_label[k] }}<div class="muted small">{{ doc.mime_type }}</div></dd>
       <dt>サイズ</dt><dd>{{ doc.size_bytes | filesize }}</dd>
-      {% if doc.page_count %}<dt>ページ数</dt><dd>{{ doc.page_count }}</dd>{% endif %}
+      {% if doc.page_count and not image_meta %}<dt>ページ数</dt><dd>{{ doc.page_count }}</dd>{% endif %}
+      {% if image_meta %}
+      <dt>大きさ</dt><dd>{{ image_meta.width }} × {{ image_meta.height }} px</dd>
+      {% if image_meta.taken_at %}<dt>撮影日時</dt><dd>{{ image_meta.taken_at | taken_at }}</dd>{% endif %}
+      {% if image_meta.camera %}<dt>カメラ</dt><dd>{{ image_meta.camera }}</dd>{% endif %}
+      {% if image_meta.has_gps %}<dt>位置情報</dt><dd>あり<div class="muted small">原本には撮影場所が含まれます。共有するときは注意してください。</div></dd>{% endif %}
+      {% endif %}
       <dt>追加した人</dt><dd>{{ doc.created_by_name }}</dd>
       <dt>追加日時</dt><dd>{{ doc.created_at | localtime }}</dd>
       <dt>更新日時</dt><dd>{{ doc.updated_at | localtime }}</dd>

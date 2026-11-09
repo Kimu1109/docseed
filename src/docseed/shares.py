@@ -202,7 +202,8 @@ def resolve(conn: sqlite3.Connection, token: str) -> ShareAccess:
 
 def shared_document(conn: sqlite3.Connection, doc_id: int) -> sqlite3.Row:
     d = conn.execute(
-        "SELECT d.*, b.size_bytes, b.mime_type, b.storage_path FROM documents d JOIN blobs b ON b.id = d.blob_id"
+        "SELECT d.*, b.size_bytes, b.mime_type, b.storage_path, b.thumb_path, b.view_path"
+        " FROM documents d JOIN blobs b ON b.id = d.blob_id"
         " WHERE d.id = ? AND d.deleted_at IS NULL", (doc_id,)).fetchone()
     if d is None:
         raise NotFound(INVALID)

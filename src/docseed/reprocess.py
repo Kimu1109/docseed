@@ -42,3 +42,26 @@ def reprocess(conn: sqlite3.Connection, scope: str, *, force_ocr: bool = False) 
     ids = [r[0] for r in conn.execute(q)]
     return enqueue_reprocess(conn, ids, force_ocr=force_ocr, priority=PRIORITY["reembed_blob"] if scope != "failed"
                              else None)
+
+
+def enqueue_derive(conn: sqlite3.Connection, scope: str = "missing") -> int:
+    """派生ファイル（サムネイル・プレビュー）を作るジョブを積む（OCR はやり直さない）。
+
+    missing: まだ無いもの / all: 画像と PDF のすべて（作り直す）。処理待ち・処理中の blob は除く
+    （process_blob がついでに作るため）。
+    """
+    from .pipeline.extract import kind
+    if scope not in ("missing", "all"):
+        raise ValueError(scope)
+    cond = " AND thumb_path IS NULL" if scope == "missing" else ""
+    rows = conn.execute("SELECT id, mime_type FROM blobs WHERE status IN ('ready', 'failed', 'unsupported')"
+                        + cond).fetchall()
+    ids = [r["id"] for r in rows if kind(r["mime_type"]) in ("image", "pdf")]
+    n = 0
+    with Tx(conn):
+        for bid in ids:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO jobs(type, blob_id, priority, status, run_after, created_at)"
+                " VALUES ('derive_blob', ?, ?, 'pending', ?, ?)", (bid, PRIORITY["derive_blob"], now(), now()))
+            n += cur.rowcount
+    return n

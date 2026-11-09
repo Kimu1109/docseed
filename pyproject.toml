@@ -24,7 +24,8 @@ dependencies = [
   "tokenizers>=0.20",
   "rapidocr>=3.10",
   "pypdfium2>=4.30",
-  "pillow>=10.4",
+  "pillow>=11.3",          # AVIF の読み込み（標準の wheel に libavif が入る）
+  "pillow-heif>=1.0",      # HEIC / HEIF の読み込み（Phase 6）
   "huggingface-hub>=0.26",
   # Office 文書（docx / xlsx / pptx）のテキスト抽出（Phase 5）
   "python-docx>=1.1",

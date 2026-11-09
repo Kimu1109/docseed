@@ -16,7 +16,7 @@ from ..config import Settings
 from ..db import Tx
 from ..deps import client_ip, get_conn, get_settings, get_store
 from ..errors import AppError, NotFound
-from ..files import can_preview, file_response
+from ..files import can_preview, derived_response, file_response
 from ..storage import BlobStore
 from .routes import templates
 
@@ -151,6 +151,26 @@ def share_preview(token: str, doc_id: int, request: Request, conn: sqlite3.Conne
                   settings: Settings = Depends(get_settings), store: BlobStore = Depends(get_store)):
     acc = _access(conn, settings, request, token)
     d = _doc_for(conn, acc, doc_id)
+    return file_response(store.path(d["storage_path"]), d, inline=True)
+
+
+@router.get("/{token}/thumb/{doc_id}")
+@_guard
+def share_thumb(token: str, doc_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                settings: Settings = Depends(get_settings), store: BlobStore = Depends(get_store)):
+    acc = _access(conn, settings, request, token)
+    d = _doc_for(conn, acc, doc_id)
+    return derived_response(store.derived_path(d["thumb_path"]) if d["thumb_path"] else None)
+
+
+@router.get("/{token}/view/{doc_id}")
+@_guard
+def share_view(token: str, doc_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+               settings: Settings = Depends(get_settings), store: BlobStore = Depends(get_store)):
+    acc = _access(conn, settings, request, token)
+    d = _doc_for(conn, acc, doc_id)
+    if d["view_path"]:
+        return derived_response(store.derived_path(d["view_path"]))
     return file_response(store.path(d["storage_path"]), d, inline=True)
 
 

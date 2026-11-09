@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 
 from ..db import Tx, now
-from ..pipeline import extract, office
+from ..pipeline import derive, extract, office
 from ..pipeline.embed import Embedder
 from ..pipeline.ocr import OcrEngine, order_lines, prepare_image
 from ..pipeline.text import chunk_pages, normalize
@@ -33,8 +33,9 @@ class Context:
 
     def __init__(self, files_dir: Path, *, ocr_factory: Callable[[], OcrEngine],
                  embedder_factory: Callable[[], Embedder], dpi: int = 200, min_score: float = 0.5,
-                 between_pages: Callable[[], None] | None = None):
+                 between_pages: Callable[[], None] | None = None, data_dir: Path | None = None):
         self.files_dir = files_dir
+        self.data_dir = data_dir or files_dir.parent   # 派生ファイルは <data_dir>/derived/
         self._ocr_factory = ocr_factory
         self._embedder_factory = embedder_factory
         self._ocr: OcrEngine | None = None
@@ -84,6 +85,10 @@ def process_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int, *, force_
         _warn(warnings, "too_many_pages", pages=total, processed=extract.MAX_PAGES)
         total = extract.MAX_PAGES
 
+    # 派生ファイル（サムネイル・プレビュー）。抽出のついでに作る。途中再開のときは作り直さない
+    if blob["thumb_path"] is None:
+        warnings.extend(_derive(conn, ctx, blob))
+
     done_pages = {r[0] for r in conn.execute("SELECT page_no FROM pages WHERE blob_id = ?", (blob_id,))}
     _set(conn, blob_id, status="processing", page_count=total, progress_total=total,
          progress_done=len(done_pages), error=None)
@@ -117,6 +122,31 @@ def process_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int, *, force_
          embedding_model=ctx.embedder.model_name, progress_done=total,
          warnings=json.dumps(warnings, ensure_ascii=False) if warnings else None)
     return "ready"
+
+
+def _derive(conn: sqlite3.Connection, ctx: Context, blob: sqlite3.Row) -> list[dict]:
+    d = derive.derive(ctx.data_dir, ctx.files_dir / blob["storage_path"], blob["mime_type"], blob["sha256"])
+    if d.thumb_path or d.view_path or d.image_meta:
+        with Tx(conn):
+            conn.execute("UPDATE blobs SET thumb_path = ?, view_path = ?, image_meta = ?, updated_at = ? WHERE id = ?",
+                         (d.thumb_path, d.view_path, json.dumps(d.image_meta, ensure_ascii=False)
+                          if d.image_meta else None, now(), blob["id"]))
+    if d.warnings:
+        log.warning("derive blob=%s: %s", blob["id"], d.warnings)
+    return d.warnings
+
+
+def derive_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int) -> str:
+    """派生ファイルだけを作る（docseed derive missing。OCR はやり直さない）。"""
+    blob = conn.execute("SELECT * FROM blobs WHERE id = ?", (blob_id,)).fetchone()
+    if blob is None:
+        return "gone"
+    warns = _derive(conn, ctx, blob)
+    if warns:
+        old = json.loads(blob["warnings"]) if blob["warnings"] else []
+        old = [w for w in old if w.get("code") != "thumbnail_failed"] + warns
+        _set(conn, blob_id, warnings=json.dumps(old, ensure_ascii=False))
+    return "derived" if not warns else "derive_failed"
 
 
 def _give_up(conn: sqlite3.Connection, blob_id: int, e: extract.Unsupported) -> str:

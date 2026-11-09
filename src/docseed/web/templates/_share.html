@@ -49,6 +49,7 @@
 
 <section class="share-sec">
   <h3>リンク</h3>
+  {% if gps_count %}<p class="note small" role="note">位置情報（撮影場所）を含む写真が {{ gps_count }} 件あります。リンクで共有すると、受け取った人は原本から撮影場所を読み取れます。</p>{% endif %}
   {% if links %}
   <ul class="links">
     {% for l in links %}

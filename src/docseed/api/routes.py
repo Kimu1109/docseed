@@ -28,7 +28,7 @@ from ..deps import (
     require_session,
 )
 from ..errors import AppError, NotFound, ValidationFailed
-from ..files import file_response
+from ..files import derived_response, file_response
 from ..storage import BlobStore
 
 router = APIRouter(prefix="/api/v1")
@@ -404,6 +404,24 @@ def api_content(doc_id: int, request: Request, inline: int = 0, conn: sqlite3.Co
             audit(conn, "download", user_id=auth.user.id, target_type="document", target_id=doc_id,
                   ip=client_ip(request))
     return file_response(store.path(d["storage_path"]), d, inline=bool(inline))
+
+
+@router.get("/documents/{doc_id}/thumbnail")
+def api_thumbnail(doc_id: int, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth),
+                  store: BlobStore = Depends(get_store)):
+    """サムネイル（WebP、長辺 256px）。無ければ 404（画面は種類のアイコンを出す）。"""
+    d = dm.get_document(conn, auth.user, doc_id)
+    return derived_response(store.derived_path(d["thumb_path"]) if d["thumb_path"] else None)
+
+
+@router.get("/documents/{doc_id}/view")
+def api_view(doc_id: int, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth),
+             store: BlobStore = Depends(get_store)):
+    """表示用のプレビュー（HEIC などは WebP）。無ければ原本の inline 表示（許可した形式だけ）。"""
+    d = dm.get_document(conn, auth.user, doc_id)
+    if d["view_path"]:
+        return derived_response(store.derived_path(d["view_path"]))
+    return file_response(store.path(d["storage_path"]), d, inline=True)
 
 
 class DocPatch(BaseModel):

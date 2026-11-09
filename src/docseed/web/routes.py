@@ -6,6 +6,7 @@ htmx からの部分更新は HTML の断片を返し、結果のお知らせは
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 from urllib.parse import urlparse
@@ -35,16 +36,16 @@ from ..deps import (
     require_session,
 )
 from ..errors import AppError
-from ..files import can_preview
+from ..files import can_preview, image_src
 from ..storage import BlobStore
 from . import helpers as h
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 templates.env.globals.update(
     version=__version__, kind_of=h.kind_of, kind_label=h.KIND_LABEL, status_label=h.STATUS_LABEL,
-    can_preview=can_preview,
+    can_preview=can_preview, image_src=image_src,
 )
-templates.env.filters.update(filesize=h.filesize, localtime=h.localtime, shortdate=h.shortdate)
+templates.env.filters.update(filesize=h.filesize, localtime=h.localtime, shortdate=h.shortdate, taken_at=h.taken_at)
 
 router = APIRouter(include_in_schema=False)
 
@@ -276,6 +277,18 @@ def shared_page(request: Request, conn: sqlite3.Connection = Depends(get_conn), 
 ROLE_LABEL = {"owner": "所有者", "editor": "編集できる", "viewer": "閲覧のみ"}
 
 
+def gps_photo_count(conn: sqlite3.Connection, target_type: str, target_id: int) -> int:
+    """共有の対象に含まれる、位置情報つきの写真の数（extensions.md 4.3）。"""
+    gps = "json_extract(b.image_meta, '$.has_gps') = 1"
+    if target_type == "document":
+        return conn.execute(f"SELECT count(*) FROM documents d JOIN blobs b ON b.id = d.blob_id"
+                            f" WHERE d.id = ? AND {gps}", (target_id,)).fetchone()[0]
+    ids = fo.subtree_ids(conn, target_id)
+    marks = ",".join("?" * len(ids))
+    return conn.execute(f"SELECT count(*) FROM documents d JOIN blobs b ON b.id = d.blob_id"
+                        f" WHERE d.folder_id IN ({marks}) AND d.deleted_at IS NULL AND {gps}", ids).fetchone()[0]
+
+
 def render_share(request: Request, conn: sqlite3.Connection, auth: Auth, target_type: str, target_id: int,
                  message: str | None = None, new_id: int | None = None) -> HTMLResponse:
     from ..shares import list_shares
@@ -294,9 +307,10 @@ def render_share(request: Request, conn: sqlite3.Connection, auth: Auth, target_
         raise AppError("共有の対象が正しくありません")
     can_link = my_role in ("editor", "owner")
     links = list_shares(conn, auth.user, target_type=target_type, target_id=target_id) if can_link else []
+    gps_count = gps_photo_count(conn, target_type, target_id) if can_link else 0
     html = templates.get_template("_share.html").render(
         request=request, target_type=target_type, target_id=target_id, members=members, candidates=candidates,
-        my_role=my_role, links=links, can_link=can_link, role_label=ROLE_LABEL, new_id=new_id,
+        my_role=my_role, links=links, can_link=can_link, role_label=ROLE_LABEL, new_id=new_id, gps_count=gps_count,
         base_url=str(request.base_url).rstrip("/"))
     if message:
         html += str(toast(message))
@@ -384,7 +398,7 @@ def document_page(doc_id: int, request: Request, conn: sqlite3.Connection = Depe
         crumbs=fo.path(conn, d["folder_id"]), tags=dm.document_tags(conn, doc_id), text_preview=text_preview,
         truncated=truncated, targets=targets, owner=um.get_user(conn, d["owner_id"]),
         pages=pages, pages_shown=PAGES_SHOWN, error=h.problem_message(d["error"]),
-        warnings=h.warning_messages(d["warnings"]),
+        warnings=h.warning_messages(d["warnings"]), image_meta=json.loads(d["image_meta"] or "null"),
         nav="files" if d["owner_id"] == auth.user.id else "shared"))
 
 

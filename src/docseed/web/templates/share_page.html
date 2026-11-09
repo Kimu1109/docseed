@@ -19,8 +19,8 @@
   <section class="preview" aria-label="プレビュー">
     {% if doc.mime_type == "application/pdf" %}
       <iframe src="/s/{{ token }}/preview/{{ doc.id }}" title="{{ doc.filename }} のプレビュー"></iframe>
-    {% elif doc.mime_type in ["image/png", "image/jpeg", "image/webp", "image/gif"] %}
-      <img src="/s/{{ token }}/preview/{{ doc.id }}" alt="{{ doc.filename }}">
+    {% elif image_src(doc, "x") %}
+      <img src="/s/{{ token }}/view/{{ doc.id }}" alt="{{ doc.filename }}">
     {% elif can_preview(doc.mime_type) %}
       <iframe class="textframe" src="/s/{{ token }}/preview/{{ doc.id }}" title="{{ doc.filename }} のプレビュー"></iframe>
     {% else %}
@@ -71,7 +71,7 @@
       {% set k = kind_of(d.mime_type, d.filename) %}
       <tr>
         <td class="col-kind"><span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span></td>
-        <td class="col-name">{% if can_preview(d.mime_type) %}<a class="name" href="/s/{{ token }}/preview/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% else %}<span class="name">{{ d.filename }}</span>{% endif %}</td>
+        <td class="col-name">{% if d.thumb_path %}<img class="thumb" src="/s/{{ token }}/thumb/{{ d.id }}" alt="" loading="lazy">{% endif %}{% if d.view_path %}<a class="name" href="/s/{{ token }}/view/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% elif can_preview(d.mime_type) %}<a class="name" href="/s/{{ token }}/preview/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% else %}<span class="name">{{ d.filename }}</span>{% endif %}</td>
         <td class="col-date">{{ d.updated_at | shortdate }}</td>
         <td class="col-size">{{ d.size_bytes | filesize }}</td>
         <td class="col-actions"><a class="btn btn-sm" href="/s/{{ token }}/download/{{ d.id }}">ダウンロード</a></td>

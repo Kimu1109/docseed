@@ -51,7 +51,7 @@
     {% set k = kind_of(d.mime_type, d.filename) %}
     <tr>
       <td class="col-kind"><span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span></td>
-      <td class="col-name"><a class="name" href="/d/{{ d.id }}">{{ d.filename }}{% if d.uploaded_via_share_id %}<span class="flag">リンクで受け取り</span>{% endif %}</a></td>
+      <td class="col-name">{% if d.thumb_path %}<img class="thumb" src="/api/v1/documents/{{ d.id }}/thumbnail" alt="" loading="lazy">{% endif %}<a class="name" href="/d/{{ d.id }}">{{ d.filename }}{% if d.uploaded_via_share_id %}<span class="flag">リンクで受け取り</span>{% endif %}</a></td>
       <td class="col-date">{{ d.updated_at | shortdate }}</td>
       <td class="col-size">{{ d.size_bytes | filesize }}</td>
       <td class="col-status"><span class="status status-{{ d.status }}">{{ status_label[d.status] }}{% if d.status == "processing" and d.progress_total %} {{ d.progress_done }}/{{ d.progress_total }}{% endif %}</span></td>
