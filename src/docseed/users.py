@@ -20,6 +20,7 @@ class User:
     display_name: str
     role: str
     is_active: bool
+    password_login: bool = True       # False = パスワードでのログインを使わない（パスキーと OIDC のみ）
 
     @property
     def is_admin(self) -> bool:
@@ -27,7 +28,8 @@ class User:
 
     @classmethod
     def from_row(cls, r: sqlite3.Row) -> User:
-        return cls(r["id"], r["username"], r["display_name"], r["role"], bool(r["is_active"]))
+        return cls(r["id"], r["username"], r["display_name"], r["role"], bool(r["is_active"]),
+                   bool(r["password_login"]) if "password_login" in r.keys() else True)
 
 
 def get_user(conn: sqlite3.Connection, user_id: int) -> User:

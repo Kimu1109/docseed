@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}セキュリティ{% endblock %}
+{% block head %}<script src="/static/passkey.js?v={{ version }}" defer></script>{% endblock %}
+{% block main %}
+<div class="page-head"><h1 class="page-title">設定</h1></div>
+<nav class="subnav" aria-label="設定の項目">
+  <a href="/settings">一般</a>
+  <a href="/settings/security" aria-current="page">セキュリティ（ログイン方法）</a>
+</nav>
+{% if setup_required %}
+<p class="alert" role="alert">管理者の設定により、パスワードでログインする人は 2 段階認証が必要です。下の「確認コード」を設定するまで、ほかの画面は使えません。</p>
+{% endif %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+<p class="alert" role="alert" data-passkey-error hidden></p>
+
+<div class="sections">
+  <section class="panel panel-wide" id="reauth">
+    <h2>本人確認</h2>
+    {% if recent %}
+      <p class="ok-text">本人確認が済んでいます。ログインか本人確認から 10 分間は、ログイン方法を変更できます。</p>
+    {% else %}
+      <p class="muted">パスキーの追加・削除、確認コードの設定、外部アカウントの連携などの前に、もう一度本人確認をしてください。</p>
+      <form method="post" action="/auth/reauth" class="form form-row">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>パスワード <input name="password" type="password" autocomplete="current-password" required></label>
+        {% if has_totp %}<label>確認コード <input name="code" inputmode="numeric" autocomplete="one-time-code" required maxlength="20"></label>{% endif %}
+        <button type="submit" class="btn btn-primary">確認</button>
+        {% if sec.passkeys and not passkey_reason %}<button type="button" class="btn" data-passkey-reauth>パスキーで確認</button>{% endif %}
+      </form>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>パスキー</h2>
+    <p class="muted">端末の指紋・顔認証や PIN でログインできます。パスワードより安全で、入力も不要です。</p>
+    {% if sec.passkeys %}
+    <table class="plain">
+      <thead><tr><th>名前</th><th>登録日</th><th>最終使用</th><th><span class="sr">操作</span></th></tr></thead>
+      <tbody>
+      {% for p in sec.passkeys %}
+        <tr>
+          <td>{{ p.name }}{% if p.synced %} <span class="muted small">（同期）</span>{% endif %}</td>
+          <td>{{ p.created_at | shortdate }}</td><td>{{ p.last_used_at | shortdate }}</td>
+          <td><form method="post" action="/settings/security/passkeys/{{ p.id }}/delete" data-confirm="パスキー「{{ p.name }}」を削除しますか？">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn btn-sm btn-danger" {% if not recent %}disabled{% endif %}>削除</button></form></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    {% if passkey_reason %}
+      <p class="muted small">{{ passkey_reason }}</p>
+    {% else %}
+      <form class="form form-row" data-passkey-register>
+        <label>名前 <input name="name" maxlength="50" placeholder="例: iPhone"></label>
+        <button type="submit" class="btn" {% if not recent %}disabled{% endif %}>パスキーを追加</button>
+      </form>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>確認コード（2 段階認証）</h2>
+    <p class="muted">パスワードでログインするときに、認証アプリ（Google Authenticator・Microsoft Authenticator・1Password など）の 6 桁のコードも求めます。</p>
+    {% if recovery_codes %}
+      <div class="token-new">
+        <p><b>復旧コード</b>を控えてください。この画面を離れると二度と表示されません。認証アプリの端末をなくしたとき、確認コードの代わりに 1 つずつ使えます（各 1 回）。</p>
+        <div class="codes" data-select-all>{% for c in recovery_codes %}<span>{{ c }}</span>{% endfor %}</div>
+      </div>
+    {% endif %}
+    {% if has_totp %}
+      <p><span class="state-on">有効</span> <span class="muted small">（{{ sec.totp.enabled_at | localtime }} から）</span></p>
+      <p class="small">残りの復旧コード: <b>{{ sec.recovery_codes_remaining }}</b> 個</p>
+      <div class="row-actions-in">
+        <form method="post" action="/settings/security/recovery-codes" data-confirm="復旧コードを作り直しますか？ 今のコードは使えなくなります。">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn btn-sm" {% if not recent %}disabled{% endif %}>復旧コードを作り直す</button></form>
+        <form method="post" action="/settings/security/totp/disable" data-confirm="確認コードを無効にしますか？">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn btn-sm btn-danger" {% if not recent %}disabled{% endif %}>無効にする</button></form>
+      </div>
+    {% elif enroll %}
+      <ol class="small">
+        <li>認証アプリで次の QR コードを読み取ります（読み取れないときは下の文字列を入力）。</li>
+        <li>アプリに表示された 6 桁のコードを入力して「有効にする」を押します。</li>
+      </ol>
+      <img class="qr" src="{{ enroll.qr }}" alt="確認コードの登録用 QR コード">
+      <p class="small">手入力用: <code data-select-all>{{ enroll.secret }}</code></p>
+      <form method="post" action="/settings/security/totp/confirm" class="form form-row">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="enroll_id" value="{{ enroll.id }}">
+        <label>確認コード <input name="code" inputmode="numeric" autocomplete="one-time-code" required maxlength="8" autofocus></label>
+        <button type="submit" class="btn btn-primary">有効にする</button>
+      </form>
+    {% else %}
+      <p><span class="state-off">未設定</span></p>
+      <form method="post" action="/settings/security/totp">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn btn-primary" {% if not recent %}disabled{% endif %}>確認コードを設定する</button>
+      </form>
+    {% endif %}
+  </section>
+
+  {% if providers or sec.identities %}
+  <section class="panel">
+    <h2>外部アカウントの連携</h2>
+    <p class="muted">連携したアカウント（Google など）でログインできます。連携していないアカウントではログインできません。</p>
+    {% if sec.identities %}
+    <table class="plain">
+      <thead><tr><th>提供者</th><th>メールアドレス</th><th>最終ログイン</th><th><span class="sr">操作</span></th></tr></thead>
+      <tbody>
+      {% for i in sec.identities %}
+        <tr><td>{{ i.label }}</td><td>{{ i.email or "—" }}</td><td>{{ i.last_login_at | shortdate }}</td>
+          <td><form method="post" action="/settings/security/identities/{{ i.id }}/delete" data-confirm="{{ i.label }} の連携を解除しますか？">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn btn-sm btn-danger" {% if not recent %}disabled{% endif %}>解除</button></form></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    <div class="row-actions-in">
+    {% for p in providers %}
+      {% if not p.linked %}
+        {% if recent %}<a class="btn" href="/auth/oidc/{{ p.name }}/start?purpose=link">{{ p.label }} と連携</a>
+        {% else %}<button class="btn" disabled>{{ p.label }} と連携</button>{% endif %}
+      {% endif %}
+    {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="panel">
+    <h2>パスワードでのログイン</h2>
+    {% if sec.password_login %}
+      <p><span class="state-on">使う</span></p>
+      <p class="muted small">パスキーか外部アカウントだけでログインするなら、パスワードでのログインを止められます（パスワードを知られても入られなくなります）。</p>
+      <form method="post" action="/settings/security/password-login" data-confirm="パスワードでのログインを止めますか？ パスキーか外部アカウントでだけログインできるようになります。">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="enabled" value="0">
+        <button class="btn btn-sm" {% if not recent or not (sec.passkeys or sec.identities) %}disabled{% endif %}>パスワードでのログインを止める</button>
+      </form>
+      {% if not (sec.passkeys or sec.identities) %}<p class="muted small">止めるには、先にパスキーか外部アカウントを 1 つ以上設定してください。</p>{% endif %}
+    {% else %}
+      <p><span class="state-off">使わない</span>（パスキーと外部アカウントだけ）</p>
+      <form method="post" action="/settings/security/password-login">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="enabled" value="1">
+        <button class="btn btn-sm" {% if not recent %}disabled{% endif %}>パスワードでのログインを使う</button>
+      </form>
+    {% endif %}
+  </section>
+
+  <section class="panel panel-wide">
+    <h2>ログイン中の端末</h2>
+    <table class="plain">
+      <thead><tr><th>端末</th><th>ログインの方法</th><th>ログイン</th><th>最終アクセス</th><th>IP アドレス</th></tr></thead>
+      <tbody>
+      {% for s in sec.sessions %}
+        <tr><td class="small">{{ (s.user_agent or "不明")[:80] }}{% if s.current %} <b>（この端末）</b>{% endif %}</td>
+          <td>{{ s.auth_label }}</td><td>{{ s.created_at | shortdate }}</td><td>{{ s.last_seen_at | shortdate }}</td>
+          <td>{{ s.ip or "—" }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if sec.sessions | length > 1 %}
+    <form method="post" action="/settings/security/sessions/revoke-others" data-confirm="この端末以外をすべてログアウトしますか？">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-sm">ほかの端末をすべてログアウト</button>
+    </form>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

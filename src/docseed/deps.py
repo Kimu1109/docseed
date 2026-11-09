@@ -12,7 +12,7 @@ from fastapi import Depends, Request
 from . import security
 from .config import Settings
 from .db import connect
-from .errors import CsrfFailed, Forbidden, Unauthenticated
+from .errors import CsrfFailed, Forbidden, SecondFactorSetupRequired, Unauthenticated
 from .storage import BlobStore
 from .users import User, get_user
 
@@ -85,9 +85,20 @@ async def _check_csrf(request: Request, expected: str) -> None:
         raise CsrfFailed()
 
 
-async def require_auth(auth: Auth | None = Depends(optional_auth)) -> Auth:
+# 2 段階認証が必須で未設定のときにも使える画面・API（設定・ログアウト）
+SETUP_ALLOWED_PREFIXES = ("/settings/security", "/auth/", "/logout", "/api/v1/auth/", "/api/v1/me/security",
+                          "/api/v1/me/totp", "/api/v1/me/passkeys", "/api/v1/me/recovery-codes")
+
+
+async def require_auth(request: Request, auth: Auth | None = Depends(optional_auth),
+                       conn: sqlite3.Connection = Depends(get_conn)) -> Auth:
     if auth is None:
         raise Unauthenticated()
+    if auth.kind == "session" and auth.session is not None and auth.session.auth_method == "password" \
+            and not request.url.path.startswith(SETUP_ALLOWED_PREFIXES):
+        from .authn import needs_second_factor_setup
+        if needs_second_factor_setup(conn, auth.user, auth.session):
+            raise SecondFactorSetupRequired()
     return auth
 
 

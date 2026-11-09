@@ -293,6 +293,16 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .login { min-height: 100vh; display: grid; place-items: center; padding: var(--s4); }
 .login-box { width: min(380px, 100%); background: var(--surface); border: 1px solid var(--ink); padding: var(--s6) var(--s5); }
 .login-lead { color: var(--muted); margin: var(--s2) 0 var(--s5); }
+.login-alt { display: grid; gap: var(--s2); margin-top: var(--s4); padding-top: var(--s4); border-top: 1px solid var(--line); }
+.login-alt:empty { display: none; }
+.subnav { display: flex; gap: var(--s4); margin: 0 0 var(--s4); border-bottom: 1px solid var(--line); }
+.subnav a { padding: 0 0 var(--s2); color: var(--muted); text-decoration: none; }
+.subnav a[aria-current="page"] { color: var(--ink); border-bottom: 2px solid var(--accent); font-weight: 700; }
+.qr { display: block; width: 200px; height: 200px; background: #fff; border: 1px solid var(--line); }
+.codes { display: grid; grid-template-columns: repeat(2, max-content); gap: 4px var(--s5); margin: var(--s3) 0;
+  padding: var(--s3); background: var(--surface); border: 1px solid var(--line); font: 15px/1.6 var(--mono); user-select: all; }
+.state-on { color: var(--ok); font-weight: 700; }
+.state-off { color: var(--muted); }
 .error-title { font-size: 18px; margin: var(--s5) 0 var(--s2); }
 
 /* ---- お知らせ ---------------------------------------------------------- */

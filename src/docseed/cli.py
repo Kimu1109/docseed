@@ -1,4 +1,4 @@
-"""コマンドライン: docseed serve / migrate / create-admin / purge-trash / backup-db / verify-files など。"""
+"""コマンドライン: docseed serve / migrate / create-admin / reset-auth / purge-trash / backup-db など。"""
 
 from __future__ import annotations
 
@@ -47,6 +47,22 @@ def cmd_create_admin(args: argparse.Namespace) -> None:
     except AppError as e:
         sys.exit(f"作成できませんでした: {e.detail}")
     print(f"管理者「{u.username}」を作成しました")
+
+
+def cmd_reset_auth(args: argparse.Namespace) -> None:
+    """管理者自身がログインできなくなったとき用（docs/design/extensions.md 5.7）。"""
+    from .authn import reset_auth
+    from .users import find_by_username
+    settings = Settings.from_env()
+    conn = _conn(settings)
+    row = find_by_username(conn, args.username)
+    if row is None:
+        sys.exit(f"ユーザー「{args.username}」が見つかりません")
+    temp = reset_auth(conn, row["id"], actor_id=None, ip="cli")
+    print(f"「{row['username']}」のログイン方法（パスキー・確認コード・外部アカウントの連携）を消し、"
+          "すべての端末をログアウトしました。")
+    print(f"仮のパスワード: {temp}")
+    print("ログインしたら、設定画面でパスワードを変更してください。")
 
 
 def cmd_purge_trash(args: argparse.Namespace) -> None:
@@ -186,6 +202,10 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--display-name")
     s.add_argument("--password", help="省略時は対話入力（推奨）")
     s.set_defaults(func=cmd_create_admin)
+
+    s = sub.add_parser("reset-auth", help="ユーザーのログイン方法をリセットし、仮のパスワードを発行する")
+    s.add_argument("--username", required=True)
+    s.set_defaults(func=cmd_reset_auth)
 
     s = sub.add_parser("purge-trash", help="保持期間を過ぎたゴミ箱の項目を完全に削除する")
     s.set_defaults(func=cmd_purge_trash)

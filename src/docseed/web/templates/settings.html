@@ -2,6 +2,10 @@
 {% block title %}設定{% endblock %}
 {% block main %}
 <div class="page-head"><h1 class="page-title">設定</h1></div>
+<nav class="subnav" aria-label="設定の項目">
+  <a href="/settings" aria-current="page">一般</a>
+  <a href="/settings/security">セキュリティ（ログイン方法）</a>
+</nav>
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 
 <div class="sections">

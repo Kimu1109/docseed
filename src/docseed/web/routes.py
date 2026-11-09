@@ -60,6 +60,16 @@ DONE_MESSAGES = {
     "reprocess": "再処理を受け付けました。順番に処理されます",
     "retried": "ジョブをやり直します",
     "share_revoked": "共有リンクを無効にしました",
+    "reauthed": "本人確認ができました。10 分間はログイン方法を変更できます",
+    "totp_disabled": "確認コードを無効にしました",
+    "passkey_added": "パスキーを登録しました",
+    "passkey_removed": "パスキーを削除しました",
+    "identity_linked": "外部アカウントを連携しました",
+    "identity_removed": "外部アカウントの連携を解除しました",
+    "password_login_on": "パスワードでのログインを有効にしました",
+    "password_login_off": "パスワードでのログインを止めました",
+    "sessions_revoked": "ほかの端末をすべてログアウトしました",
+    "auth_settings": "ログインの設定を保存しました",
 }
 
 
@@ -120,25 +130,28 @@ def _check_origin(request: Request) -> None:
 # ---------------------------------------------------------------------------
 
 @router.get("/login", response_class=HTMLResponse)
-def login_page(request: Request, next: str | None = None, auth: Auth | None = Depends(optional_auth)):
+def login_page(request: Request, next: str | None = None, auth: Auth | None = Depends(optional_auth),
+               settings: Settings = Depends(get_settings)):
+    from .auth import login_context
     if auth:
         return RedirectResponse(_safe_next(next), status_code=303)
-    return templates.TemplateResponse(request, "login.html", {"request": request, "user": None, "next": next,
-                                                              "error": None, "username": ""})
+    return templates.TemplateResponse(request, "login.html", login_context(request, settings, next=next))
 
 
 @router.post("/login", response_class=HTMLResponse)
 def login_submit(request: Request, username: str = Form(""), password: str = Form(""),
                  remember: str | None = Form(None), next: str | None = Form(None),
                  conn: sqlite3.Connection = Depends(get_conn), settings: Settings = Depends(get_settings)):
+    from .auth import login_context
     _check_origin(request)
     resp = RedirectResponse(_safe_next(next), status_code=303)
     try:
-        do_login(conn, settings, request, resp, username, password, bool(remember))
+        res = do_login(conn, settings, request, resp, username, password, bool(remember), _safe_next(next))
     except AppError as e:
-        return templates.TemplateResponse(request, "login.html", {
-            "request": request, "user": None, "next": next, "error": e.detail, "username": username},
-            status_code=e.status)
+        return templates.TemplateResponse(request, "login.html", login_context(
+            request, settings, next=next, error=e.detail, username=username), status_code=e.status)
+    if res.second_factor:
+        resp.headers["location"] = "/login/second-factor"
     return resp
 
 
@@ -569,12 +582,15 @@ def admin_context(request: Request, conn: sqlite3.Connection, auth: Auth, settin
         " (SELECT count(*) FROM jobs WHERE status = 'failed') AS jobs_failed").fetchone()
     db_bytes = sum(p.stat().st_size for p in settings.db_path.parent.glob(settings.db_path.name + "*"))
     from ..api.routes import failed_jobs, job_counts
+    from ..authn import get_auth_settings
     from ..monitor import status
     st = status(conn, settings)
     return base_context(request, conn, auth, nav="admin", users=um.list_users(conn), stats=stats,
                         disk=disk, db_bytes=db_bytes, worker_seen=st["worker"]["last_seen"],
                         worker_alive=st["worker"]["alive"], sys=st, thermal_pause_c=settings.thermal_pause_c,
-                        job_counts=job_counts(conn), failed=failed_jobs(conn, 20), error=None, form={}, **extra)
+                        job_counts=job_counts(conn), failed=failed_jobs(conn, 20), error=None, form={},
+                        **({"reset_done": None, "auth_settings": get_auth_settings(conn),
+                            "oidc_enabled": bool(settings.oidc_providers)} | extra))
 
 
 @router.post("/admin/jobs/{job_id}/retry")

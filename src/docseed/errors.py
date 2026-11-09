@@ -22,6 +22,14 @@ class Forbidden(AppError):
     status, code, title = 403, "forbidden", "この操作の権限がありません"
 
 
+class ReauthRequired(AppError):
+    status, code, title = 403, "reauth_required", "この操作の前に、もう一度本人確認をしてください"
+
+
+class SecondFactorSetupRequired(AppError):
+    status, code, title = 403, "second_factor_setup_required", "管理者の設定により、2 段階認証の設定が必要です"
+
+
 class CsrfFailed(AppError):
     status, code, title = 403, "csrf_failed", "ページの有効期限が切れました。再読み込みしてください"
 

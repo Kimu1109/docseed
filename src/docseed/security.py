@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import hmac
 import secrets
 import sqlite3
 import threading
@@ -59,28 +60,47 @@ def _utcnow() -> dt.datetime:
 # セッション
 # ---------------------------------------------------------------------------
 
+REAUTH_SECONDS = 600   # 再認証の有効時間（docs/design/extensions.md 5.6）
+
+
 @dataclass
 class Session:
     id_hash: str
     user_id: int
     csrf_token: str
     expires_at: str
+    auth_method: str = "password"
+    reauth_at: str | None = None
+
+    def recently_authenticated(self, seconds: int = REAUTH_SECONDS) -> bool:
+        """直近 seconds 秒以内にログインか再認証をしたか。"""
+        if not self.reauth_at:
+            return False
+        return self.reauth_at > _iso(_utcnow() - dt.timedelta(seconds=seconds))
 
 
 def create_session(conn: sqlite3.Connection, user_id: int, *, remember: bool, days: int, short_hours: int,
-                   user_agent: str | None, ip: str | None) -> tuple[str, Session]:
-    """新しいセッションを作り、(Cookie に入れる値, Session) を返す。"""
+                   user_agent: str | None, ip: str | None, auth_method: str = "password") -> tuple[str, Session]:
+    """新しいセッションを作り、(Cookie に入れる値, Session) を返す。ログインした時刻を再認証の時刻とする。"""
     raw = secrets.token_urlsafe(32)
     csrf = secrets.token_urlsafe(32)
     t = _utcnow()
     expires = t + (dt.timedelta(days=days) if remember else dt.timedelta(hours=short_hours))
     with Tx(conn):
         conn.execute(
-            "INSERT INTO sessions(id, user_id, csrf_token, created_at, last_seen_at, expires_at, user_agent, ip)"
-            " VALUES (?,?,?,?,?,?,?,?)",
-            (sha256(raw), user_id, csrf, _iso(t), _iso(t), _iso(expires), (user_agent or "")[:300], ip),
+            "INSERT INTO sessions(id, user_id, csrf_token, created_at, last_seen_at, expires_at, user_agent, ip,"
+            " auth_method, reauth_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (sha256(raw), user_id, csrf, _iso(t), _iso(t), _iso(expires), (user_agent or "")[:300], ip,
+             auth_method, _iso(t)),
         )
-    return raw, Session(sha256(raw), user_id, csrf, _iso(expires))
+    return raw, Session(sha256(raw), user_id, csrf, _iso(expires), auth_method, _iso(t))
+
+
+def mark_reauthenticated(conn: sqlite3.Connection, session: Session) -> None:
+    t = _iso(_utcnow())
+    with Tx(conn):
+        conn.execute("UPDATE sessions SET reauth_at = ? WHERE id = ?", (t, session.id_hash))
+    session.reauth_at = t
 
 
 def load_session(conn: sqlite3.Connection, raw: str, *, remember_days: int) -> Session | None:
@@ -106,7 +126,7 @@ def load_session(conn: sqlite3.Connection, raw: str, *, remember_days: int) -> S
         with Tx(conn):
             conn.execute("UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE id = ?",
                          (_iso(t), expires, row["id"]))
-    return Session(row["id"], row["user_id"], row["csrf_token"], expires)
+    return Session(row["id"], row["user_id"], row["csrf_token"], expires, row["auth_method"], row["reauth_at"])
 
 
 def delete_session(conn: sqlite3.Connection, raw: str) -> None:
@@ -117,6 +137,38 @@ def delete_session(conn: sqlite3.Connection, raw: str) -> None:
 def delete_other_sessions(conn: sqlite3.Connection, user_id: int, keep_id_hash: str | None) -> None:
     with Tx(conn):
         conn.execute("DELETE FROM sessions WHERE user_id = ? AND id IS NOT ?", (user_id, keep_id_hash))
+
+
+# ---------------------------------------------------------------------------
+# 署名付きの値（OIDC の state などを Cookie に入れる）
+# ---------------------------------------------------------------------------
+
+def sign_value(secret_key: str, purpose: str, data: dict, max_age: int) -> str:
+    """data を JSON にして、期限と HMAC-SHA256 の署名を付ける。purpose が違う値としては読めない。"""
+    import base64
+    import json
+    body = json.dumps({"d": data, "exp": int(time.time()) + max_age}, separators=(",", ":")).encode()
+    b = base64.urlsafe_b64encode(body).decode().rstrip("=")
+    mac = hmac.new(f"{purpose}:{secret_key}".encode(), b.encode(), hashlib.sha256).hexdigest()
+    return f"{b}.{mac}"
+
+
+def unsign_value(secret_key: str, purpose: str, value: str | None) -> dict | None:
+    import base64
+    import json
+    if not value or "." not in value:
+        return None
+    b, mac = value.rsplit(".", 1)
+    want = hmac.new(f"{purpose}:{secret_key}".encode(), b.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(mac, want):
+        return None
+    try:
+        body = json.loads(base64.urlsafe_b64decode(b + "=" * (-len(b) % 4)))
+    except ValueError:
+        return None
+    if not isinstance(body, dict) or body.get("exp", 0) < time.time():
+        return None
+    return body.get("d")
 
 
 # ---------------------------------------------------------------------------

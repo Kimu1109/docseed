@@ -95,6 +95,14 @@ def status(conn: sqlite3.Connection, settings: Settings, *, now: dt.datetime | N
         alerts.append(Alert("warning", "restic_stale",
                             "別の機器へのバックアップ（restic）が 36 時間以上成功していません"))
 
+    rp_saved = conn.execute("SELECT value FROM settings WHERE key = 'auth.rp_id'").fetchone()
+    if rp_saved and rp_saved[0] != settings.rp_id \
+            and conn.execute("SELECT 1 FROM webauthn_credentials LIMIT 1").fetchone():
+        alerts.append(Alert("warning", "rp_id_changed",
+                            f"パスキーの RP ID が {rp_saved[0]} から {settings.rp_id or '（なし）'} に変わったため、"
+                            "登録済みのパスキーは使えません。DOCSEED_HOST / DOCSEED_RP_ID を戻すか、各ユーザーが"
+                            "パスキーを登録し直してください"))
+
     temp = cpu_temp()
     if temp is not None and temp >= settings.thermal_pause_c:
         alerts.append(Alert("warning", "thermal", f"CPU の温度が {temp:.0f}℃ です。文字の読み取りを一時停止しています"))
