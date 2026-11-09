@@ -103,6 +103,16 @@ def status(conn: sqlite3.Connection, settings: Settings, *, now: dt.datetime | N
                             "登録済みのパスキーは使えません。DOCSEED_HOST / DOCSEED_RP_ID を戻すか、各ユーザーが"
                             "パスキーを登録し直してください"))
 
+    if settings.webclip_enabled:
+        fb = conn.execute("SELECT value FROM settings WHERE key = 'fetcher.heartbeat'").fetchone()
+        fetcher_age = _age(_parse(fb[0]) if fb else None, now)
+        waiting = conn.execute("SELECT min(created_at) FROM jobs WHERE type = 'fetch_url' AND status = 'pending'"
+                               ).fetchone()[0]
+        waiting_age = _age(_parse(waiting), now)
+        if waiting_age is not None and waiting_age > 600 and (fetcher_age is None or fetcher_age > WORKER_STALE_SECS):
+            alerts.append(Alert("warning", "fetcher_stale", "URL の取り込み（fetcher）が動いていません。.env の"
+                                " COMPOSE_PROFILES=webclip を確認し、docker compose up -d してください"))
+
     from .tlscheck import alerts as tls_alerts
     from .tlscheck import stored_status as tls_status
     tls = tls_status(conn)

@@ -258,12 +258,12 @@ def test_migration_0002_after_0003(tmp_path, monkeypatch):
     """Phase 7（0003）を先に適用した DB にも 0002 を後から適用できる。"""
     from docseed import db
     allm = db._migrations()
-    monkeypatch.setattr(db, "_migrations", lambda: [m for m in allm if m[0] != 2])
+    monkeypatch.setattr(db, "_migrations", lambda: [m for m in allm if m[0] in (1, 3)])
     conn = connect(tmp_path / "x.sqlite")
     assert migrate(conn) == ["0001_initial.sql", "0003_login_methods.sql"]
     conn.execute("INSERT INTO jobs(type, status, run_after, created_at) VALUES ('purge_trash', 'pending', 'x', 'x')")
     monkeypatch.setattr(db, "_migrations", lambda: allm)
-    assert migrate(conn) == ["0002_derived_files.sql"]
+    assert migrate(conn) == ["0002_derived_files.sql", "0004_web_clips.sql"]
     assert conn.execute("SELECT type FROM jobs").fetchone()[0] == "purge_trash"
     conn.execute("INSERT INTO jobs(type, status, run_after, created_at) VALUES ('derive_blob', 'pending', 'x', 'x')")
     cols = {r[1] for r in conn.execute("PRAGMA table_info(blobs)")}

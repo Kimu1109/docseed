@@ -12,6 +12,7 @@ Raspberry Pi 5 で動くローカルのドキュメントサーバーです。�
 | Phase 5 | 運用（バックアップ、監視、Office 文書） | 実装済み（Pi での復旧の練習は導入時に） |
 | Phase 6 | HTTPS 証明書の方式の切り替え（internal / file / tailscale / acme_dns）と監視、アイコン、HEIC / AVIF、サムネイル・プレビュー | 実装済み |
 | Phase 7 | ログイン（パスキー・確認コード・復旧コード・Google などの OIDC・再認証） | 実装済み |
+| Phase 8 | URL の取り込み（Web クリップ。SSRF 対策つきの取得、OGP・本文の取り出しと検索、ブックマークレット） | 実装済み |
 
 ## Raspberry Pi で動かす（Docker）
 
@@ -220,6 +221,30 @@ Pocket ID・Authelia・Keycloak など、ほかの OIDC の提供者も同じ書
 自分の文書に対する「質問」と「正解のファイル名」を 20〜30 件ほど JSON に書き、`scripts/eval_search.py` で Recall@5 / MRR を測れます（使い方はスクリプト冒頭のコメント）。
 意味検索で無関係なファイルが多く出る・逆に見つからない場合は、`--sem-min 0.75,0.80,0.85` で類似度の下限を比べ、良かった値を `.env` の `DOCSEED_SEARCH_SEM_MIN` に設定します（既定 0.80）。
 
+## URL の取り込み（Web クリップ）
+
+Web ページの URL を渡すと、ページを取得して保存し、タイトル・説明・本文で検索できるようにします。PDF や画像の URL は、そのファイルを普通のファイルとして保存します。既定では無効です（Pi からインターネットへ通信するため）。
+
+```bash
+# .env
+DOCSEED_WEBCLIP_ENABLED=true
+COMPOSE_PROFILES=webclip
+```
+
+```bash
+docker compose up -d     # fetcher（取得の担当）が起動する
+```
+
+- フォルダの画面の「URL を追加」で追加します。取得中は一覧に「取得中」と出て、終わると普通の文書と同じ行になります（種類は Web クリップ、サムネイルはページの OGP 画像）
+- 設定画面の**ブックマークレット**をブックマークバーに登録すると、見ているページをそのまま保存できます（保存先を選ぶ画面が開きます）
+- 文書の画面の「再取得」で、元のページの最新の内容に保存し直せます
+- 保存したページの HTML は、安全のため画面には表示しません（ダウンロードはできます）。取り出した本文は「取り出したテキスト」で読めます
+- JavaScript で本文を描くページ（SNS など）は本文を取り出せないことがあります。その場合もタイトルと説明で検索でき、サイトが oEmbed に対応していれば、その文章も補います
+
+**安全のための制限**: LAN の機器（ルーター・NAS など）や Pi 自身へのリクエストを作らせないよう、取得の前に名前を引いて、プライベートな IP（192.168.x.x・10.x.x.x・Tailscale の 100.64.0.0/10 など）を指す URL は取得しません。リダイレクトのたびに確かめ直し、確かめた IP にだけ接続します。ポートは 80・443・8080・8443 だけ、HTML は 5MB（`DOCSEED_WEBCLIP_MAX_MB`）・30 秒までです。取得するのは fetcher だけで、文字の読み取りを行う worker は今まで通り外部と通信しません。
+
+`DOCSEED_WEBCLIP_PROXY` でプロキシを使うこともできます。そのときは名前の解決をプロキシに任せることになるので、**プロキシの側で LAN への通信を止めてください**。
+
 ## 写真（HEIC など）とサムネイル
 
 iPhone の写真（HEIC / HEIF）と AVIF も、ほかの画像と同じように文字を読み取って検索できます。
@@ -372,6 +397,7 @@ API の仕様は起動後に `/api/docs` で確認できます（ログインが
 | `docseed status [--json]` | 状態と警告を表示する（管理画面と同じ内容） |
 | `docseed worker` | 文字の読み取り（OCR）と埋め込みの処理を行う |
 | `docseed fetch-models` | OCR と埋め込みのモデルを取得する（`.[tools]` が必要） |
+| `docseed fetcher` | URL の取り込み（Web クリップ）の取得を行う（`DOCSEED_WEBCLIP_ENABLED=true` のとき。compose の profile `webclip`） |
 | `docseed derive missing\|all` | 画像・PDF のサムネイルとプレビューを作る（`all` は作り直す。文字の読み取りはやり直さない） |
 | `docseed reprocess failed\|outdated\|unsupported\|all` | 文書を再処理する（`--force-ocr` で PDF も画像として読み取る） |
 

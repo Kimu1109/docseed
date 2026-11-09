@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ doc.filename }}{% endblock %}
 {% block main %}
-{% set k = kind_of(doc.mime_type, doc.filename) %}
+{% set k = kind_of(doc.mime_type, doc.filename, doc.kind) %}
 <div class="page-head">
   {% set link_last = True %}{% include "_crumbs.html" %}
 </div>
@@ -25,6 +25,17 @@
   <section class="preview" aria-label="プレビュー">
     {% if doc.mime_type == "application/pdf" %}
       <iframe src="/api/v1/documents/{{ doc.id }}/content?inline=1" title="{{ doc.filename }} のプレビュー"></iframe>
+    {% elif clip and doc.kind == "webclip" %}
+      <div class="clip-card">
+        {% if doc.thumb_path %}<img class="clip-image" src="/api/v1/documents/{{ doc.id }}/thumbnail" alt="">{% endif %}
+        <div class="clip-body">
+          <p class="clip-site">{{ clip.site_name or "" }}</p>
+          <h2 class="clip-title">{{ clip.title or doc.filename }}</h2>
+          {% if clip.description %}<p class="clip-desc">{{ clip.description }}</p>{% endif %}
+          <p class="small"><a href="{{ clip.final_url or clip.url }}" target="_blank" rel="noopener noreferrer">{{ icon("link") }} {{ clip.final_url or clip.url }}</a></p>
+          <p class="muted small">保存したページの HTML は、安全のためこの画面には表示しません（ダウンロードはできます）。本文は下の「取り出したテキスト」で読めます。</p>
+        </div>
+      </div>
     {% elif image_src(doc, "/api/v1/documents/" ~ doc.id) %}
       <img src="{{ image_src(doc, '/api/v1/documents/' ~ doc.id) }}" alt="{{ doc.filename }}">
     {% elif text_preview is not none %}
@@ -46,6 +57,12 @@
         {% if error and doc.status in ["failed", "unsupported"] %}<div class="small">{{ error }}</div>{% endif %}
         {% for w in warnings %}<div class="small warn-text">{{ w }}</div>{% endfor %}</dd>
       <dt>種類</dt><dd>{{ kind_label[k] }}<div class="muted small">{{ doc.mime_type }}</div></dd>
+      {% if clip %}
+      <dt>元の URL</dt><dd class="hash"><a href="{{ clip.url }}" target="_blank" rel="noopener noreferrer">{{ clip.url }}</a></dd>
+      {% if clip.author %}<dt>著者</dt><dd>{{ clip.author }}</dd>{% endif %}
+      {% if clip.published_at %}<dt>公開日</dt><dd>{{ clip.published_at[:10] }}</dd>{% endif %}
+      <dt>取得日時</dt><dd>{{ clip.fetched_at | localtime }}{% if clip.status in ["pending", "fetching"] %}<div class="muted small">再取得しています…</div>{% elif clip.status == "failed" %}<div class="small err-text">前回の再取得に失敗: {{ clip.error_message }}</div>{% endif %}</dd>
+      {% endif %}
       <dt>サイズ</dt><dd>{{ doc.size_bytes | filesize }}</dd>
       {% if doc.page_count and not image_meta %}<dt>ページ数</dt><dd>{{ doc.page_count }}</dd>{% endif %}
       {% if image_meta %}
@@ -76,6 +93,17 @@
       </label>
       <button type="submit" class="btn btn-primary">保存</button>
     </form>
+    {% if clip and webclip_enabled %}
+    <form method="post" action="/d/{{ doc.id }}/refetch" class="form form-panel">
+      <h2>元のページ</h2>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <p class="muted small">元のページの最新の内容で保存し直します。</p>
+      <div class="row-actions-in">
+        <button type="submit" class="btn">{{ icon("refresh") }}再取得</button>
+        <a class="btn" href="{{ clip.final_url or clip.url }}" target="_blank" rel="noopener noreferrer">{{ icon("link") }}元のページを開く</a>
+      </div>
+    </form>
+    {% endif %}
     {% if doc.status in ["ready", "failed", "unsupported"] %}
     <form method="post" action="/d/{{ doc.id }}/reprocess" class="form form-panel">
       <h2>文字の読み取り</h2>

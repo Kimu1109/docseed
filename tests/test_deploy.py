@@ -67,3 +67,13 @@ def test_lan_ip_never_empty_in_caddy():
     caddy_env = COMPOSE.split("\n  caddy:", 1)[1].split("\n  api:", 1)[0]
     pattern = r"\$\{DOCSEED_(?:LAN_IP|TLS_MODE|HTTPS_PORT|HTTP_PORT|ACME_STAGING):-\}"
     assert re.findall(pattern, caddy_env) == []
+
+
+def test_fetcher_service():
+    block = COMPOSE.split("\n  fetcher:", 1)[1].split("\n\n", 1)[0]
+    assert 'profiles: ["webclip"]' in block and 'command: ["docseed", "fetcher"]' in block
+    assert "networks:" not in block            # default ネットワーク（外部へ通信する）
+    worker = COMPOSE.split("\n  worker:", 1)[1].split("\n\n", 1)[0]
+    assert "networks: [internal]" in worker     # worker は外部と通信しないまま
+    for var in ("DOCSEED_WEBCLIP_ENABLED", "DOCSEED_WEBCLIP_MAX_MB", "DOCSEED_WEBCLIP_PROXY"):
+        assert var in ENV_EXAMPLE

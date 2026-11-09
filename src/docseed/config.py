@@ -56,6 +56,10 @@ class Settings:
     # 証明書（Phase 6、docs/design/extensions.md 2 章）
     tls_mode: str = "internal"        # DOCSEED_TLS_MODE
     tls_check_addr: str = ""          # DOCSEED_TLS_CHECK_ADDR（例 caddy:443）。空なら証明書を監視しない
+    # Web クリップ（Phase 8、docs/design/extensions.md 6 章）
+    webclip_enabled: bool = False     # DOCSEED_WEBCLIP_ENABLED
+    webclip_max_mb: int = 5           # HTML の大きさの上限
+    webclip_proxy: str = ""           # DOCSEED_WEBCLIP_PROXY
     extra: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -139,6 +143,9 @@ class Settings:
             oidc_providers=_oidc_from_env(e),
             tls_mode=e.get("DOCSEED_TLS_MODE", "internal").strip() or "internal",
             tls_check_addr=e.get("DOCSEED_TLS_CHECK_ADDR", "").strip(),
+            webclip_enabled=_bool(e.get("DOCSEED_WEBCLIP_ENABLED"), False),
+            webclip_max_mb=int(e.get("DOCSEED_WEBCLIP_MAX_MB") or "5"),
+            webclip_proxy=e.get("DOCSEED_WEBCLIP_PROXY", "").strip(),
         )
 
 

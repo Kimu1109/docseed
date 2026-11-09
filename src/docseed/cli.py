@@ -85,6 +85,17 @@ def cmd_worker(args: argparse.Namespace) -> None:
     Worker(settings).run()
 
 
+def cmd_fetcher(args: argparse.Namespace) -> None:
+    from .logs import setup
+    from .webclip.fetcher import Fetcher
+    settings = Settings.from_env()
+    setup(settings.log_level)
+    settings.ensure_dirs()
+    if not settings.webclip_enabled:
+        sys.exit("URL の取り込みは無効です（.env の DOCSEED_WEBCLIP_ENABLED=true にしてください）")
+    Fetcher(settings).run()
+
+
 def cmd_fetch_models(args: argparse.Namespace) -> None:
     from .models import fetch_all
     fetch_all(Settings.from_env(), force=args.force)
@@ -219,6 +230,9 @@ def main(argv: list[str] | None = None) -> None:
 
     s = sub.add_parser("worker", help="OCR・埋め込みの処理を行う worker を起動する")
     s.set_defaults(func=cmd_worker)
+
+    s = sub.add_parser("fetcher", help="URL の取り込み（Web クリップ）の取得を行う fetcher を起動する")
+    s.set_defaults(func=cmd_fetcher)
 
     s = sub.add_parser("fetch-models", help="OCR と埋め込みのモデルを取得する（初回に 1 度）")
     s.add_argument("--force", action="store_true", help="取得済みでも取り直す")

@@ -106,7 +106,9 @@ def _register_blob(conn: sqlite3.Connection, store: BlobStore, f: StoredFile) ->
 
 def upload(conn: sqlite3.Connection, store: BlobStore, user: User, folder_id: int, filename: str,
            src: BinaryIO, *, max_bytes: int, on_conflict: str = "rename", relative_path: str | None = None,
-           ip: str | None = None, via_share_id: int | None = None) -> UploadResult:
+           ip: str | None = None, via_share_id: int | None = None, mime_type: str | None = None,
+           kind: str = "file") -> UploadResult:
+    """ファイルを保存する。mime_type は判定を上書きする（Web クリップの HTML）。kind は documents.kind。"""
     if on_conflict not in ON_CONFLICT:
         raise ValidationFailed("on_conflict は rename / replace / error のいずれかです")
     fo.require_folder_role(conn, user, folder_id, "editor")
@@ -119,6 +121,8 @@ def upload(conn: sqlite3.Connection, store: BlobStore, user: User, folder_id: in
     name = fo.clean_name(filename, what="ファイル名")
     store.check_free_space()
     stored = store.receive(src, name, max_bytes)  # 時間のかかる受信はトランザクションの外で行う
+    if mime_type:
+        stored.mime_type = mime_type
     try:
         with Tx(conn):
             target = fo.ensure_path(conn, user, folder_id, parts) if parts else folder_id
@@ -141,8 +145,8 @@ def upload(conn: sqlite3.Connection, store: BlobStore, user: User, folder_id: in
             if not replaced:
                 cur = conn.execute(
                     "INSERT INTO documents(folder_id, blob_id, filename, created_by, created_at, updated_at,"
-                    " uploaded_via_share_id) VALUES (?,?,?,?,?,?,?)",
-                    (target, blob_id, name, user.id, t, t, via_share_id),
+                    " uploaded_via_share_id, kind) VALUES (?,?,?,?,?,?,?,?)",
+                    (target, blob_id, name, user.id, t, t, via_share_id, kind),
                 )
                 doc_id = int(cur.lastrowid)
             audit(conn, "upload", user_id=user.id, target_type="document", target_id=doc_id, ip=ip,
@@ -365,6 +369,8 @@ def gc_blobs(conn: sqlite3.Connection, store: BlobStore) -> int:
         rows = conn.execute(
             "SELECT id, storage_path, thumb_path, view_path FROM blobs b"
             " WHERE NOT EXISTS (SELECT 1 FROM documents d WHERE d.blob_id = b.id)"
+            # Web クリップの og:image（どの文書からも直接は参照されない）は、クリップがある間は残す
+            " AND NOT EXISTS (SELECT 1 FROM web_clips w WHERE w.image_blob_id = b.id)"
         ).fetchall()
         for r in rows:
             conn.execute("DELETE FROM blobs WHERE id = ?", (r["id"],))

@@ -313,7 +313,7 @@ def _resolve(conn, cand: set[int], allowed: set[int], after, before, pq: ParsedQ
     for i in range(0, len(ids), 500):
         part = ids[i:i + 500]
         rows += conn.execute(
-            f"SELECT c.id AS chunk_id, c.text, d.id, d.filename, d.folder_id, d.updated_at, d.created_at,"
+            f"SELECT c.id AS chunk_id, c.text, d.id, d.filename, d.kind, d.folder_id, d.updated_at, d.created_at,"
             f" b.mime_type, b.size_bytes, b.status"
             f" FROM chunks c JOIN documents d ON d.blob_id = c.blob_id AND d.deleted_at IS NULL"
             f" JOIN blobs b ON b.id = c.blob_id WHERE c.id IN ({','.join('?' * len(part))})", part).fetchall()
@@ -335,9 +335,9 @@ def _resolve(conn, cand: set[int], allowed: set[int], after, before, pq: ParsedQ
             continue
         if tagged is not None and r["id"] not in tagged:
             continue
-        if want_type and kind_of(r["mime_type"], r["filename"]) != want_type:
+        if want_type and kind_of(r["mime_type"], r["filename"], r["kind"]) != want_type:
             continue
-        docs[r["id"]] = {"id": r["id"], "filename": r["filename"], "folder_id": r["folder_id"],
+        docs[r["id"]] = {"id": r["id"], "filename": r["filename"], "kind": r["kind"], "folder_id": r["folder_id"],
                          "mime_type": r["mime_type"], "size_bytes": r["size_bytes"], "status": r["status"],
                          "updated_at": r["updated_at"], "created_at": r["created_at"]}
         chunk_docs.setdefault(r["chunk_id"], []).append(r["id"])

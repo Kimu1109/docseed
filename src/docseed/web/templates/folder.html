@@ -9,6 +9,7 @@
             hx-target="#share-body" hx-swap="outerHTML">{{ icon("share") }}共有</button>
     {% if can_edit %}
     <button type="button" class="btn" data-open-dialog="dlg-folder">{{ icon("create_new_folder") }}新しいフォルダ</button>
+    {% if webclip_enabled %}<button type="button" class="btn" data-open-dialog="dlg-webclip">{{ icon("link") }}URL を追加</button>{% endif %}
     <button type="button" class="btn btn-primary" data-upload-pick>{{ icon("upload") }}アップロード</button>
     {% endif %}
   </div>
@@ -47,6 +48,19 @@
     </div>
   </form>
 </dialog>
+{% if webclip_enabled %}
+<dialog id="dlg-webclip" class="dialog">
+  <form hx-post="/f/{{ folder.id }}/webclips" hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
+    <h2>URL を追加</h2>
+    <p class="muted small">ページを取得して、タイトル・説明・本文で検索できるように保存します。PDF や画像の URL は、そのファイルを保存します。</p>
+    <label>URL <input name="url" type="url" required maxlength="2048" placeholder="https://" autocomplete="off" inputmode="url"></label>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-close-dialog>キャンセル</button>
+      <button type="submit" class="btn btn-primary">追加</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
 <dialog id="dlg-rename" class="dialog">
   <form hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
     <h2>名前を変更</h2>

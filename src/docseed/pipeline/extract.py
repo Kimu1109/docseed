@@ -181,9 +181,43 @@ def html_to_text(src: str) -> str:
     return re.sub(r"[ \t]+", " ", text)
 
 
+WEBCLIP_SHORT = 200   # Web クリップの本文がこれより短ければ警告する（JavaScript で描くサイトなど）
+
+
+def html_body(src: str, url: str | None = None) -> str:
+    """HTML の本文（trafilatura）。取り出せなければタグを除いただけの文字にする。extensions.md 6.5。"""
+    try:
+        import trafilatura
+        text = trafilatura.extract(src, url=url, output_format="txt", include_tables=True,
+                                   include_comments=False, favor_recall=True)
+    except Exception:  # noqa: BLE001 - 壊れた HTML でも、タグを除いた文字で検索できるようにする
+        text = None
+    return text if text and text.strip() else html_to_text(src)
+
+
+def webclip_page(src: str, clip: dict) -> tuple[str, list[dict]]:
+    """Web クリップの 1 ページ目: タイトル・サイト名・説明・本文（と oEmbed の補い）を並べる。"""
+    try:
+        import trafilatura
+        body = trafilatura.extract(src, url=clip.get("url"), output_format="txt", include_tables=True,
+                                   include_comments=False, favor_recall=True) or ""
+    except Exception:  # noqa: BLE001
+        body = ""
+    extra = clip.get("oembed_text") or ""
+    parts = [clip.get("title"), clip.get("site_name"), clip.get("description"), body, extra]
+    text = "\n\n".join(p.strip() for p in parts if p and p.strip())
+    warnings = []
+    if len(re.sub(r"\s", "", body + extra)) < WEBCLIP_SHORT:
+        warnings.append({"code": "webclip_text_short"})
+    return text, warnings
+
+
 def iter_pages(path: Path, mime: str, *, dpi: int = 200, skip: set[int] | None = None,
-               force_ocr: bool = False) -> Iterator[Page]:
-    """ページを順に取り出す。skip のページ番号は飛ばす（途中再開用）。"""
+               force_ocr: bool = False, webclip: dict | None = None) -> Iterator[Page]:
+    """ページを順に取り出す。skip のページ番号は飛ばす（途中再開用）。
+
+    webclip を渡すと（Web クリップの HTML）、1 ページ目をタイトル・サイト名・説明・本文にする。
+    """
     skip = skip or set()
     k = kind(mime)
     if k in ("text", "html"):
@@ -191,9 +225,12 @@ def iter_pages(path: Path, mime: str, *, dpi: int = 200, skip: set[int] | None =
             return
         raw = path.read_bytes()
         text = decode_text(raw)
-        if k == "html":
-            text = html_to_text(text)
-        yield Page(1, "text", text=normalize(text))
+        warnings: list[dict] = []
+        if k == "html" and webclip is not None:
+            text, warnings = webclip_page(text, webclip)
+        elif k == "html":
+            text = html_body(text)
+        yield Page(1, "text", text=normalize(text), warnings=warnings)
         return
 
     if k in OFFICE_KINDS:
