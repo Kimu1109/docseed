@@ -168,3 +168,18 @@ SELECT folder_id FROM accessible_folders;
 - フォルダのメンバー追加・変更・削除
 - 共有リンクの作成・無効化・アクセス・パスワード失敗
 - ユーザーの作成・無効化、API トークンの発行・無効化
+
+## 8. インターネットに公開する場合の入口の制限
+
+Tailscale や LAN の中だけでなく、ポートを開けて公開する場合に備え、Caddy（`docker/Caddyfile`）で次を行う。アプリ側の認証・権限チェックはそのまま残し、入口でもう一段止める（多層防御）。
+
+| 項目 | 内容 |
+|---|---|
+| 内側の範囲 | `DOCSEED_TRUSTED_NETS`（既定 `private_ranges 100.64.0.0/10`: RFC 1918・ループバック・`fd00::/8`・Tailscale） |
+| 外側から隠すパス | `/admin`、`/admin/*`、`/api/v1/admin`、`/api/v1/admin/*`、`/api/docs`、`/api/docs/*`、`/api/v1/openapi.json`、`/healthz` → 404（存在を知らせない。3.3 と同じ方針）。`%61dmin` や `%2F` のような符号化は Caddy が戻してから照合する |
+| IP アドレスで開くサイト | `DOCSEED_LAN_IP` のサイトは内側からだけ。外側からは応答せずに接続を切る（`abort`） |
+| 追加するヘッダ | `Cross-Origin-Opener-Policy: same-origin`、`Permissions-Policy`（カメラ・マイク・位置情報・決済・USB などを無効）。アプリが同じヘッダを付けたときはアプリの値を優先する |
+| 外すヘッダ | `Server`、`Via`、`X-Powered-By` |
+
+- Docker の `healthcheck` は api に直接（`127.0.0.1:8000/healthz`）問い合わせるので、Caddy の制限の影響を受けない。
+- 注意: Docker のポート公開では、IPv6 の接続やホスト自身からの接続は docker-proxy を通り、接続元が Docker のゲートウェイ（`172.16.0.0/12` 内）に見える。IPv6 で外部に公開する場合はこの範囲を内側に含めないこと（README）。

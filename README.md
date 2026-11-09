@@ -130,6 +130,23 @@ docker compose logs caddy | grep -i -E "certificate|error"   # 「certificate ob
 
 api が 6 時間ごとに Caddy の証明書を確かめ、検証できない（名前が合わない・期限切れ）ときと、期限まで 7 日を切ったときに、管理画面の「確認が必要な項目」に出します。証明書の状態は管理画面の「HTTPS の証明書」で見られます。
 
+### インターネットに公開する
+
+Tailscale や LAN の中だけで使うのが基本ですが、ルーターでポートを開けて公開する場合に備えて、Caddy が次の制限をかけています（設定なしで有効。[設計](docs/design/security.md) 8 章）。
+
+- LAN・Tailscale の外からは、管理画面（`/admin`）・管理用 API（`/api/v1/admin`）・API の説明ページ（`/api/docs`）・`/healthz` が 404 になる。管理の操作は Tailscale 経由で行う
+- 外から IP アドレス（`DOCSEED_LAN_IP`）で開こうとすると、何も返さずに接続を切る
+- `Permissions-Policy`・`Cross-Origin-Opener-Policy` を付け、`Server` などのヘッダを外す
+
+「内側」の範囲は `.env` の `DOCSEED_TRUSTED_NETS` で変えられます（既定は `private_ranges 100.64.0.0/10`）。例えば LAN からも管理させず Tailscale だけにするなら `DOCSEED_TRUSTED_NETS=100.64.0.0/10 fd7a:115c:a1e0::/48` にして `docker compose up -d --force-recreate caddy`。
+
+公開するときは、あわせて次も行ってください。
+
+- 管理画面の「ログインの設定」で 2 段階の確認を必須にする
+- ルーターで開けるのは HTTPS のポートだけにする（80 は証明書の取得に使う場合だけ）。証明書は `acme_dns` などの公的なものにする
+- **IPv6 で公開する場合の注意**: Docker のポート公開では、IPv6 の接続は docker-proxy を通るため、接続元が Docker のゲートウェイ（`172.x.x.x`）に見え、上の制限をすり抜けます。IPv6 でも公開するなら `DOCSEED_TRUSTED_NETS` を `10.0.0.0/8 192.168.0.0/16 100.64.0.0/10 fd7a:115c:a1e0::/48` のように `172.16.0.0/12` を含まない値にしてください（そのぶん IPv6 で開いた LAN の端末も外側扱いになります）
+- 外の回線（スマホのテザリングなど）から `https://<名前>/admin` と `https://<名前>/healthz` が 404 になることを確かめる
+
 ### Phase 7 までから更新する場合（写真・サムネイル）
 
 ```bash
@@ -162,6 +179,7 @@ docker compose exec api docseed reprocess unsupported   # 以前に保存した 
 | `caddy` のログに `module not registered: dns.providers.cloudflare` | `DOCSEED_TLS_MODE=acme_dns` には DNS のプラグイン入りの Caddy が要ります。`docker compose --profile acme build caddy-acme` と `.env` の `DOCSEED_CADDY_IMAGE=docseed-caddy:latest` |
 | 証明書の警告で先に進めない（「この接続ではプライバシーが保護されません」で例外を追加するボタンが出ない） | 開いた名前と証明書が合っていません。そのドメインに HSTS（以前に Let's Encrypt の証明書で開いたなど）が付いていると、ブラウザは例外を許しません。上の「手元の証明書を使う」でその名前の証明書を Caddy に使わせてください |
 | `caddy` が起動しない・`loading certificates` や `open /certs/...: no such file` のエラー | `.env` の `DOCSEED_TLS_CERT_DIR` と、その中の相対パス `DOCSEED_TLS_CERT` / `DOCSEED_TLS_KEY` を確認（`sudo ls -l /etc/letsencrypt/live/<名前>/`）。`DOCSEED_TLS_MODE` は `internal` / `file` / `tailscale` / `acme_dns` のどれか |
+| 管理画面（`/admin`）や `/api/docs` が 404 になる | LAN・Tailscale の外からの接続とみなされています（「インターネットに公開する」）。Tailscale 経由で開くか、`.env` の `DOCSEED_TRUSTED_NETS` に接続元の範囲を足して `docker compose up -d --force-recreate caddy` |
 | `api` がすぐ止まる | `docker compose logs api` を確認。`.env` の `DOCSEED_SECRET_KEY` 未設定や、`/srv/docseed` の所有者（UID 1000 が必要）が原因のことが多い |
 
 ## ログイン方法（パスキー・確認コード・Google など）
@@ -425,7 +443,7 @@ docseed create-admin --username admin
 docseed serve --port 8000
 ```
 
-API の仕様は起動後に `/api/docs` で確認できます（ログインが必要）。
+API の仕様は起動後に `/api/docs` で確認できます（ログインが必要。LAN・Tailscale の中からだけ開けます）。
 
 ## コマンド
 

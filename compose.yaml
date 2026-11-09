@@ -27,6 +27,8 @@ services:
       DOCSEED_ACME_EMAIL: ${DOCSEED_ACME_EMAIL:-}
       DOCSEED_ACME_DNS_TOKEN: ${DOCSEED_ACME_DNS_TOKEN:-}
       DOCSEED_ACME_STAGING: ${DOCSEED_ACME_STAGING:-false}
+      # 「内側」とみなす接続元（管理画面などを開ける範囲。docker/Caddyfile の冒頭を参照）。空だと Caddy の既定値が使われないので、ここで補う
+      DOCSEED_TRUSTED_NETS: ${DOCSEED_TRUSTED_NETS:-private_ranges 100.64.0.0/10}
     volumes:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
       - ${DOCSEED_TLS_CERT_DIR:-./docker/certs}:/certs:ro

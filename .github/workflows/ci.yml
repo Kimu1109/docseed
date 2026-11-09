@@ -33,8 +33,42 @@ jobs:
                 -e DOCSEED_HTTPS_PORT=8443 -e DOCSEED_HTTP_PORT=8080 \
                 -e DOCSEED_TLS_CERT=live/x/fullchain.pem -e DOCSEED_TLS_KEY=live/x/privkey.pem \
                 caddy:2 caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/out.json
+              # 外側からの管理系のパスの 404 と、IP のサイトの切断（docs/design/security.md 8 章）
+              grep -q '"100.64.0.0/10"' /tmp/out.json
+              grep -q '"/api/v1/admin/\*"' /tmp/out.json
+              grep -q '"abort":true' /tmp/out.json
+              grep -q 'Permissions-Policy' /tmp/out.json
             done
           done
+      - name: 入口の制限が実際に効くこと（外側 = 内側の範囲に入らない接続元）
+        run: |
+          docker network create ct
+          printf ':8000 {\n\theader X-Powered-By test\n\trespond "upstream" 200\n}\n' > /tmp/Stub
+          docker run -d --name api --network ct -v /tmp/Stub:/etc/caddy/Caddyfile:ro caddy:2
+          probe() {  # $1 = DOCSEED_TRUSTED_NETS, 以降 = "パス 期待するコード"
+            nets=$1; shift
+            docker rm -f c1 >/dev/null 2>&1 || true
+            docker run -d --name c1 --network ct -v "$PWD/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
+              -e DOCSEED_HOST=docseed.example.com -e DOCSEED_LAN_IP=c1 -e DOCSEED_TRUSTED_NETS="$nets" caddy:2
+            sleep 3
+            ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' c1)
+            for t in "$@"; do
+              set -- $t
+              got=$(docker run --rm --network ct curlimages/curl:8.10.1 -sk -o /dev/null -w '%{http_code}' \
+                --resolve docseed.example.com:443:$ip "https://docseed.example.com$1" || true)
+              echo "[$nets] $1 -> $got"; [ "$got" = "$2" ]
+            done
+          }
+          probe "10.99.0.0/16" "/ 200" "/s/x 200" "/api/v1/folders 200" "/admin 404" "/admin/users 404" \
+            "/api/v1/admin/users 404" "/api/v1/%61dmin/users 404" "/api/docs 404" "/api/v1/openapi.json 404" "/healthz 404"
+          got=$(docker run --rm --network ct curlimages/curl:8.10.1 -sk -o /dev/null -w '%{http_code}' https://c1/ || true)
+          echo "IP site from outside -> $got"; [ "$got" = "000" ]
+          probe "private_ranges 100.64.0.0/10" "/admin 200" "/api/docs 200" "/healthz 200"
+          h=$(docker run --rm --network ct curlimages/curl:8.10.1 -skI https://c1/)
+          echo "$h"
+          echo "$h" | grep -qi '^permissions-policy:'
+          echo "$h" | grep -qi '^cross-origin-opener-policy: same-origin'
+          if echo "$h" | grep -qiE '^(x-powered-by|server|via):'; then echo "外すはずのヘッダが残っている"; exit 1; fi
       - name: acme_dns（DNS のプラグイン入りの Caddy をビルドして展開）
         run: |
           docker build -t docseed-caddy docker/caddy
