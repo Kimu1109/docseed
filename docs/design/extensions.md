@@ -54,7 +54,7 @@ RAM 8GB での目安は、api 1.5 + worker 3 + llm 2 + Caddy・OS 1 = 7.5GB で�
 | 0002 | `blobs` に派生ファイルと画像の情報の列を追加。`jobs` を作り直して種類を増やす（Phase 6〜9 の分をまとめて）（**実装済み**: `0002_derived_files.sql`。0003 を先に適用した DB にも後から適用できることをテストで確かめた） | Phase 6 |
 | 0003 | `webauthn_credentials`, `user_totp`, `user_recovery_codes`, `user_identities`, `auth_challenges` を追加。`users` と `sessions` に列を追加（**実装済み**: `0003_login_methods.sql`） | Phase 7 |
 | 0004 | `web_clips` を追加。`documents` に `kind` を追加（**実装済み**: `0004_web_clips.sql`） | Phase 8 |
-| 0005 | `blob_summaries`, `document_suggestions`, `user_prefs` を追加 | Phase 9 |
+| 0005 | `blob_summaries`, `document_suggestions`, `user_prefs` を追加（**実装済み**: `0005_suggestions.sql`。`folder_vectors` と、`suggest_document` の重複を防ぐインデックスも） | Phase 9 |
 
 - SQLite では `CHECK` 制約を変えられないので、`jobs.type` の種類を増やすときは表を作り直す（新しい表を作る → 行を移す → 古い表を消して名前を変える → インデックスを作り直す）。0002 で Phase 6〜9 のジョブの種類（`derive_blob`, `fetch_url`, `suggest_document`, `summarize_blob`）をまとめて追加し、作り直しを 1 回で済ませる。まだ使わない種類のジョブは登録されないだけで害はない。
 
@@ -655,6 +655,21 @@ CREATE INDEX idx_web_clips_canonical ON web_clips(canonical_url);
 
 ## 7. 整理の補助（フォルダ・タグの候補、要約, Phase 9）
 
+> **実装済み**（`suggest.py`・`llm.py`、`api/suggestions.py`、worker の `suggest_document`・`summarize_blob`）。実装で決めた点:
+>
+> - **候補のフォルダは同じ所有者のフォルダだけ。** 7.2 では「共有されたフォルダは、自分が editor 以上なら含める」としたが、所有者の違うフォルダへの移動はできない（コピーになる）ので、移動の候補には出さない。今のフォルダも候補にしない。
+> - **フォルダのパスのベクトル**は、フォルダの作成・名前の変更・移動のときに作り直す代わりに、`folder_vectors` に埋め込んだときのパス（補助列 `+path`）を一緒に置き、候補を計算するときに今のパスと違えば作り直す。フォルダの操作に処理を足さずに済み、api と worker のどちらからでも同じに動く。
+> - **`suggest_document` ジョブ**は `blob_id` が NULL（文書ごと）なので、`payload` の `document_id` で重複を防ぐ（`uq_jobs_suggest`）。
+> - **文書詳細を開いたときの計算**は、埋め込みの候補がまだ一度も無い文書だけで行い、結果を保存する。api では検索用の埋め込み器（`QueryEmbedder`）をパスの埋め込みに使い、読み込めなければパスとの比較を省く。
+> - **古い候補の片付け**: 手で移動したらフォルダの候補、手でタグを変えたらタグの候補を消す（7.7 では「その文書の open の候補を消す」）。候補を採用したときは、もう片方の種類の候補は残す。
+> - **自動での移動**はルート直下の文書には行わない（Inbox と共有リンクからの受け取りだけ）。お知らせは Inbox の一覧の上に「自動で移動した文書」として出し、「元に戻す」で戻せる（戻したら、その移動先は却下した候補にする）。
+> - **アイコン**: `auto_awesome` は今の Material Symbols に無いので、候補・要約の印は `wand_stars` にした。
+> - **LLM**: 公式の `ghcr.io/ggml-org/llama.cpp:server` が arm64 を配布していることを確かめたので、そのイメージを使う（`DOCSEED_LLM_IMAGE` で変更可）。モデルは `docseed fetch-models --llm <名前>`（`huggingface_hub` で GGUF を取得。tools イメージは要らない）。既定は第一候補の sarashina2.2-1b（Q4_K_M、MIT）を**仮に**置き、Pi 5 での計測（`scripts/poc/bench_llm.py`）で決め直す。
+> - **プロンプトの注入への対策**: 本文の中の `<document>` / `</document>` は取り除いてから囲む（囲みを抜けられないように）。
+> - **要約の失敗**: 時間切れは警告 `summary_timeout` にしてやり直さない。llm サービスに接続できない（起動中・止まっている）ときは、ジョブを普通の失敗と同じにやり直す。
+> - **しきい値の評価**は `scripts/eval_suggest.py` ではなく `docseed eval-suggest --username <名前>`（DB を直接読むので api のコンテナの中で動かす）。分類済みの文書を 1 つずつ未分類とみなし、しきい値の組ごとに 1 位・上位 3 の正解率と「おすすめ」の正しさを出す。
+> - **確認**: 話題ごとに決まった向きのベクトルを返す埋め込み器と、偽の llama-server（`httpx.MockTransport`）で、候補・採用・却下・自動での移動と取り消し・受け取り箱の一覧・設定・要約・タグの置き換え・時間切れ・接続できないときのやり直しを確かめた（`tests/test_suggest.py`）。
+
 ### 7.1 役割の分け方
 
 | 処理 | 方法 | LLM | 既定 |
@@ -898,9 +913,9 @@ Document の表現に `kind` と、Web クリップなら `webclip: {url, canoni
 
 | 項目 | 内容 | 決める時期 |
 |---|---|---|
-| LLM のモデル | 7.4 の候補から、Pi 5 での速さと要約の出来で決める | Phase 9 の最初 |
-| 候補のしきい値 | 7.2・7.3 の仮の値を `eval_suggest.py` で決める | Phase 9 |
-| RAM 8GB での LLM | 1B のモデルでメモリが足りるか。足りなければ 0.6B にするか、llm サービスを処理待ちがあるときだけ起動する | Phase 9 |
-| `llama-server` の arm64 イメージ | 公式のイメージが arm64 を配布しているか | Phase 9 |
+| LLM のモデル | 7.4 の候補から、Pi 5 での速さと要約の出来で決める | Phase 9 の最初（**実装時点では未計測**。sarashina2.2-1b を仮の既定にし、`scripts/poc/bench_llm.py` で計測して決める） |
+| 候補のしきい値 | 7.2・7.3 の仮の値を `eval_suggest.py` で決める | Phase 9（**実装時点では仮の値のまま**。実データがたまったら `docseed eval-suggest` で決める） |
+| RAM 8GB での LLM | 1B のモデルでメモリが足りるか。足りなければ 0.6B にするか、llm サービスを処理待ちがあるときだけ起動する | Phase 9（未計測。README では 8GB なら `qwen3-0.6b` を案内している） |
+| `llama-server` の arm64 イメージ | 公式のイメージが arm64 を配布しているか | **解決**: `ghcr.io/ggml-org/llama.cpp:server` は linux/arm64 を配布している |
 | Google の OAuth の規則 | テストの状態で使える人数・期限など、実装時の Google の規則 | **Phase 7 で対応**: テストの状態ではテストユーザー（最大 100 人）だけが使える。範囲は `openid email profile` だけなので本番にも公開できる。トークンは保存しないので、テストの状態のリフレッシュトークンの期限（7 日）は関係しない。手順は README |
 | JavaScript で描くサイト | oEmbed も無いサイトの本文。必要なら、ヘッドレスブラウザを別のサービスとして任意で足す | Phase 8 の後 |

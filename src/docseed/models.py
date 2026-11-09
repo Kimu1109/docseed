@@ -66,6 +66,41 @@ def fetch_embedding(settings: Settings, *, force: bool = False) -> list[Path]:
     return sorted(dest.rglob("*"))
 
 
+# 要約に使う LLM の候補（docs/design/extensions.md 7.4）。
+# 名前: (Hugging Face のリポジトリ, GGUF のファイル名, ライセンス)
+LLM_MODELS = {
+    "sarashina2.2-1b": ("mmnga/sarashina2.2-1b-instruct-v0.1-gguf", "sarashina2.2-1b-instruct-v0.1-Q4_K_M.gguf", "MIT"),
+    "sarashina2.2-1b-q8": ("mmnga/sarashina2.2-1b-instruct-v0.1-gguf", "sarashina2.2-1b-instruct-v0.1-Q8_0.gguf",
+                           "MIT"),
+    "lfm2.5-1.2b-jp": ("LiquidAI/LFM2.5-1.2B-JP-GGUF", "LFM2.5-1.2B-JP-Q4_K_M.gguf", "LFM Open License v1.0"),
+    "qwen3-1.7b": ("unsloth/Qwen3-1.7B-GGUF", "Qwen3-1.7B-Q4_K_M.gguf", "Apache-2.0"),
+    "qwen3-0.6b": ("ggml-org/Qwen3-0.6B-GGUF", "Qwen3-0.6B-Q8_0.gguf", "Apache-2.0"),
+}
+
+
+def llm_dir(settings: Settings) -> Path:
+    return settings.models_dir / "llm"
+
+
+def fetch_llm(settings: Settings, name: str, *, force: bool = False) -> Path:
+    """GGUF を models/llm/ に取得する（llm サービスが読み取り専用で読む）。"""
+    if name not in LLM_MODELS:
+        raise SystemExit(f"不明なモデルです: {name}（{', '.join(LLM_MODELS)} のどれか）")
+    repo, filename, license_ = LLM_MODELS[name]
+    dest = llm_dir(settings) / filename
+    if dest.exists() and not force:
+        print(f"  取得済みです: {dest}")
+        return dest
+    from huggingface_hub import hf_hub_download
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    print(f"  {repo} の {filename} を取得しています（ライセンス: {license_}）")
+    path = Path(hf_hub_download(repo, filename, local_dir=str(dest.parent)))
+    if path != dest:
+        shutil.move(str(path), dest)
+    shutil.rmtree(dest.parent / ".cache", ignore_errors=True)
+    return dest
+
+
 def write_manifest(settings: Settings) -> Path:
     root = settings.models_dir
     files = {str(p.relative_to(root)): {"sha256": sha256_file(p), "bytes": p.stat().st_size}
@@ -76,6 +111,14 @@ def write_manifest(settings: Settings) -> Path:
                                "embed_model": settings.embed_model, "files": files},
                               ensure_ascii=False, indent=2))
     return out
+
+
+def fetch_llm_only(settings: Settings, name: str, *, force: bool = False) -> None:
+    settings.ensure_dirs()
+    print("要約に使う LLM（GGUF）を取得しています")
+    p = fetch_llm(settings, name, force=force)
+    m = write_manifest(settings)
+    print(f"完了しました → {p}\n  .env の DOCSEED_LLM_MODEL={p.name} にしてください（manifest: {m}）")
 
 
 def fetch_all(settings: Settings, *, force: bool = False) -> None:

@@ -13,6 +13,7 @@ Raspberry Pi 5 で動くローカルのドキュメントサーバーです。�
 | Phase 6 | HTTPS 証明書の方式の切り替え（internal / file / tailscale / acme_dns）と監視、アイコン、HEIC / AVIF、サムネイル・プレビュー | 実装済み |
 | Phase 7 | ログイン（パスキー・確認コード・復旧コード・Google などの OIDC・再認証） | 実装済み |
 | Phase 8 | URL の取り込み（Web クリップ。SSRF 対策つきの取得、OGP・本文の取り出しと検索、ブックマークレット） | 実装済み |
+| Phase 9 | 整理の補助（フォルダ・タグの候補、小型 LLM による要約） | 実装済み（LLM のモデルは Pi 5 での計測で決める） |
 
 ## Raspberry Pi で動かす（Docker）
 
@@ -245,6 +246,50 @@ docker compose up -d     # fetcher（取得の担当）が起動する
 
 `DOCSEED_WEBCLIP_PROXY` でプロキシを使うこともできます。そのときは名前の解決をプロキシに任せることになるので、**プロキシの側で LAN への通信を止めてください**。
 
+## 整理の補助（フォルダ・タグの候補と要約）
+
+似ている文書から、置くフォルダと付けるタグの候補を出します。候補は提案だけで、移動やタグ付けはボタンを押したときに行います（設定の「整理の補助」で、確かさの高いものを自動で適用することもできます）。
+
+- **受け取り箱（Inbox）**・共有リンクで受け取った文書・マイファイルの直下に置いた文書には、処理が終わると候補を作ります。Inbox の一覧には各文書のおすすめのフォルダが出て、「移動」で 1 回で動かせます。チェックした文書をまとめて移動することもできます
+- それ以外の文書は、文書の画面を開いたときに候補を出します（「整理の候補」の欄）
+- 候補は、あなた自身のフォルダの中で、似ている文書が多いフォルダです。他人のフォルダは候補にしません。まだ文書の少ないフォルダは、フォルダの名前と内容の近さで候補にします
+- 却下したタグの候補は、同じ文書には二度と出しません
+
+候補のしきい値は仮の値です。分類済みの文書がある程度たまったら、次で正解率を確かめられます（1 位の正解率・上位 3 の正解率・「おすすめ」の正しさ）。
+
+```bash
+docker compose exec api docseed eval-suggest --username <名前>
+```
+
+### 要約（小型の LLM、任意）
+
+Pi の中で小型の LLM（llama.cpp）を動かし、文書ごとに 2〜3 文の要約と、新しいタグの候補を作ります。要約は文書の画面と検索結果に出ます（検索の対象にはしません）。外部とは通信しません。**RAM 16GB を推奨**します（8GB なら小さいモデル `qwen3-0.6b` を使ってください）。
+
+```bash
+docker compose exec api docseed fetch-models --llm sarashina2.2-1b    # models/llm/ に GGUF を置く（約 0.8GB）
+```
+
+```bash
+# .env
+DOCSEED_LLM_ENABLED=true
+DOCSEED_LLM_MODEL=sarashina2.2-1b-instruct-v0.1-Q4_K_M.gguf   # fetch-models の最後に表示された名前
+COMPOSE_PROFILES=llm            # Web クリップも使うなら webclip,llm
+```
+
+```bash
+docker compose up -d
+```
+
+| 名前（`--llm`） | ライセンス | 備考 |
+|---|---|---|
+| `sarashina2.2-1b`（既定） | MIT | 日本語の学習が中心。Q4_K_M |
+| `sarashina2.2-1b-q8` | MIT | Q8_0（少し遅く、少し正確） |
+| `lfm2.5-1.2b-jp` | LFM Open License v1.0 | CPU 向けの設計。年間売上 1,000 万ドル未満なら商用も無料（ライセンスの条件を確認してください） |
+| `qwen3-1.7b` | Apache-2.0 | |
+| `qwen3-0.6b` | Apache-2.0 | RAM 8GB 向け |
+
+要約は 1 件ずつ、ほかの処理（アップロード・再処理）が無いときだけ行います。1 件 180 秒（`DOCSEED_LLM_TIMEOUT_S`）を超えたら、その文書は要約なしにします。モデルを比べるときは `scripts/poc/bench_llm.py` で、速さと要約の出来（自分の文書 20〜30 件）を確かめてください。
+
 ## 写真（HEIC など）とサムネイル
 
 iPhone の写真（HEIC / HEIF）と AVIF も、ほかの画像と同じように文字を読み取って検索できます。
@@ -397,6 +442,8 @@ API の仕様は起動後に `/api/docs` で確認できます（ログインが
 | `docseed status [--json]` | 状態と警告を表示する（管理画面と同じ内容） |
 | `docseed worker` | 文字の読み取り（OCR）と埋め込みの処理を行う |
 | `docseed fetch-models` | OCR と埋め込みのモデルを取得する（`.[tools]` が必要） |
+| `docseed fetch-models --llm NAME` | 要約に使う LLM（GGUF）を `models/llm/` に取得する |
+| `docseed eval-suggest --username NAME` | フォルダの候補のしきい値を、分類済みの文書で評価する |
 | `docseed fetcher` | URL の取り込み（Web クリップ）の取得を行う（`DOCSEED_WEBCLIP_ENABLED=true` のとき。compose の profile `webclip`） |
 | `docseed derive missing\|all` | 画像・PDF のサムネイルとプレビューを作る（`all` は作り直す。文字の読み取りはやり直さない） |
 | `docseed reprocess failed\|outdated\|unsupported\|all` | 文書を再処理する（`--force-ocr` で PDF も画像として読み取る） |

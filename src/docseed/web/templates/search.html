@@ -41,6 +41,7 @@
             <span class="muted small">{{ paths[d.folder_id] }}</span>
             <span class="muted small">{{ d.updated_at | shortdate }}</span>
           </div>
+          {% if summaries.get(d.id) %}<p class="result-summary small">{{ icon("wand_stars") }} {{ summaries[d.id] }}</p>{% endif %}
           {% for s in h.snippets %}
           <a class="snippet" href="/d/{{ d.id }}?q={{ q | urlencode }}{% if s.page_no %}#p{{ s.page_no }}{% endif %}">
             {% if s.page_no %}<span class="snip-page">{{ s.page_no }} ページ</span>{% endif %}

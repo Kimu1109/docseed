@@ -96,8 +96,32 @@ def cmd_fetcher(args: argparse.Namespace) -> None:
     Fetcher(settings).run()
 
 
+def cmd_eval_suggest(args: argparse.Namespace) -> None:
+    import json as _json
+
+    from .suggest import evaluate
+    from .users import find_by_username
+    conn = _conn(Settings.from_env())
+    u = find_by_username(conn, args.username)
+    if u is None:
+        sys.exit(f"ユーザー「{args.username}」が見つかりません")
+    rows = evaluate(conn, u["id"], sim_mins=[float(x) for x in args.sim_min.split(",")],
+                    conf_mins=[float(x) for x in args.conf_min.split(",")], limit=args.limit)
+    if args.json:
+        print(_json.dumps(rows, ensure_ascii=False, indent=2))
+        return
+    print("類似度の下限  確かさの下限  文書  1位の正解率  上位3の正解率  おすすめの数  おすすめの正解率")
+    for r in rows:
+        prec = "—" if r["recommended_precision"] is None else f"{r['recommended_precision']:.3f}"
+        print(f"{r['sim_min']:>10.2f}  {r['conf_min']:>10.2f}  {r['documents']:>4}  {r['top1'] or 0:>10.3f}"
+              f"  {r['top3'] or 0:>12.3f}  {r['recommended']:>10}  {prec:>14}")
+
+
 def cmd_fetch_models(args: argparse.Namespace) -> None:
-    from .models import fetch_all
+    from .models import fetch_all, fetch_llm_only
+    if args.llm:
+        fetch_llm_only(Settings.from_env(), args.llm, force=args.force)
+        return
     fetch_all(Settings.from_env(), force=args.force)
 
 
@@ -234,8 +258,17 @@ def main(argv: list[str] | None = None) -> None:
     s = sub.add_parser("fetcher", help="URL の取り込み（Web クリップ）の取得を行う fetcher を起動する")
     s.set_defaults(func=cmd_fetcher)
 
+    s = sub.add_parser("eval-suggest", help="フォルダの候補のしきい値を、分類済みの文書で評価する")
+    s.add_argument("--username", required=True)
+    s.add_argument("--sim-min", default="0.75,0.80,0.85", help="類似度の下限（カンマ区切りで複数）")
+    s.add_argument("--conf-min", default="0.5,0.6,0.7", help="おすすめにする確かさの下限（カンマ区切り）")
+    s.add_argument("--limit", type=int, default=300, help="評価する文書の数の上限（新しいものから）")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(func=cmd_eval_suggest)
+
     s = sub.add_parser("fetch-models", help="OCR と埋め込みのモデルを取得する（初回に 1 度）")
     s.add_argument("--force", action="store_true", help="取得済みでも取り直す")
+    s.add_argument("--llm", metavar="NAME", help="要約に使う LLM（GGUF）だけを取得する（例 sarashina2.2-1b）")
     s.set_defaults(func=cmd_fetch_models)
 
     s = sub.add_parser("derive", help="画像・PDF のサムネイルとプレビューを作る（文字の読み取りはやり直さない）")

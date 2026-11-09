@@ -16,6 +16,7 @@ from . import __version__
 from .api.auth import router as api_auth_router
 from .api.routes import health
 from .api.routes import router as api_router
+from .api.suggestions import router as api_suggest_router
 from .api.webclips import router as api_webclip_router
 from .config import Settings
 from .db import connect, migrate
@@ -91,6 +92,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(api_router)
     app.include_router(api_auth_router)
     app.include_router(api_webclip_router)
+    app.include_router(api_suggest_router)
     app.include_router(public_router)
     app.include_router(auth_router)
     app.include_router(web_router)

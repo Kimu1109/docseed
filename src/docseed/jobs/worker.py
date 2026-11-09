@@ -17,7 +17,7 @@ from ..documents import purge_expired
 from ..monitor import cpu_temp
 from ..storage import BlobStore
 from . import queue
-from .process import Context, derive_blob, process_blob, reembed_blob, reset_blob
+from .process import Context, derive_blob, process_blob, reembed_blob, reset_blob, summarize_blob
 
 log = logging.getLogger("docseed.worker")
 
@@ -119,6 +119,12 @@ class Worker:
                 result = process_blob(self.conn, self.ctx, job["blob_id"], force_ocr=bool(payload.get("force_ocr")))
             elif job["type"] == "reembed_blob":
                 result = reembed_blob(self.conn, self.ctx, job["blob_id"])
+            elif job["type"] == "suggest_document":
+                from ..suggest import run_job
+                doc_id = json.loads(job["payload"] or "{}").get("document_id")
+                result = run_job(self.conn, int(doc_id), self.ctx.embedder) if self.ctx.suggest_enabled else "off"
+            elif job["type"] == "summarize_blob":
+                result = summarize_blob(self.conn, self.ctx, job["blob_id"])
             elif job["type"] == "derive_blob":
                 result = derive_blob(self.conn, self.ctx, job["blob_id"])
             elif job["type"] == "purge_trash":
@@ -182,6 +188,7 @@ class Worker:
 
 
 def default_context(settings: Settings, between_pages) -> Context:
+    from ..llm import LlmClient
     from ..pipeline.embed import OnnxEmbedder
     from ..pipeline.ocr import RapidOcrEngine
 
@@ -193,5 +200,7 @@ def default_context(settings: Settings, between_pages) -> Context:
         embedder_factory=lambda: OnnxEmbedder(settings.models_dir, settings.embed_model,
                                               threads=settings.embed_threads),
         dpi=settings.ocr_dpi, min_score=settings.ocr_min_score, between_pages=between_pages,
-        data_dir=settings.data_dir,
+        data_dir=settings.data_dir, suggest_enabled=settings.suggest_enabled,
+        llm=LlmClient(settings.llm_url, settings.llm_model, timeout_s=settings.llm_timeout_s,
+                      max_input_chars=settings.llm_max_input_chars) if settings.llm_enabled else None,
     )

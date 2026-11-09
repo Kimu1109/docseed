@@ -164,7 +164,9 @@ def upload(conn: sqlite3.Connection, store: BlobStore, user: User, folder_id: in
 # ---------------------------------------------------------------------------
 
 def update_document(conn: sqlite3.Connection, user: User, doc_id: int, *, filename: str | None = None,
-                    folder_id: int | None = None, tags: list[str] | None = None) -> None:
+                    folder_id: int | None = None, tags: list[str] | None = None,
+                    clear_suggestions: bool = True) -> None:
+    """名前・フォルダ・タグを変える。移動やタグの手での変更では、古い整理の候補（open）を消す。"""
     with Tx(conn):
         d = get_document(conn, user, doc_id, "editor")
         target = d["folder_id"]
@@ -180,6 +182,14 @@ def update_document(conn: sqlite3.Connection, user: User, doc_id: int, *, filena
             raise NameConflict(f"「{name}」は既に{where}フォルダにあります")
         conn.execute("UPDATE documents SET filename = ?, folder_id = ?, updated_at = ? WHERE id = ?",
                      (name, target, now(), doc_id))
+        if clear_suggestions and target != d["folder_id"]:
+            conn.execute("DELETE FROM document_suggestions WHERE document_id = ? AND status = 'open'"
+                         " AND kind = 'folder'", (doc_id,))
+        new_tags = sorted({t.strip().lower() for t in tags if t.strip()}) if tags is not None else None
+        if clear_suggestions and new_tags is not None and \
+                new_tags != sorted(x.lower() for x in document_tags(conn, doc_id)):
+            conn.execute("DELETE FROM document_suggestions WHERE document_id = ? AND status = 'open'"
+                         " AND kind = 'tag'", (doc_id,))
         if tags is not None:
             names = sorted({t.strip() for t in tags if t.strip()})
             if any(len(t) > 50 for t in names):

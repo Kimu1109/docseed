@@ -6,6 +6,24 @@
 {%- endmacro %}
 <div id="listing" hx-get="/f/{{ folder.id }}?sort={{ sort }}&order={{ order }}" hx-trigger="refresh" hx-swap="outerHTML"
      {% if docs | selectattr("status", "in", ["pending", "processing"]) | list or clips | selectattr("status", "in", ["pending", "fetching"]) | list %}data-has-pending{% endif %}>
+{% if auto_moves %}
+<div class="note small auto-moves">
+  <b>{{ icon("wand_stars") }} 自動で移動した文書</b>
+  <ul>
+  {% for m in auto_moves %}
+    <li>{{ m.filename }} → <a href="/f/{{ m.to_folder }}">移動先</a>（{{ m.at | shortdate }}）
+      <button type="button" class="linkish" hx-post="/x/automove/{{ m.id }}/undo" hx-vals='{"current": {{ folder.id }}}'
+              hx-target="#listing" hx-swap="outerHTML">元に戻す</button></li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% if reco %}
+<form id="reco-form" hx-post="/f/{{ folder.id }}/suggestions/apply" hx-target="#listing" hx-swap="outerHTML" class="reco-bar">
+  <span class="small">{{ icon("wand_stars") }} おすすめのフォルダがある文書が {{ reco | length }} 件あります。</span>
+  <button type="submit" class="btn btn-sm">チェックした文書をおすすめのフォルダへまとめて移動</button>
+</form>
+{% endif %}
 {% if not folders and not docs and not clips %}
   <div class="empty">
     <p>このフォルダは空です。</p>
@@ -76,7 +94,14 @@
     {% set k = kind_of(d.mime_type, d.filename, d.kind) %}
     <tr>
       <td class="col-kind"><span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span></td>
-      <td class="col-name"><div class="cell-name">{% if d.thumb_path %}<img class="thumb" src="/api/v1/documents/{{ d.id }}/thumbnail" alt="" loading="lazy">{% else %}<span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span>{% endif %}<a class="name" href="/d/{{ d.id }}">{{ d.filename }}{% if d.uploaded_via_share_id %}<span class="flag">リンクで受け取り</span>{% endif %}</a></div></td>
+      <td class="col-name"><div class="cell-name">{% if d.thumb_path %}<img class="thumb" src="/api/v1/documents/{{ d.id }}/thumbnail" alt="" loading="lazy">{% else %}<span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span>{% endif %}<a class="name" href="/d/{{ d.id }}">{{ d.filename }}{% if d.uploaded_via_share_id %}<span class="flag">リンクで受け取り</span>{% endif %}</a></div>
+        {% if reco.get(d.id) %}{% set r = reco[d.id] %}
+        <div class="reco small">
+          <label><input type="checkbox" name="doc" value="{{ d.id }}" form="reco-form" aria-label="「{{ d.filename }}」をまとめて移動する"> おすすめ: {{ r.path }}</label>
+          <button type="button" class="btn btn-sm" hx-post="/x/suggestions/{{ d.id }}/{{ r.id }}/accept" hx-vals='{"current": {{ folder.id }}}'
+                  hx-target="#listing" hx-swap="outerHTML">{{ icon("drive_file_move") }}移動</button>
+        </div>
+        {% endif %}</td>
       <td class="col-date">{{ d.updated_at | shortdate }}</td>
       <td class="col-size">{{ d.size_bytes | filesize }}</td>
       <td class="col-status"><span class="status status-{{ d.status }}">{{ icon(status_icon[d.status]) }}{{ status_label[d.status] }}{% if d.status == "processing" and d.progress_total %} {{ d.progress_done }}/{{ d.progress_total }}{% endif %}</span></td>

@@ -40,6 +40,21 @@
 </section>
 {% endif %}
 
+{% if llm %}
+<section class="panel panel-wide">
+  <h2>{{ icon("wand_stars") }} 要約（LLM）</h2>
+  <dl class="stats">
+    <div><dt>モデル</dt><dd class="small">{{ llm.model }}</dd></div>
+    <div><dt>作った要約</dt><dd>{{ llm.summaries }}{% if llm.outdated %}<span class="unit">（古い {{ llm.outdated }} 件）</span>{% endif %}</dd></div>
+    <div><dt>処理待ち・平均時間</dt><dd>{{ llm.waiting }}<span class="unit">件 / {{ (llm.avg_ms / 1000) | round(1) if llm.avg_ms else "—" }} 秒</span></dd></div>
+  </dl>
+  <form method="post" action="/admin/summaries/rebuild">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn btn-sm" {% if not llm.outdated %}disabled{% endif %}>{{ icon("refresh") }}古い要約を作り直す</button>
+  </form>
+</section>
+{% endif %}
+
 <section class="panel panel-wide">
   <h2>バックアップ</h2>
   <dl class="stats">

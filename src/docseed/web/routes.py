@@ -64,6 +64,11 @@ DONE_MESSAGES = {
     "clip": "URL を受け付けました。取得が済むと一覧に表示されます",
     "clip_dup": "URL を受け付けました（このページは既に保存されています）",
     "refetch": "もう一度取得します。終わると内容が新しくなります",
+    "suggest_accept": "候補を採用しました",
+    "suggest_reject": "候補を却下しました。この文書には二度と出しません",
+    "prefs": "整理の補助の設定を保存しました",
+    "summaries": "古い要約の作り直しを受け付けました",
+    "summaries_none": "作り直す要約はありません",
     "reauthed": "本人確認ができました。10 分間はログイン方法を変更できます",
     "totp_disabled": "確認コードを無効にしました",
     "passkey_added": "パスキーを登録しました",
@@ -186,10 +191,20 @@ def listing_context(request: Request, conn: sqlite3.Connection, auth: Auth, fold
     owner = um.get_user(conn, folder["owner_id"])
     from ..webclip.service import error_message, pending_clips
     clips = [dict(c) | {"error_message": error_message(c)} for c in pending_clips(conn, folder_id)]
+    settings = request.app.state.settings
+    reco, auto_moves, in_inbox = {}, [], False
+    if settings.suggest_enabled:
+        from .. import suggest
+        in_inbox = folder_id in suggest.inbox_folder_ids(conn, folder["owner_id"])
+        if in_inbox and role in ("editor", "owner"):
+            reco = suggest.recommended_for_folder(conn, folder_id)
+            if folder["owner_id"] == auth.user.id:
+                auto_moves = suggest.auto_moved(conn, auth.user.id, 5)
     return base_context(request, conn, auth, folder=folder, crumbs=fo.path(conn, folder_id), role=role,
                         can_edit=role in ("editor", "owner"), folders=folders, docs=docs, sort=sort,
                         order=order, owner=owner, nav="files" if owner.id == auth.user.id else "shared",
-                        clips=clips, webclip_enabled=request.app.state.settings.webclip_enabled)
+                        clips=clips, webclip_enabled=settings.webclip_enabled, reco=reco, in_inbox=in_inbox,
+                        auto_moves=auto_moves)
 
 
 def render_listing(request: Request, conn: sqlite3.Connection, auth: Auth, folder_id: int,
@@ -215,6 +230,80 @@ def folder_create(folder_id: int, request: Request, name: str = Form(""),
                   conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
     fo.create_folder(conn, auth.user, folder_id, name)
     return render_listing(request, conn, auth, folder_id, f"フォルダ「{name.strip()}」を作成しました")
+
+
+# ---------------------------------------------------------------------------
+# 整理の補助（フォルダ・タグの候補）
+# ---------------------------------------------------------------------------
+
+@router.post("/x/suggestions/{doc_id}/{sid}/accept", response_class=HTMLResponse)
+def listing_suggestion_accept(doc_id: int, sid: int, request: Request, current: int = Form(...),
+                              conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from ..suggest import accept
+    accept(conn, auth.user, doc_id, sid)
+    return render_listing(request, conn, auth, current, "おすすめのフォルダへ移動しました")
+
+
+@router.post("/f/{folder_id}/suggestions/apply", response_class=HTMLResponse)
+async def listing_suggestions_apply(folder_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                                    auth: Auth = Depends(require_auth)):
+    """チェックした文書を、おすすめのフォルダへまとめて移動する。"""
+    from ..suggest import accept, recommended_for_folder
+    form = await request.form()
+    ids = {int(v) for v in form.getlist("doc") if str(v).isdigit()}
+    reco = recommended_for_folder(conn, folder_id)
+    moved, failed = 0, 0
+    for doc_id in ids:
+        r = reco.get(doc_id)
+        if r is None:
+            continue
+        try:
+            accept(conn, auth.user, doc_id, r["id"])
+            moved += 1
+        except AppError:
+            failed += 1
+    msg = f"{moved} 件をおすすめのフォルダへ移動しました" + (f"（{failed} 件は移動できませんでした）" if failed else "")
+    if not moved and not failed:
+        msg = "おすすめのある文書を選んでください"
+    return render_listing(request, conn, auth, folder_id, msg)
+
+
+@router.post("/x/automove/{audit_id}/undo", response_class=HTMLResponse)
+def auto_move_undo(audit_id: int, request: Request, current: int = Form(...),
+                   conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from ..suggest import undo_auto_move
+    undo_auto_move(conn, auth.user, audit_id)
+    return render_listing(request, conn, auth, current, "元のフォルダに戻しました")
+
+
+@router.post("/d/{doc_id}/suggestions/{sid}/{action}")
+def document_suggestion(doc_id: int, sid: int, action: str, conn: sqlite3.Connection = Depends(get_conn),
+                        auth: Auth = Depends(require_auth)):
+    from ..suggest import accept, reject
+    if action == "accept":
+        accept(conn, auth.user, doc_id, sid)
+    elif action == "reject":
+        reject(conn, auth.user, doc_id, sid)
+    else:
+        raise AppError("不明な操作です")
+    return RedirectResponse(f"/d/{doc_id}?done={'suggest_' + action}", status_code=303)
+
+
+@router.post("/settings/prefs")
+async def settings_prefs(request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                         auth: Auth = Depends(require_session)):
+    from ..suggest import PREFS, set_prefs
+    form = await request.form()
+    set_prefs(conn, auth.user.id, {k: form.get(k) == "1" for k in PREFS})
+    return RedirectResponse("/settings?done=prefs", status_code=303)
+
+
+@router.post("/admin/summaries/rebuild")
+def admin_summaries_rebuild(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_admin),
+                            settings: Settings = Depends(get_settings)):
+    from ..llm import enqueue_rebuild
+    n = enqueue_rebuild(conn) if settings.llm_enabled else 0
+    return RedirectResponse(f"/admin?done={'summaries' if n else 'summaries_none'}", status_code=303)
 
 
 # ---------------------------------------------------------------------------
@@ -480,7 +569,15 @@ def document_page(doc_id: int, request: Request, conn: sqlite3.Connection = Depe
         pages=pages, pages_shown=PAGES_SHOWN, error=h.problem_message(d["error"]),
         warnings=h.warning_messages(d["warnings"]), image_meta=json.loads(d["image_meta"] or "null"),
         clip=_clip_for(conn, d), webclip_enabled=request.app.state.settings.webclip_enabled,
+        sugg=_suggestions_for(request, conn, d) if role in ("editor", "owner") else None,
         nav="files" if d["owner_id"] == auth.user.id else "shared"))
+
+
+def _suggestions_for(request: Request, conn: sqlite3.Connection, d: sqlite3.Row) -> dict:
+    from ..api.suggestions import embedder_of
+    from ..suggest import for_document
+    s = request.app.state.settings
+    return for_document(conn, d, embedder=embedder_of(request), enabled=s.suggest_enabled, llm_enabled=s.llm_enabled)
 
 
 def _clip_for(conn: sqlite3.Connection, d: sqlite3.Row) -> dict | None:
@@ -554,6 +651,15 @@ def search_page(request: Request, q: str = "", mode: str = "hybrid", type: str =
     tags = [r[0] for r in conn.execute(
         "SELECT DISTINCT t.name FROM tags t JOIN document_tags dt ON dt.tag_id = t.id"
         " JOIN documents d ON d.id = dt.document_id AND d.deleted_at IS NULL ORDER BY t.name")]
+    summaries: dict[int, str] = {}
+    settings = request.app.state.settings
+    if result and result.hits and settings.llm_enabled:
+        from ..suggest import get_prefs
+        if get_prefs(conn, auth.user.id)["show_summary"]:
+            ids = [h.document["id"] for h in result.hits]
+            summaries = {r[0]: r[1] for r in conn.execute(
+                f"SELECT d.id, s.summary FROM documents d JOIN blob_summaries s ON s.blob_id = d.blob_id"
+                f" WHERE d.id IN ({','.join('?' * len(ids))})", ids)}
     folder_name = None
     if folder.isdigit() and fo.effective_role(conn, auth.user, int(folder)):
         folder_name = folder_label(conn, int(folder), labels)
@@ -561,6 +667,7 @@ def search_page(request: Request, q: str = "", mode: str = "hybrid", type: str =
         request, conn, auth, nav="search", q=q, mode=mode if mode in MODE_LABEL else "hybrid", result=result,
         paths=paths, page=page, per_page=PER_PAGE, mode_label=MODE_LABEL, type_options=TYPE_OPTIONS,
         type=type, tag=tag, after=after, before=before, folder=folder, folder_name=folder_name, tags=tags,
+        summaries=summaries,
         params={k: v for k, v in {"q": q, "mode": mode, **filters}.items() if v}))
 
 
@@ -610,6 +717,11 @@ def trash_empty(request: Request, conn: sqlite3.Connection = Depends(get_conn), 
 # 設定
 # ---------------------------------------------------------------------------
 
+def _prefs(conn: sqlite3.Connection, user_id: int) -> dict:
+    from ..suggest import get_prefs
+    return get_prefs(conn, user_id)
+
+
 def settings_context(request: Request, conn: sqlite3.Connection, auth: Auth, **extra) -> dict:
     from ..shares import list_shares
     settings = request.app.state.settings
@@ -618,7 +730,9 @@ def settings_context(request: Request, conn: sqlite3.Connection, auth: Auth, **e
                    if settings.webclip_enabled else None)
     return base_context(request, conn, auth, nav="settings", tokens=token_rows(conn, auth.user.id),
                         my_shares=list_shares(conn, auth.user), base_url=str(request.base_url).rstrip("/"),
-                        bookmarklet=bookmarklet,
+                        bookmarklet=bookmarklet, prefs=_prefs(conn, auth.user.id),
+                        suggest_enabled=settings.suggest_enabled,
+                        llm_enabled=settings.llm_enabled,
                         new_token=None, error=None, **extra)
 
 
@@ -677,6 +791,13 @@ def settings_token_revoke(token_id: int, conn: sqlite3.Connection = Depends(get_
 # 管理
 # ---------------------------------------------------------------------------
 
+def _llm_status(conn: sqlite3.Connection, settings: Settings) -> dict | None:
+    if not settings.llm_enabled:
+        return None
+    from ..llm import llm_stats
+    return llm_stats(conn) | {"model": settings.llm_model}
+
+
 def admin_context(request: Request, conn: sqlite3.Connection, auth: Auth, settings: Settings, **extra) -> dict:
     import shutil
     disk = shutil.disk_usage(settings.data_dir)
@@ -695,6 +816,7 @@ def admin_context(request: Request, conn: sqlite3.Connection, auth: Auth, settin
                         disk=disk, db_bytes=db_bytes, worker_seen=st["worker"]["last_seen"],
                         worker_alive=st["worker"]["alive"], sys=st, thermal_pause_c=settings.thermal_pause_c,
                         job_counts=job_counts(conn), failed=failed_jobs(conn, 20), error=None, form={},
+                        llm=_llm_status(conn, settings),
                         **({"reset_done": None, "auth_settings": get_auth_settings(conn),
                             "oidc_enabled": bool(settings.oidc_providers)} | extra))
 

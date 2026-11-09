@@ -92,6 +92,22 @@ services:
     logging: *logging
     restart: unless-stopped
 
+  # 要約と新しいタグの提案（LLM）。worker だけが internal ネットワークで呼ぶ（外部と通信しない）。
+  # .env で DOCSEED_LLM_ENABLED=true と COMPOSE_PROFILES=llm（Web クリップも使うなら webclip,llm）にすると起動する。
+  # モデルは docker compose exec api docseed fetch-models --llm <名前> で models/llm/ に置く
+  llm:
+    profiles: ["llm"]
+    image: ${DOCSEED_LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}
+    command: ["-m", "/models/llm/${DOCSEED_LLM_MODEL:-sarashina2.2-1b-instruct-v0.1-Q4_K_M.gguf}",
+              "--host", "0.0.0.0", "--port", "8080", "-t", "${DOCSEED_LLM_THREADS:-3}",
+              "-c", "4096", "--parallel", "1"]
+    volumes:
+      - ${DOCSEED_DATA_DIR:-/srv/docseed}/models:/models:ro
+    mem_limit: 2g
+    networks: [internal]
+    logging: *logging
+    restart: unless-stopped
+
   # acme_dns 用の Caddy（DNS のプラグイン入り）のビルドだけに使う:
   #   docker compose --profile acme build caddy-acme
   caddy-acme:
