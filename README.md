@@ -149,6 +149,45 @@ Tailscale や LAN の中だけで使うのが基本ですが、ルーターで�
 - コンテナは読み取り専用・特権なしで動きます（`compose.yaml` の `x-hardening`。[設計](docs/design/deployment.md) 2.1.1）
 - **IPv6 で公開する場合の注意**: Docker のポート公開では、IPv6 の接続は docker-proxy を通るため、接続元が Docker のゲートウェイ（`172.x.x.x`）に見え、上の制限をすり抜けます。IPv6 でも公開するなら `DOCSEED_TRUSTED_NETS` を `10.0.0.0/8 192.168.0.0/16 100.64.0.0/10 fd7a:115c:a1e0::/48` のように `172.16.0.0/12` を含まない値にしてください（そのぶん IPv6 で開いた LAN の端末も外側扱いになります）
 - 外の回線（スマホのテザリングなど）から `https://<名前>/admin` と `https://<名前>/healthz` が 404 になることを確かめる
+- ログイン以外にも、接続元の IP ごとに回数の上限があります（共有リンクの閲覧 1 分 600 回・受け取り 1 時間 30 回・無効なリンク 15 分 20 回、検索 1 分 60 回、ログインの開始 1 分 30 回）。超えると 429 を返します（`.env` の `DOCSEED_RATE_LIMIT=false` で止められます）
+
+#### 失敗が続く接続元をファイアウォールで遮断する（fail2ban）
+
+api は、ログインの失敗・無効な共有リンク・回数の上限超えなどを `<DOCSEED_DATA_DIR>/logs/security.log` に 1 行ずつ書きます。fail2ban にこれを読ませ、10 分に 10 回を超えた接続元を 1 時間（繰り返すたびに長く、最長 1 週間）遮断します。LAN と Tailscale のアドレスは遮断しません。
+
+```bash
+sudo scripts/ops/install-fail2ban.sh          # fail2ban を入れて設定を置く（初回だけ）
+sudo fail2ban-client status docseed           # 遮断中の IP
+sudo fail2ban-client set docseed unbanip <IP> # 誤って遮断したときの解除
+```
+
+- Docker が公開したポートへの通信はホストの通常の規則（`INPUT`）を通らないため、Docker の `DOCKER-USER` チェーンで止めます（設定済み）
+- 上の IPv6 の注意と同じ理由で、IPv6 で届いた接続は遮断できません（`172.x` に見えるため。遮断すると全員が止まる）
+- Cloudflare Tunnel（次の節）を使う場合、通信は cloudflared から届くので fail2ban では止められません。Cloudflare の側（WAF・Access）で止めてください。アプリの中の回数の制限は、本当の接続元で数えるのでそのまま効きます
+
+### ポートを開けずに公開する（Cloudflare Tunnel）
+
+ルーターのポートを開けず、自宅の IP アドレスも出さずに公開できます。Pi から Cloudflare へ外向きにつなぎ、Cloudflare が受けた通信をそこから流します（[設計](docs/design/security.md) 10 章）。Cloudflare のアカウントと、Cloudflare で管理しているドメインが要ります。
+
+注意: Cloudflare が HTTPS を終端するため、通信の中身（アップロードするファイルを含む）を Cloudflare が見られる位置にいます。気になる場合は、前の節の直接公開か、Tailscale だけで使ってください。
+
+1. Cloudflare の管理画面（Zero Trust → Networks → Tunnels）でトンネルを作り、表示されたトークンを `.env` の `DOCSEED_TUNNEL_TOKEN` に入れる
+2. 同じ画面の「Public hostname」を追加する
+   - Hostname: 公開する名前（例 `docs.example.com`）。`.env` の `DOCSEED_HOST` の先頭にもこの名前を書く（例 `DOCSEED_HOST=docs.example.com,pi.tailxxxx.ts.net`。パスキーは先頭の名前で登録される）
+   - Service: `HTTPS` / `caddy:443`（`DOCSEED_HTTPS_PORT` を変えている場合はその番号）
+   - Additional application settings → TLS → Origin Server Name に公開する名前を入れる。証明書が `internal` の場合は「No TLS Verify」をオンにする（Pi と Cloudflare の間はトンネルの中なので、`acme_dns` で公的な証明書にするとより確実）
+3. `.env` の `COMPOSE_PROFILES` に `tunnel` を足して起動する
+
+```bash
+docker compose up -d                          # cloudflared が起動する
+docker compose logs cloudflared | tail        # 「Registered tunnel connection」が出れば接続できている
+```
+
+おすすめ: Cloudflare Access（Zero Trust → Access → Applications）で公開する名前を保護し、メールや Google での確認を通った人だけが届くようにします。共有リンク（`/s/*`）だけは外の人が開くので、その経路を「Bypass」にしてください。
+
+- トンネル経由の通信は、常に「外側」として扱います（管理画面などは 404）。管理は今まで通り Tailscale・LAN から行います
+- Caddy は cloudflared のネットワーク（`DOCSEED_TUNNEL_SUBNET`、既定 `10.213.47.0/28`）から来たときだけ `CF-Connecting-IP` を本当の接続元として使います。ほかから送られたこのヘッダは無視します
+- トンネルを使う場合は、ルーターのポートを閉じたままにできます（Tailscale と LAN からは今まで通り直接開けます）
 
 ### Phase 7 までから更新する場合（写真・サムネイル）
 
@@ -183,6 +222,9 @@ docker compose exec api docseed reprocess unsupported   # 以前に保存した 
 | 証明書の警告で先に進めない（「この接続ではプライバシーが保護されません」で例外を追加するボタンが出ない） | 開いた名前と証明書が合っていません。そのドメインに HSTS（以前に Let's Encrypt の証明書で開いたなど）が付いていると、ブラウザは例外を許しません。上の「手元の証明書を使う」でその名前の証明書を Caddy に使わせてください |
 | `caddy` が起動しない・`loading certificates` や `open /certs/...: no such file` のエラー | `.env` の `DOCSEED_TLS_CERT_DIR` と、その中の相対パス `DOCSEED_TLS_CERT` / `DOCSEED_TLS_KEY` を確認（`sudo ls -l /etc/letsencrypt/live/<名前>/`）。`DOCSEED_TLS_MODE` は `internal` / `file` / `tailscale` / `acme_dns` のどれか |
 | 管理画面（`/admin`）や `/api/docs` が 404 になる | LAN・Tailscale の外からの接続とみなされています（「インターネットに公開する」）。Tailscale 経由で開くか、`.env` の `DOCSEED_TRUSTED_NETS` に接続元の範囲を足して `docker compose up -d --force-recreate caddy` |
+| 共有リンクや検索で「アクセスが多すぎます」（429）になる | 接続元の IP ごとの回数の上限（「インターネットに公開する」）。しばらく待つと戻ります。fail2ban を入れている場合は `sudo fail2ban-client status docseed` で遮断されていないかも確認 |
+| `cloudflared` のログに `Unauthorized` / `Invalid tunnel secret` | `.env` の `DOCSEED_TUNNEL_TOKEN` を Cloudflare の管理画面のトークンに合わせて `docker compose up -d` |
+| トンネル経由で開くと 502 になる | Public hostname の Service が `https://caddy:<DOCSEED_HTTPS_PORT>` か、`internal` の証明書なら No TLS Verify がオンかを確認。開いた名前が `DOCSEED_HOST` に入っているかも確認 |
 | `api` がすぐ止まる | `docker compose logs api` を確認。`.env` の `DOCSEED_SECRET_KEY` 未設定や、`/srv/docseed` の所有者（UID 1000 が必要）が原因のことが多い |
 
 ## ログイン方法（パスキー・確認コード・Google など）

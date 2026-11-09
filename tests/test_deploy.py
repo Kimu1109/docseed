@@ -1,7 +1,11 @@
 """配置の設定ファイル（Caddyfile・compose.yaml・.env.example）の整合性。Caddy は CI で動かさないので文面で確かめる。"""
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 CADDYFILE = (ROOT / "docker" / "Caddyfile").read_text()
@@ -119,3 +123,68 @@ def test_share_upload_limits_documented():
     for var in ("DOCSEED_SHARE_UPLOAD_LINK_GB", "DOCSEED_SHARE_UPLOAD_DAILY_GB", "DOCSEED_SHARE_UPLOAD_MIN_FREE_PCT",
                 "DOCSEED_TRUSTED_NETS"):
         assert var in ENV_EXAMPLE
+
+
+def test_cloudflared_service():
+    """Cloudflare Tunnel（docs/design/security.md 10 章）。"""
+    block = _service("cloudflared")
+    assert 'profiles: ["tunnel"]' in block and "<<: *hardening" in block
+    assert "TUNNEL_TOKEN: ${DOCSEED_TUNNEL_TOKEN:-}" in block
+    assert "networks: [tunnel]" in block                 # api・worker には直接届かない
+    assert "networks: [default, tunnel]" in _service("caddy")
+    tunnel_net = COMPOSE.split("\n  tunnel:\n", 1)[1]
+    assert "subnet: ${DOCSEED_TUNNEL_SUBNET:-10.213.47.0/28}" in tunnel_net
+    # Caddy と compose の既定値がそろっていること（空の環境変数だと Caddy の既定値は使われない）
+    assert "DOCSEED_TUNNEL_SUBNET: ${DOCSEED_TUNNEL_SUBNET:-10.213.47.0/28}" in _service("caddy")
+    assert CADDYFILE.count("{$DOCSEED_TUNNEL_SUBNET:10.213.47.0/28}") >= 3
+    for var in ("DOCSEED_TUNNEL_TOKEN", "DOCSEED_TUNNEL_SUBNET", "DOCSEED_RATE_LIMIT"):
+        assert var in ENV_EXAMPLE
+
+
+def test_caddy_judges_by_client_ip():
+    """トンネル経由の CF-Connecting-IP を反映した接続元で内側・外側を判定する（remote_ip だとトンネルが内側になる）。"""
+    assert "not remote_ip" not in CADDYFILE
+    assert "not client_ip {$DOCSEED_TRUSTED_NETS" in CADDYFILE
+    assert "client_ip_headers CF-Connecting-IP" in CADDYFILE
+    assert "header_up X-Forwarded-For {client_ip}" in CADDYFILE
+
+
+FAIL2BAN = ROOT / "deploy" / "fail2ban"
+
+
+def test_fail2ban_filter_covers_all_security_events():
+    events = set()
+    for p in (ROOT / "src" / "docseed").rglob("*.py"):
+        events |= set(re.findall(r'security_event\(\s*"([a-z_]+)"', p.read_text()))
+    from docseed.ratelimit import AUDIT_EVENTS
+    events |= AUDIT_EVENTS | {"share_password_failed"}
+    filt = (FAIL2BAN / "filter.d" / "docseed.conf").read_text()
+    alternatives = set(re.search(r"event=\(\?:([a-z_|]+)\)", filt).group(1).split("|"))
+    assert events <= alternatives, events - alternatives
+    jail = (FAIL2BAN / "jail.d" / "docseed.local").read_text()
+    assert "chain=DOCKER-USER" in jail and "@LOGPATH@" in jail
+    install = (ROOT / "scripts" / "ops" / "install-fail2ban.sh").read_text()
+    assert "logs/security.log" in install
+
+
+def test_fail2ban_regex_matches_security_log(tmp_path):
+    """実際の fail2ban-regex で、セキュリティログの各行から IP を取り出せること（fail2ban が無ければ飛ばす）。"""
+    from docseed import ratelimit
+    if not shutil.which("fail2ban-regex"):
+        pytest.skip("fail2ban-regex がない")
+    ratelimit.setup_security_log(tmp_path)
+    try:
+        ratelimit.security_event("login_failed", "203.0.113.5")
+        ratelimit.security_event("share_invalid", "2001:db8::1")
+        ratelimit.security_event("rate_limited", "198.51.100.3", rule="share_upload")
+        for h in ratelimit.sec_log.handlers:
+            h.flush()
+        out = subprocess.run(["fail2ban-regex", "-v", str(tmp_path / "security.log"),
+                              str(FAIL2BAN / "filter.d" / "docseed.conf")], capture_output=True, text=True).stdout
+    finally:
+        for h in list(ratelimit.sec_log.handlers):
+            ratelimit.sec_log.removeHandler(h)
+            h.close()
+    assert "3 matched, 0 missed" in out, out
+    for ip in ("203.0.113.5", "2001:db8::1", "198.51.100.3"):
+        assert ip in out

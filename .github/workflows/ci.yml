@@ -14,6 +14,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
+      # tests/test_deploy.py の fail2ban-regex の確認に使う
+      - run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends fail2ban
       - run: ruff check src tests
       - run: pytest
       - run: python scripts/build_icons.py --check
@@ -70,6 +72,38 @@ jobs:
           echo "$h" | grep -qi '^permissions-policy:'
           echo "$h" | grep -qi '^cross-origin-opener-policy: same-origin'
           if echo "$h" | grep -qiE '^(x-powered-by|server|via):'; then echo "外すはずのヘッダが残っている"; exit 1; fi
+      - name: Cloudflare Tunnel 経由の判定（docs/design/security.md 10 章）
+        run: |
+          docker rm -f api c1 >/dev/null 2>&1 || true
+          docker network create --subnet 10.213.47.0/28 tun
+          # api の代わりに、届いた X-Forwarded-For をそのまま返す
+          printf ':8000 {\n\trespond "xff={header.X-Forwarded-For}" 200\n}\n' > /tmp/Stub
+          docker run -d --name api --network ct -v /tmp/Stub:/etc/caddy/Caddyfile:ro caddy:2
+          docker run -d --name c1 --network ct -v "$PWD/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            -e DOCSEED_HOST=docseed.example.com -e DOCSEED_LAN_IP=c1 caddy:2
+          docker network connect tun c1
+          sleep 3
+          ct_ip=$(docker inspect -f '{{(index .NetworkSettings.Networks "ct").IPAddress}}' c1)
+          tun_ip=$(docker inspect -f '{{(index .NetworkSettings.Networks "tun").IPAddress}}' c1)
+          req() {  # $1 = ネットワーク, $2 = Caddy の IP, $3 = パス, 以降 = curl の追加の引数
+            net=$1; ip=$2; path=$3; shift 3
+            docker run --rm --network $net curlimages/curl:8.10.1 -sk "$@" \
+              --resolve docseed.example.com:443:$ip "https://docseed.example.com$path" || true
+          }
+          code() { req "$@" -o /dev/null -w '%{http_code}'; }
+          check() { echo "$1 -> $2 (want $3)"; [ "$2" = "$3" ]; }
+          # トンネル経由: ヘッダの値に関係なく管理系は 404。アプリには CF-Connecting-IP の値だけが届く
+          check "tunnel CF=public /admin"  "$(code tun $tun_ip /admin -H 'CF-Connecting-IP: 203.0.113.9')" 404
+          check "tunnel CF=private /admin" "$(code tun $tun_ip /admin -H 'CF-Connecting-IP: 192.168.1.5')" 404
+          check "tunnel no CF /healthz"    "$(code tun $tun_ip /healthz)" 404
+          check "tunnel xff" "$(req tun $tun_ip / -H 'CF-Connecting-IP: 203.0.113.9' -H 'X-Forwarded-For: 6.6.6.6')" \
+            "xff=203.0.113.9"
+          check "tunnel IP site" "$(docker run --rm --network tun curlimages/curl:8.10.1 -sk -o /dev/null \
+            -w '%{http_code}' --resolve c1:443:$tun_ip https://c1/ || true)" 000
+          # トンネル以外（内側）: CF-Connecting-IP と X-Forwarded-For は無視して、本当の接続元を渡す
+          xff=$(req ct $ct_ip / -H 'CF-Connecting-IP: 203.0.113.9' -H 'X-Forwarded-For: 6.6.6.6')
+          echo "direct xff -> $xff"; case "$xff" in xff=172.*|xff=10.*|xff=192.168.*) ;; *) exit 1 ;; esac
+          check "direct /admin" "$(code ct $ct_ip /admin -H 'CF-Connecting-IP: 203.0.113.9')" 200
       - name: acme_dns（DNS のプラグイン入りの Caddy をビルドして展開）
         run: |
           docker build -t docseed-caddy docker/caddy

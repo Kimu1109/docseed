@@ -70,6 +70,7 @@ class Settings:
     # 受け取り用の共有リンク（ログインなしでアップロードできる。docs/design/security.md 4.3）
     share_upload_link_gb: float = 10.0    # DOCSEED_SHARE_UPLOAD_LINK_GB（1 リンクの合計）
     share_upload_daily_gb: float = 20.0   # DOCSEED_SHARE_UPLOAD_DAILY_GB（すべてのリンクの 24 時間の合計）
+    rate_limit_enabled: bool = True       # DOCSEED_RATE_LIMIT（ログイン以外の流量制限。security.md 9 章）
     share_upload_min_free_pct: float = 10.0   # DOCSEED_SHARE_UPLOAD_MIN_FREE_PCT（空きがこれを下回ったら受け取らない）
     extra: dict[str, str] = field(default_factory=dict)
 
@@ -165,6 +166,7 @@ class Settings:
             llm_max_input_chars=int(e.get("DOCSEED_LLM_MAX_INPUT_CHARS") or "3000"),
             share_upload_link_gb=float(e.get("DOCSEED_SHARE_UPLOAD_LINK_GB") or "10"),
             share_upload_daily_gb=float(e.get("DOCSEED_SHARE_UPLOAD_DAILY_GB") or "20"),
+            rate_limit_enabled=_bool(e.get("DOCSEED_RATE_LIMIT"), True),
             share_upload_min_free_pct=float(e.get("DOCSEED_SHARE_UPLOAD_MIN_FREE_PCT") or "10"),
         )
 

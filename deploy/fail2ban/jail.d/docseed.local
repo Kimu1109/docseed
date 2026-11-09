@@ -1,0 +1,23 @@
+# docseed の失敗が続いた接続元を、ホストのファイアウォールで遮断する。docs/design/security.md 9 章。
+# scripts/ops/install-fail2ban.sh が @LOGPATH@ を置き換えて /etc/fail2ban/jail.d/ に置く。
+#
+# - Docker が公開したポート（Caddy の 443 など）への通信は INPUT ではなく FORWARD を通るので、
+#   Docker が用意する DOCKER-USER チェーンで止める。SSH などホストのサービス向けに INPUT でも止める
+# - LAN・Tailscale・Docker の中のアドレスは遮断しない（Docker を通った IPv6 の接続は 172.x に見えるため、
+#   これを遮断すると全員が止まる）
+# - Cloudflare Tunnel 経由の通信はこの方法では止められない（Cloudflare の側で止める。README）
+
+[docseed]
+enabled  = true
+filter   = docseed
+logpath  = @LOGPATH@
+backend  = auto
+# 10 分に 10 回で 1 時間。繰り返すたびに長くし、最長 1 週間
+maxretry = 10
+findtime = 10m
+bantime  = 1h
+bantime.increment = true
+bantime.maxtime   = 1w
+ignoreip = 127.0.0.1/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fd00::/8
+action   = iptables-allports[name=docseed-docker, chain=DOCKER-USER, protocol=all]
+           iptables-allports[name=docseed-host, chain=INPUT, protocol=all]

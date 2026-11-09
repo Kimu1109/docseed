@@ -29,8 +29,20 @@ def _invalid(request: Request, status: int = 404) -> HTMLResponse:
                                       status_code=status)
 
 
+def _resolve(conn: sqlite3.Connection, request: Request, token: str) -> sh.ShareAccess:
+    """トークンを確かめる。無効なら、流量の制限（ratelimit.RateLimitMiddleware）が数えられるよう印を付ける。
+
+    リンクは有効で中のファイルが無いだけの 404 は数えない（共有フォルダの閲覧者を誤って止めないため）。
+    """
+    try:
+        return sh.resolve(conn, token)
+    except NotFound:
+        request.state.bad_share_token = True
+        raise
+
+
 def _access(conn: sqlite3.Connection, settings: Settings, request: Request, token: str) -> sh.ShareAccess:
-    acc = sh.resolve(conn, token)
+    acc = _resolve(conn, request, token)
     if acc.share["password_hash"] and not sh.check_pass_cookie(
             settings.secret_key, token, request.cookies.get(sh.cookie_name(token))):
         raise _NeedPassword()
@@ -99,7 +111,7 @@ def share_auth(token: str, request: Request, password: str = Form(""), conn: sql
                settings: Settings = Depends(get_settings)):
     keys = (f"share:{token}:{client_ip(request)}",)
     try:
-        acc = sh.resolve(conn, token)
+        acc = _resolve(conn, request, token)
         pass_limiter.check(*keys)
     except NotFound:
         return _invalid(request)

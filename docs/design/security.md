@@ -178,7 +178,7 @@ Tailscale や LAN の中だけでなく、ポートを開けて公開する場�
 
 | 項目 | 内容 |
 |---|---|
-| 内側の範囲 | `DOCSEED_TRUSTED_NETS`（既定 `private_ranges 100.64.0.0/10`: RFC 1918・ループバック・`fd00::/8`・Tailscale） |
+| 内側の範囲 | `DOCSEED_TRUSTED_NETS`（既定 `private_ranges 100.64.0.0/10`: RFC 1918・ループバック・`fd00::/8`・Tailscale）。接続元は `client_ip` で判定する（10 章） |
 | 外側から隠すパス | `/admin`、`/admin/*`、`/api/v1/admin`、`/api/v1/admin/*`、`/api/docs`、`/api/docs/*`、`/api/v1/openapi.json`、`/healthz` → 404（存在を知らせない。3.3 と同じ方針）。`%61dmin` や `%2F` のような符号化は Caddy が戻してから照合する |
 | IP アドレスで開くサイト | `DOCSEED_LAN_IP` のサイトは内側からだけ。外側からは応答せずに接続を切る（`abort`） |
 | 追加するヘッダ | `Cross-Origin-Opener-Policy: same-origin`、`Permissions-Policy`（カメラ・マイク・位置情報・決済・USB などを無効）。アプリが同じヘッダを付けたときはアプリの値を優先する |
@@ -186,3 +186,58 @@ Tailscale や LAN の中だけでなく、ポートを開けて公開する場�
 
 - Docker の `healthcheck` は api に直接（`127.0.0.1:8000/healthz`）問い合わせるので、Caddy の制限の影響を受けない。
 - 注意: Docker のポート公開では、IPv6 の接続やホスト自身からの接続は docker-proxy を通り、接続元が Docker のゲートウェイ（`172.16.0.0/12` 内）に見える。IPv6 で外部に公開する場合はこの範囲を内側に含めないこと（README）。
+
+## 9. ログイン以外の流量の制限とセキュリティログ
+
+ログインの失敗の制限（2.4）とは別に、接続元の IP ごとにリクエストの回数を数える（`src/docseed/ratelimit.py`）。api は 1 プロセスなのでメモリ上で数え、再起動で戻るのは許容する。数えるキーは 2 万まで。
+
+| 規則 | 対象 | 上限 |
+|---|---|---|
+| login | `POST /login`、`/login/second-factor`、`/api/v1/auth/login`、`/auth/passkeys/login/options` | 1 分 30 回（成功も含む量の上限。パスキーの challenge を大量に作らせない） |
+| oidc | `GET /auth/oidc/<名前>/start` | 1 分 30 回 |
+| share | `/s/` 以下すべて | 1 分 600 回（共有フォルダのサムネイルの一覧で届かない程度） |
+| share_upload | `POST /s/<token>/upload` | 1 時間 30 回 |
+| search | `GET /search`、`/api/v1/search` | 1 分 60 回 |
+| 無効なリンク | トークンが無効・期限切れ・無効化済みの `/s/<token>` | 15 分 20 回で、その IP の `/s/` をすべて止める（トークンを当てずっぽうに試す攻撃の対策）。リンクは有効で中のファイルが無いだけの 404 は数えない |
+
+- 超えたら 429（`Retry-After` 付き）。`DOCSEED_RATE_LIMIT=false` で止められる。
+- 接続元は Caddy が判定して `X-Forwarded-For` に 1 つだけ入れる（10 章の Cloudflare Tunnel を含む）。
+
+### 9.1 セキュリティログと fail2ban
+
+api は次を `<DOCSEED_DATA_DIR>/logs/security.log`（5MB × 3 世代）に 1 行 1 件で書く。
+
+```
+2026-11-09T14:00:00+0000 docseed-security event=login_failed ip=203.0.113.5
+2026-11-09T14:00:01+0000 docseed-security event=rate_limited ip=2001:db8::1 rule=share
+```
+
+| event | いつ |
+|---|---|
+| `login_failed`・`second_factor_failed`・`reauth_failed` | パスワード・確認コード・再認証の失敗（監査ログと同時に書く） |
+| `passkey_failed` | パスキーでのログインの失敗 |
+| `share_password_failed` | 共有リンクのパスワードの失敗 |
+| `share_invalid` | 無効な共有リンクを開いた |
+| `rate_limited` | 9 章の上限を超えた（`rule=` に規則の名前） |
+
+- `ip=` は IP アドレスの形のものだけを書く（fail2ban がそのまま遮断に使うため）。ほかの値は英数字以外を `_` に置き換える。
+- `deploy/fail2ban/` のフィルタと jail を `scripts/ops/install-fail2ban.sh` が置く。10 分に 10 回で 1 時間遮断（`bantime.increment` で繰り返すたびに長く、最長 1 週間）。LAN・Tailscale・Docker の中のアドレスは遮断しない。
+- Docker が公開したポートへの通信は `FORWARD` を通るので `DOCKER-USER` チェーンで、ホストのサービス向けには `INPUT` で止める（IPv4・IPv6 とも）。
+- 確認済み: 実際の fail2ban 1.0 で、外部の IP が 10 回で `DOCKER-USER` から REJECT され、LAN の IP と回数の足りない IP は遮断されないこと。
+
+## 10. Cloudflare Tunnel（ポートを開けずに公開する）
+
+compose の `cloudflared`（profile `tunnel`）が Cloudflare へ外向きにつなぎ、Cloudflare が受けた通信を `https://caddy:<DOCSEED_HTTPS_PORT>` に流す。ルーターのポートを開けず、自宅の IP も出さずに公開できる。
+
+| 項目 | 内容 |
+|---|---|
+| ネットワーク | cloudflared は `tunnel` ネットワーク（サブネット固定 `DOCSEED_TUNNEL_SUBNET`、既定 `10.213.47.0/28`）だけに入る。caddy は `default` と `tunnel` の両方。api・worker には直接届かない |
+| 接続元 | Caddy は `tunnel` のサブネットから来たときだけ `CF-Connecting-IP` を信頼する（`servers { trusted_proxies static ...; client_ip_headers CF-Connecting-IP }`）。ほかの接続元が送ったヘッダは無視する |
+| 内側・外側の判定 | 8 章の判定は `remote_ip`（直接の相手）ではなく `client_ip`（信頼したヘッダを反映した接続元）で行う。さらにトンネル経由は、ヘッダが無い・プライベートなアドレスを名乗るなどに関係なく、常に外側（管理系のパスは 404、IP のサイトは切断） |
+| アプリへ渡す接続元 | Caddy が `X-Forwarded-For` を判定済みの接続元 1 つで上書きする（`header_up X-Forwarded-For {client_ip}`）。クライアントが送った `X-Forwarded-For` は届かない |
+| コンテナ | ほかと同じ `x-hardening`（読み取り専用・特権なし）。トークンは `.env` の `DOCSEED_TUNNEL_TOKEN`（`TUNNEL_TOKEN` として渡す） |
+
+- Cloudflare が HTTPS を終端するので、通信の中身を Cloudflare が見られる。気になる場合は使わない（README）。
+- Cloudflare Access で公開する名前を保護し、共有リンク（`/s/*`）だけ Bypass にするのを推奨する。
+- fail2ban（9.1）はトンネル経由の通信を止められない（ファイアウォールを通らないため）。アプリの中の制限（2.4・9 章）は本当の接続元で数えるので効く。
+- 確認済み（ローカルの Docker でトンネルのネットワークから再現）: トンネル経由は `CF-Connecting-IP` が公開・プライベート・無しのいずれでも管理系が 404、アプリには `CF-Connecting-IP` の値が届き、クライアントが送った `X-Forwarded-For` は無視されること。トンネル以外から送った `CF-Connecting-IP` は無視されること。cloudflared が強化した設定のまま起動すること。

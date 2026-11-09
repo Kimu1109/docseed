@@ -26,6 +26,13 @@
 #   - 内側以外からは、管理画面・管理用 API・API の説明ページ・/healthz を 404 にする
 #   - 内側以外からは、IP アドレスで開くサイト（DOCSEED_LAN_IP）への接続を切る
 #
+# Cloudflare Tunnel（compose の cloudflared。docs/design/security.md 10 章）:
+#   - DOCSEED_TUNNEL_SUBNET : cloudflared だけが入るネットワーク（compose の tunnel）。既定 10.213.47.0/28
+#   - このネットワークから来たときだけ CF-Connecting-IP を本当の接続元として信頼する（client_ip）。
+#     ほかの接続元が送ったこのヘッダは無視する
+#   - トンネル経由の通信は、ヘッダの値に関係なく常に「外側」として扱う（管理画面などは 404）
+#   - 判定には remote_ip（直接つないできた相手）ではなく client_ip（信頼したヘッダを反映した接続元）を使う
+#
 
 # 環境変数（{$...}）は Caddyfile の解析の前に置き換わるので、import するスニペットの名前にも使える。
 {
@@ -35,6 +42,10 @@
 	auto_https disable_redirects
 	# 内部 CA をコンテナの中の信頼ストアに入れない（意味がなく、read_only のコンテナでは失敗する）
 	skip_install_trust
+	servers {
+		trusted_proxies static {$DOCSEED_TUNNEL_SUBNET:10.213.47.0/28}
+		client_ip_headers CF-Connecting-IP
+	}
 }
 
 (tls_internal) {
@@ -73,9 +84,15 @@
 (internal_paths) {
 	@internal_only {
 		path /admin /admin/* /api/v1/admin /api/v1/admin/* /api/docs /api/docs/* /api/v1/openapi.json /healthz
-		not remote_ip {$DOCSEED_TRUSTED_NETS:private_ranges 100.64.0.0/10}
+		not client_ip {$DOCSEED_TRUSTED_NETS:private_ranges 100.64.0.0/10}
 	}
 	respond @internal_only 404
+	# トンネル経由は、CF-Connecting-IP が何であっても外側
+	@internal_only_tunnel {
+		path /admin /admin/* /api/v1/admin /api/v1/admin/* /api/docs /api/docs/* /api/v1/openapi.json /healthz
+		remote_ip {$DOCSEED_TUNNEL_SUBNET:10.213.47.0/28}
+	}
+	respond @internal_only_tunnel 404
 }
 
 (app) {
@@ -86,6 +103,8 @@
 	}
 	reverse_proxy api:8000 {
 		flush_interval -1
+		# アプリ（ログイン試行の制限・流量の制限・監査ログ）には、判定済みの接続元だけを渡す
+		header_up X-Forwarded-For {client_ip}
 	}
 	header {
 		Strict-Transport-Security "max-age=31536000"
@@ -107,8 +126,10 @@
 # IP アドレスで開くのは LAN・Tailscale の中からだけ（外から IP を直接たたくスキャナーには何も返さない）
 {$DOCSEED_LAN_IP:localhost} {
 	tls internal
-	@outside not remote_ip {$DOCSEED_TRUSTED_NETS:private_ranges 100.64.0.0/10}
+	@outside not client_ip {$DOCSEED_TRUSTED_NETS:private_ranges 100.64.0.0/10}
 	abort @outside
+	@via_tunnel remote_ip {$DOCSEED_TUNNEL_SUBNET:10.213.47.0/28}
+	abort @via_tunnel
 	import app
 }
 

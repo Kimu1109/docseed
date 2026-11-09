@@ -49,13 +49,37 @@ services:
       DOCSEED_ACME_STAGING: ${DOCSEED_ACME_STAGING:-false}
       # 「内側」とみなす接続元（管理画面などを開ける範囲。docker/Caddyfile の冒頭を参照）。空だと Caddy の既定値が使われないので、ここで補う
       DOCSEED_TRUSTED_NETS: ${DOCSEED_TRUSTED_NETS:-private_ranges 100.64.0.0/10}
+      # cloudflared だけがいるネットワーク。ここからの CF-Connecting-IP だけを信頼する（docker/Caddyfile の冒頭）
+      DOCSEED_TUNNEL_SUBNET: ${DOCSEED_TUNNEL_SUBNET:-10.213.47.0/28}
     volumes:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
       - ${DOCSEED_TLS_CERT_DIR:-./docker/certs}:/certs:ro
       # tailscale のとき: tailscaled.sock に問い合わせて証明書をもらう（Tailscale が無ければ空のディレクトリ）
       - ${DOCSEED_TAILSCALE_SOCKET_DIR:-/var/run/tailscale}:/var/run/tailscale:ro
       - ${DOCSEED_DATA_DIR:-/srv/docseed}/caddy:/data
+    networks: [default, tunnel]
     depends_on: [api]
+    restart: unless-stopped
+
+  # Cloudflare Tunnel（任意。docs/design/security.md 10 章、README の「ポートを開けずに公開する」）。
+  # ルーターのポートを開けずに、Cloudflare 経由でインターネットに公開する。Cloudflare の管理画面で作った
+  # トンネルのトークンを .env の DOCSEED_TUNNEL_TOKEN に入れ、COMPOSE_PROFILES に tunnel を足すと起動する。
+  # 転送先（Public hostname の Service）は https://caddy:<DOCSEED_HTTPS_PORT>
+  cloudflared:
+    profiles: ["tunnel"]
+    image: ${DOCSEED_CLOUDFLARED_IMAGE:-cloudflare/cloudflared:latest}
+    <<: *hardening
+    pids_limit: 64
+    mem_limit: 256m
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${DOCSEED_TUNNEL_TOKEN:-}
+    # caddy とだけ同じネットワークに置く（api・worker には直接届かない）
+    networks: [tunnel]
+    depends_on: [caddy]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
     restart: unless-stopped
 
   api:
@@ -174,3 +198,8 @@ networks:
   default: {}
   internal:
     internal: true
+  # cloudflared と caddy だけのネットワーク。サブネットを固定し、Caddy はここからの CF-Connecting-IP だけを信頼する
+  tunnel:
+    ipam:
+      config:
+        - subnet: ${DOCSEED_TUNNEL_SUBNET:-10.213.47.0/28}
