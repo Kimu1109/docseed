@@ -666,6 +666,9 @@ CREATE INDEX idx_web_clips_canonical ON web_clips(canonical_url);
 > - **アイコン**: `auto_awesome` は今の Material Symbols に無いので、候補・要約の印は `wand_stars` にした。
 > - **LLM**: 公式の `ghcr.io/ggml-org/llama.cpp:server` が arm64 を配布していることを確かめたので、そのイメージを使う（`DOCSEED_LLM_IMAGE` で変更可）。モデルは `docseed fetch-models --llm <名前>`（`huggingface_hub` で GGUF を取得。tools イメージは要らない）。既定は第一候補の sarashina2.2-1b（Q4_K_M、MIT）を**仮に**置き、Pi 5 での計測（`scripts/poc/bench_llm.py`）で決め直す。
 > - **プロンプトの注入への対策**: 本文の中の `<document>` / `</document>` は取り除いてから囲む（囲みを抜けられないように）。
+> - **llama-server の呼び方（Pi 5 での試験の後に変更）**: チャットの API（`/v1/chat/completions`）に `response_format` で JSON スキーマを付けると、llama-server（b12211）が返答を解釈し直す段階で「想定の形式（peg-native）と合わない」として 500 を返した（sarashina2.2-1b）。そこで `/apply-template`（モデル自身のテンプレートで文章を組み立てる）と `/completion`（`json_schema` で縛って続きを書かせる。返答を解釈し直さない）の組み合わせに変えた。
+> - **日本語で書かせる**: JSON のキーが英語（`summary`・`tags`）だと、小さなモデルは英語で要約した。キーを日本語（`要約`・`タグ`）にし、system と依頼の両方に「必ず日本語で」と書き、それでも要約に日本語の文字が無ければ 1 回だけ頼み直す。出力の最後に文字として出る `</s>` などは取り除く。`SUMMARY_VERSION` を 2 にした。
+> - **エラー**: llama-server がエラーを返したら、その理由（`error.message`）をそのままジョブのエラーに残す（管理画面の失敗したジョブで見られる）。
 > - **要約の失敗**: 時間切れは警告 `summary_timeout` にしてやり直さない。llm サービスに接続できない（起動中・止まっている）ときは、ジョブを普通の失敗と同じにやり直す。
 > - **しきい値の評価**は `scripts/eval_suggest.py` ではなく `docseed eval-suggest --username <名前>`（DB を直接読むので api のコンテナの中で動かす）。分類済みの文書を 1 つずつ未分類とみなし、しきい値の組ごとに 1 位・上位 3 の正解率と「おすすめ」の正しさを出す。
 > - **確認**: 話題ごとに決まった向きのベクトルを返す埋め込み器と、偽の llama-server（`httpx.MockTransport`）で、候補・採用・却下・自動での移動と取り消し・受け取り箱の一覧・設定・要約・タグの置き換え・時間切れ・接続できないときのやり直しを確かめた（`tests/test_suggest.py`）。
