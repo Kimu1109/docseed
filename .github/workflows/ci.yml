@@ -26,7 +26,7 @@ jobs:
       - name: internal / file / tailscale（公式の caddy:2）
         run: |
           for mode in internal file tailscale; do
-            for ip in "" 192.168.1.20; do
+            for ip in localhost 192.168.1.20; do  # compose は空のとき localhost を渡す
               echo "== $mode (LAN_IP=$ip)"
               docker run --rm -v "$PWD/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
                 -e DOCSEED_HOST=docseed.example.com -e DOCSEED_LAN_IP=$ip -e DOCSEED_TLS_MODE=$mode \

@@ -59,3 +59,11 @@ def test_acme_dns_mode():
 def test_api_checks_certificate():
     api = COMPOSE.split("\n  api:", 1)[1].split("\n  worker:", 1)[0]
     assert "DOCSEED_TLS_CHECK_ADDR: caddy:${DOCSEED_HTTPS_PORT:-443}" in api
+
+
+def test_lan_ip_never_empty_in_caddy():
+    """Caddy の {$VAR:default} は変数が空文字だと既定値を使わないので、compose で空にしない。"""
+    assert "DOCSEED_LAN_IP: ${DOCSEED_LAN_IP:-localhost}" in COMPOSE
+    caddy_env = COMPOSE.split("\n  caddy:", 1)[1].split("\n  api:", 1)[0]
+    pattern = r"\$\{DOCSEED_(?:LAN_IP|TLS_MODE|HTTPS_PORT|HTTP_PORT|ACME_STAGING):-\}"
+    assert re.findall(pattern, caddy_env) == []
