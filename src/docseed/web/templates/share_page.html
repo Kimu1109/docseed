@@ -63,7 +63,7 @@
     {% for f in folders %}
       <tr>
         <td class="col-kind"><span class="kind kind-folder"></span></td>
-        <td class="col-name"><div class="cell-name">{{ icon("folder") }}<a class="name" href="/s/{{ token }}?folder={{ f.id }}">{{ f.name }}</a></div></td>
+        <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon("folder") }}</span><a class="name" href="/s/{{ token }}?folder={{ f.id }}">{{ f.name }}</a></div></td>
         <td class="col-date">{{ f.updated_at | shortdate }}</td><td class="col-size muted">{{ f.item_count }} 項目</td><td></td>
       </tr>
     {% endfor %}
@@ -71,7 +71,7 @@
       {% set k = kind_of(d.mime_type, d.filename) %}
       <tr>
         <td class="col-kind"><span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span></td>
-        <td class="col-name"><div class="cell-name">{% if d.thumb_path %}<img class="thumb" src="/s/{{ token }}/thumb/{{ d.id }}" alt="" loading="lazy">{% else %}{{ icon(kind_icon[k]) }}{% endif %}{% if d.view_path %}<a class="name" href="/s/{{ token }}/view/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% elif can_preview(d.mime_type) %}<a class="name" href="/s/{{ token }}/preview/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% else %}<span class="name">{{ d.filename }}</span>{% endif %}</div></td>
+        <td class="col-name"><div class="cell-name">{% if d.thumb_path %}<img class="thumb" src="/s/{{ token }}/thumb/{{ d.id }}" alt="" loading="lazy">{% else %}<span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span>{% endif %}{% if d.view_path %}<a class="name" href="/s/{{ token }}/view/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% elif can_preview(d.mime_type) %}<a class="name" href="/s/{{ token }}/preview/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% else %}<span class="name">{{ d.filename }}</span>{% endif %}</div></td>
         <td class="col-date">{{ d.updated_at | shortdate }}</td>
         <td class="col-size">{{ d.size_bytes | filesize }}</td>
         <td class="col-actions"><a class="btn btn-sm" href="/s/{{ token }}/download/{{ d.id }}">{{ icon("download") }}ダウンロード</a></td>

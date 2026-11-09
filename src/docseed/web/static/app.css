@@ -446,8 +446,10 @@ mark { background: #ffe58a; color: inherit; padding: 0 1px; }
 .topsearch input:not([type=checkbox]):not([type=radio]):not([type=file]) { padding-left: 36px; }
 .cell-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .cell-name .name { min-width: 0; }
-.cell-name > .icon { color: var(--muted); width: 22px; height: 22px; }
+/* 名前の前は、サムネイルも種類のアイコンも同じ 36px の枠に入れて横幅をそろえる */
 .thumb { width: 36px; height: 36px; object-fit: cover; flex: none; border: 1px solid var(--line); background: var(--bg); }
+.thumb-icon { display: grid; place-items: center; border-color: transparent; background: none; color: var(--muted); }
+.thumb-icon .icon { width: 24px; height: 24px; }
 .status .icon { width: 15px; height: 15px; margin-right: 3px; vertical-align: -3px; }
 .status-processing .icon { animation: spin 1.2s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

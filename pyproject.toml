@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "docseed"
-version = "0.7.1"
+version = "0.7.2"
 description = "Raspberry Pi 5 で動くローカルのドキュメントサーバー（保存・共有・OCR・検索）"
 readme = "README.md"
 requires-python = ">=3.12"
