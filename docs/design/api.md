@@ -92,9 +92,11 @@ RFC 9457（`application/problem+json`）形式。
 
 ### 3.1 認証・自分
 
+パスキー・確認コード・OIDC と、自分のログイン方法の API（`/me/security` など）は [拡張機能](extensions.md) 8.1〜8.3 節。
+
 | メソッド | パス | 説明 |
 |---|---|---|
-| POST | `/auth/login` | `{username, password, remember}` → セッション Cookie を発行。応答 `{user, csrf_token}` |
+| POST | `/auth/login` | `{username, password, remember}` → セッション Cookie を発行。応答 `{user, csrf_token}`。確認コードを設定したユーザーは `{second_factor_required: true}` を返し、`POST /auth/second-factor`（`/api/v1` の外）で 2 段階目を送る |
 | POST | `/auth/logout` | セッション削除 |
 | GET | `/me` | 自分の情報、ルートフォルダ ID、使用容量 |
 | PATCH | `/me` | 表示名の変更 |

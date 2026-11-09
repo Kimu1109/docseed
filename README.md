@@ -10,6 +10,8 @@ Raspberry Pi 5 で動くローカルのドキュメントサーバーです。�
 | Phase 3 | 検索 | 完了 |
 | Phase 4 | 共有（フォルダのメンバー、共有リンク、受け取り箱） | 完了 |
 | Phase 5 | 運用（バックアップ、監視、Office 文書） | 実装済み（Pi での復旧の練習は導入時に） |
+| Phase 6 | HTTPS 証明書の方式の切り替え・アイコン・HEIC など | 一部実装（手元の証明書ファイルの指定） |
+| Phase 7 | ログイン（パスキー・確認コード・復旧コード・Google などの OIDC・再認証） | 実装済み |
 
 ## Raspberry Pi で動かす（Docker）
 
@@ -94,6 +96,48 @@ docker compose exec api docseed reprocess unsupported   # 以前に保存した 
 | 証明書の警告で先に進めない（「この接続ではプライバシーが保護されません」で例外を追加するボタンが出ない） | 開いた名前と証明書が合っていません。そのドメインに HSTS（以前に Let's Encrypt の証明書で開いたなど）が付いていると、ブラウザは例外を許しません。上の「手元の証明書を使う」でその名前の証明書を Caddy に使わせてください |
 | `caddy` が起動しない・`loading certificates` や `open /certs/...: no such file` のエラー | `.env` の `DOCSEED_TLS_CERT_DIR` と、その中の相対パス `DOCSEED_TLS_CERT` / `DOCSEED_TLS_KEY` を確認（`sudo ls -l /etc/letsencrypt/live/<名前>/`）。`DOCSEED_TLS_MODE` は `internal` か `file` |
 | `api` がすぐ止まる | `docker compose logs api` を確認。`.env` の `DOCSEED_SECRET_KEY` 未設定や、`/srv/docseed` の所有者（UID 1000 が必要）が原因のことが多い |
+
+## ログイン方法（パスキー・確認コード・Google など）
+
+右上のメニュー →「設定」→「セキュリティ（ログイン方法）」で、ユーザーごとに設定します。変更の前に、パスワード（＋確認コード）かパスキーでもう一度本人確認をします（10 分間有効）。
+
+| 方法 | 内容 |
+|---|---|
+| パスキー | 端末の指紋・顔認証や PIN でログイン。ログイン画面の「パスキーでログイン」か、ユーザー名の欄の自動入力の候補から選ぶ |
+| 確認コード（2 段階認証） | パスワードの後に、認証アプリ（Google Authenticator など）の 6 桁のコードを入力。有効にしたときに表示される**復旧コード 10 個**を控えておく（端末をなくしたとき、1 つずつ 1 回だけ使える） |
+| 外部アカウント（OIDC） | 設定で連携した Google などのアカウントでログイン。連携していないアカウントではログインできない（メールアドレスが同じでも自動では結び付けない） |
+| パスワードでのログインを止める | パスキーか外部アカウントを 1 つ以上設定すると、パスワードではログインできないようにできる |
+
+管理画面の「ログイン」で、パスワードでログインする人に**確認コードを必須**にできます（未設定の人はログイン直後に設定画面へ移ります）。ユーザーがすべての方法を失ったときは、管理画面のユーザーの行の「ログイン方法をリセット」で仮のパスワードを発行します。管理者自身が失ったときは Pi で次を実行します。
+
+```bash
+docker compose exec api docseed reset-auth --username <名前>
+```
+
+### パスキーを使うための条件
+
+- **`DOCSEED_HOST` の名前（ドメイン名）で、信頼された証明書の HTTPS で開く**必要があります（パスキーは名前に結び付くため、IP アドレスで開くと使えません。内部 CA の証明書は、端末に CA 証明書を入れていれば使えます）。上の「手元の証明書を使う」か Tailscale の名前が便利です
+- パスキーは `DOCSEED_HOST` の最初の名前（`DOCSEED_RP_ID` で変更可）に登録されます。**この名前を後から変えると、登録済みのパスキーはすべて使えなくなります**（管理画面に警告が出ます）
+- `DOCSEED_HTTPS_PORT` を 443 以外にしている場合も、そのポート付きの URL で開けば使えます
+
+### Google でログインする
+
+1. [Google Cloud Console](https://console.cloud.google.com/) でプロジェクトを作り、「API とサービス」→「OAuth 同意画面」で種類を「外部」にして、範囲（スコープ）は `openid`・`email`・`profile` だけにします
+2. 公開ステータスが「テスト」のままなら、使う人の Google アカウントを「テストユーザー」に登録します（最大 100 人）。この 3 つの範囲だけなら「本番環境」に公開することもできます（Google の規則は変わることがあるので、画面の案内に従ってください）
+3. 「認証情報」→「OAuth クライアント ID を作成」→ 種類「ウェブ アプリケーション」。「承認済みのリダイレクト URI」に `https://<DOCSEED_HOST>[:<DOCSEED_HTTPS_PORT>]/auth/oidc/google/callback` を登録します。Google は HTTPS と公開されたドメイン名（`*.ts.net` や自分のドメイン）を求めるので、`.local` や IP アドレスでは使えません（Pi がインターネットから届く必要はありません）
+4. `.env` に書いて `docker compose up -d` で api を作り直します
+
+```bash
+DOCSEED_OIDC_PROVIDERS=google
+DOCSEED_OIDC_GOOGLE_ISSUER=https://accounts.google.com
+DOCSEED_OIDC_GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
+DOCSEED_OIDC_GOOGLE_CLIENT_SECRET=xxxxxxxx
+DOCSEED_OIDC_GOOGLE_LABEL=Google
+```
+
+5. 各ユーザーが一度パスワードなどでログインし、「セキュリティ」→「Google と連携」で自分のアカウントを結び付けます。管理画面で、連携できるメールアドレスのドメインを絞れます（例 `example.com`）
+
+Pocket ID・Authelia・Keycloak など、ほかの OIDC の提供者も同じ書き方で足せます（`DOCSEED_OIDC_PROVIDERS=google,pocketid` と、`DOCSEED_OIDC_POCKETID_ISSUER` など）。
 
 ## 検索
 
@@ -247,6 +291,7 @@ API の仕様は起動後に `/api/docs` で確認できます（ログインが
 | `docseed serve` | Web サーバーを起動（起動時にマイグレーションを適用） |
 | `docseed migrate` | マイグレーションだけを適用 |
 | `docseed create-admin --username NAME` | 管理者を作成 |
+| `docseed reset-auth --username NAME` | ログイン方法（パスキー・確認コード・外部アカウントの連携）を消し、仮のパスワードを発行。すべての端末をログアウトし、API トークンを無効にする |
 | `docseed purge-trash` | 保持期間を過ぎたゴミ箱の項目を完全に削除 |
 | `docseed backup-db` | DB のスナップショットを `backup/` に作成（7 世代。整合性を確認してから置き換える） |
 | `docseed restore-db [パス]` | DB をスナップショット（省略時は `backup/` の最新）から戻す。api と worker を止めて実行 |

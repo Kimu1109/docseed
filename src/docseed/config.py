@@ -7,6 +7,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+@dataclass(frozen=True)
+class OidcProvider:
+    """OIDC の提供者（docs/design/extensions.md 5.4）。"""
+    name: str            # URL に使う名前（例 google）
+    issuer: str
+    client_id: str
+    client_secret: str
+    label: str
+
+
 def _bool(v: str | None, default: bool) -> bool:
     if v is None:
         return default
@@ -37,7 +47,32 @@ class Settings:
     inbox_keep: bool = False
     thermal_pause_c: float = 80.0
     thermal_resume_c: float = 70.0
+    # ログイン（Phase 7、docs/design/extensions.md 5 章）
+    host: str = ""                    # DOCSEED_HOST（Caddy と同じ値）
+    https_port: int = 443
+    rp_id_override: str = ""          # DOCSEED_RP_ID
+    public_url_override: str = ""     # DOCSEED_PUBLIC_URL（通常は空。DOCSEED_HOST とポートから作る）
+    oidc_providers: tuple[OidcProvider, ...] = ()
     extra: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def rp_id(self) -> str:
+        """パスキーの RP ID。既定は DOCSEED_HOST の最初の名前。IP アドレスや空なら ""（パスキーを使わない）。"""
+        rp = self.rp_id_override or _first_host(self.host)
+        return "" if not rp or _is_ip(rp) else rp.lower()
+
+    @property
+    def public_url(self) -> str:
+        """外から開くときの URL（https://<名前>[:ポート]）。OIDC のリダイレクト URI とパスキーの origin に使う。"""
+        if self.public_url_override:
+            return self.public_url_override.rstrip("/")
+        host = self.rp_id or _first_host(self.host)
+        if not host:
+            return ""
+        return f"https://{host}" + ("" if self.https_port == 443 else f":{self.https_port}")
+
+    def oidc_provider(self, name: str) -> OidcProvider | None:
+        return next((p for p in self.oidc_providers if p.name == name), None)
 
     @property
     def db_path(self) -> Path:
@@ -94,7 +129,45 @@ class Settings:
             inbox_enabled=_bool(e.get("DOCSEED_INBOX_ENABLED"), False),
             inbox_keep=_bool(e.get("DOCSEED_INBOX_KEEP"), False),
             thermal_pause_c=float(e.get("DOCSEED_THERMAL_PAUSE_C", "80")),
+            host=e.get("DOCSEED_HOST", ""),
+            https_port=int(e.get("DOCSEED_HTTPS_PORT") or "443"),
+            rp_id_override=e.get("DOCSEED_RP_ID", "").strip(),
+            public_url_override=e.get("DOCSEED_PUBLIC_URL", "").strip(),
+            oidc_providers=_oidc_from_env(e),
         )
+
+
+def _first_host(v: str) -> str:
+    """DOCSEED_HOST（"a.example, b.example" のように複数書ける）の最初の名前。"""
+    for part in v.replace(",", " ").split():
+        return part.strip().rstrip(".")
+    return ""
+
+
+def _is_ip(v: str) -> bool:
+    import ipaddress
+    try:
+        ipaddress.ip_address(v.strip("[]"))
+        return True
+    except ValueError:
+        return False
+
+
+def _oidc_from_env(e) -> tuple[OidcProvider, ...]:
+    out = []
+    for name in (x.strip().lower() for x in e.get("DOCSEED_OIDC_PROVIDERS", "").split(",")):
+        if not name:
+            continue
+        if not name.replace("-", "").replace("_", "").isalnum():
+            raise SystemExit(f"DOCSEED_OIDC_PROVIDERS の名前「{name}」は英数字と - _ だけにしてください")
+        key = f"DOCSEED_OIDC_{name.upper().replace('-', '_')}_"
+        issuer = e.get(key + "ISSUER", "").strip().rstrip("/")
+        client_id = e.get(key + "CLIENT_ID", "").strip()
+        secret = e.get(key + "CLIENT_SECRET", "").strip()
+        if not issuer or not client_id or not secret:
+            raise SystemExit(f"OIDC の提供者「{name}」には {key}ISSUER・{key}CLIENT_ID・{key}CLIENT_SECRET が必要です")
+        out.append(OidcProvider(name, issuer, client_id, secret, e.get(key + "LABEL", "").strip() or name))
+    return tuple(out)
 
 
 def permission_message(data_dir: Path, err: OSError) -> str:

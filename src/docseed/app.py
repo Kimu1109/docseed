@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -12,13 +13,15 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import __version__
+from .api.auth import router as api_auth_router
 from .api.routes import health
 from .api.routes import router as api_router
 from .config import Settings
 from .db import connect, migrate
-from .errors import AppError, Unauthenticated
+from .errors import AppError, SecondFactorSetupRequired, Unauthenticated
 from .search import QueryEmbedder
 from .storage import BlobStore
+from .web.auth import router as auth_router
 from .web.public import router as public_router
 from .web.routes import render_error
 from .web.routes import router as web_router
@@ -48,7 +51,9 @@ class SecurityHeaders(BaseHTTPMiddleware):
 
 
 def _wants_json(request: Request) -> bool:
-    return request.url.path.startswith("/api/") or request.url.path == "/healthz"
+    # /auth/* のパスキー・2 段階目は、JSON で送られたときは JSON で返す（passkey.js が使う）
+    return (request.url.path.startswith("/api/") or request.url.path == "/healthz"
+            or request.headers.get("content-type", "").startswith("application/json"))
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -80,7 +85,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "web" / "static"), name="static")
     app.include_router(health)
     app.include_router(api_router)
+    app.include_router(api_auth_router)
     app.include_router(public_router)
+    app.include_router(auth_router)
     app.include_router(web_router)
 
     @app.exception_handler(AppError)
@@ -97,7 +104,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if request.headers.get("hx-request"):
                 return Response(status_code=204, headers={"HX-Redirect": "/login"})
             nxt = request.url.path + (f"?{request.url.query}" if request.url.query else "")
-            return RedirectResponse(f"/login?next={nxt}", status_code=303)
+            return RedirectResponse(f"/login?next={quote(nxt, safe='/')}", status_code=303)
+        if isinstance(exc, SecondFactorSetupRequired):
+            if request.headers.get("hx-request"):
+                return Response(status_code=204, headers={"HX-Redirect": "/settings/security?setup=1"})
+            return RedirectResponse("/settings/security?setup=1", status_code=303)
         return render_error(request, exc.status, exc.detail)
 
     @app.exception_handler(RequestValidationError)

@@ -52,7 +52,7 @@ RAM 8GB での目安は、api 1.5 + worker 3 + llm 2 + Caddy・OS 1 = 7.5GB で�
 | 番号 | 内容 | フェーズ |
 |---|---|---|
 | 0002 | `blobs` に派生ファイルと画像の情報の列を追加。`jobs` を作り直して種類を増やす（Phase 6〜9 の分をまとめて） | Phase 6 |
-| 0003 | `webauthn_credentials`, `user_totp`, `user_recovery_codes`, `user_identities`, `auth_challenges` を追加。`users` と `sessions` に列を追加 | Phase 7 |
+| 0003 | `webauthn_credentials`, `user_totp`, `user_recovery_codes`, `user_identities`, `auth_challenges` を追加。`users` と `sessions` に列を追加（**実装済み**: `0003_login_methods.sql`） | Phase 7 |
 | 0004 | `web_clips` を追加。`documents` に `kind` を追加 | Phase 8 |
 | 0005 | `blob_summaries`, `document_suggestions`, `user_prefs` を追加 | Phase 9 |
 
@@ -271,6 +271,21 @@ ALTER TABLE blobs ADD COLUMN image_meta TEXT;   -- JSON（4.3）
 ---
 
 ## 5. ログイン（Phase 7）
+
+> **実装済み。** 実装で設計から変えた点・決めた点:
+>
+> - **OIDC のライブラリ**: Authlib の `authlib.jose` は非推奨になり、後継の joserfc を使うよう案内されている。そこで ID トークンの検証は **joserfc**、提供者との通信は **httpx** で直接書いた（認可コードフロー + PKCE は数十行で済む）。Authlib は使わない。
+> - **モジュール**: `authn.py`（2 段階目・復旧コード・再認証・リセット・セッションの開始）、`passkeys.py`、`totp.py`、`oidc.py`。画面と `/auth/*` は `web/auth.py`、8.2・8.3 の API は `api/auth.py`。
+> - **2 段階目の待ち**: `auth_challenges` の ID（32 バイトの乱数）を HttpOnly の Cookie `docseed_2fa`（5 分）で渡す。ID は推測できず DB と照合するので、署名は付けない。署名付きの Cookie は OIDC の `docseed_oidc`（HMAC-SHA256、`DOCSEED_SECRET_KEY` から作る鍵）だけ。
+> - **パスキーの challenge**: options の応答に `challenge_id` を入れ、確認のリクエストで送り返させる。challenge は DB にあり 1 回で消える。
+> - **`auth_challenges.purpose` に `totp_enroll`** を追加した（確認前の TOTP の秘密の値を 15 分だけ持つ）。期限の切れた行は、10 分ごとの処理ではなく、新しい行を作るときに消す。
+> - **再認証**: ログインした時刻も再認証の時刻とする（`sessions.reauth_at` をログイン時に設定）。パスワードの変更は、今まで通り現在のパスワードの入力を求め、それを再認証の代わりとする。
+> - **2 段階認証の必須**: 未設定のユーザーは、画面ではセキュリティの設定画面へ移し、API では 403 `second_factor_setup_required` を返す。API トークンでの呼び出しは対象外。
+> - **API でのログイン**: 確認コードを設定したユーザーは、`POST /api/v1/auth/login` が `{"second_factor_required": true, "methods": ["totp", "recovery"]}` を返す。続けて `POST /auth/second-factor` に `{"code": ...}` を送るとセッションができる。`/auth/*` に JSON で送ったリクエストのエラーは problem+json で返す。
+> - **パスキーの失敗の数え方**: ユーザー名が分からないので、IP アドレスごとにだけ数える。
+> - **画面**: 設定画面を「一般」と「セキュリティ（ログイン方法）」（`/settings/security`）に分けた。ログイン中の端末の一覧に「ほかの端末をすべてログアウト」を付けた。
+> - **公開 URL**: パスキーの origin と OIDC のリダイレクト URI は `https://<DOCSEED_HOST の最初の名前>[:DOCSEED_HTTPS_PORT]`。リバースプロキシを別に置くなど特殊な場合だけ `DOCSEED_PUBLIC_URL` で上書きできる。
+> - **確認**: テストは py_webauthn の値ではなく、テストの中のソフトウェアの認証器（P-256 の鍵で attestation `none` と署名を作る）と、`httpx.MockTransport` の偽の OIDC 提供者で行う。パスキーは Chromium の仮想認証器（CDP）で、画面からの登録・自動入力でのログインまで確かめた。
 
 ### 5.1 ログインの方法
 
@@ -845,5 +860,5 @@ Document の表現に `kind` と、Web クリップなら `webclip: {url, canoni
 | 候補のしきい値 | 7.2・7.3 の仮の値を `eval_suggest.py` で決める | Phase 9 |
 | RAM 8GB での LLM | 1B のモデルでメモリが足りるか。足りなければ 0.6B にするか、llm サービスを処理待ちがあるときだけ起動する | Phase 9 |
 | `llama-server` の arm64 イメージ | 公式のイメージが arm64 を配布しているか | Phase 9 |
-| Google の OAuth の規則 | テストの状態で使える人数・期限など、実装時の Google の規則 | Phase 7 |
+| Google の OAuth の規則 | テストの状態で使える人数・期限など、実装時の Google の規則 | **Phase 7 で対応**: テストの状態ではテストユーザー（最大 100 人）だけが使える。範囲は `openid email profile` だけなので本番にも公開できる。トークンは保存しないので、テストの状態のリフレッシュトークンの期限（7 日）は関係しない。手順は README |
 | JavaScript で描くサイト | oEmbed も無いサイトの本文。必要なら、ヘッドレスブラウザを別のサービスとして任意で足す | Phase 8 の後 |

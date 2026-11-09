@@ -10,9 +10,9 @@ from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFil
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from .. import authn, security
 from .. import documents as dm
 from .. import folders as fo
-from .. import security
 from .. import users as um
 from ..audit import audit
 from ..config import Settings
@@ -27,12 +27,12 @@ from ..deps import (
     require_auth,
     require_session,
 )
-from ..errors import AppError, NotFound, Unauthenticated, ValidationFailed
+from ..errors import AppError, NotFound, ValidationFailed
 from ..files import file_response
 from ..storage import BlobStore
 
 router = APIRouter(prefix="/api/v1")
-limiter = security.LoginLimiter()
+limiter = authn.limiter
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +41,7 @@ limiter = security.LoginLimiter()
 
 def user_json(u: um.User) -> dict[str, Any]:
     return {"id": u.id, "username": u.username, "display_name": u.display_name, "role": u.role,
-            "is_active": u.is_active}
+            "is_active": u.is_active, "password_login": u.password_login}
 
 
 def doc_json(conn: sqlite3.Connection, d: sqlite3.Row, role: str | None = None) -> dict[str, Any]:
@@ -77,36 +77,19 @@ class LoginIn(BaseModel):
 
 
 def do_login(conn: sqlite3.Connection, settings: Settings, request: Request, response: Response,
-             username: str, password: str, remember: bool) -> tuple[um.User, str]:
-    """ログインしてセッション Cookie を設定する（API と画面で共通）。"""
-    ip = client_ip(request) or "-"
-    keys = (f"u:{username.strip().lower()}", f"ip:{ip}")
-    limiter.check(*keys)
-    row = um.find_by_username(conn, username)
-    ok = security.verify_password(row["password_hash"] if row else None, password)
-    if not ok or not row["is_active"]:
-        limiter.failed(*keys)
-        with Tx(conn):
-            audit(conn, "login_failed", user_id=row["id"] if row else None, ip=ip, username=username[:50])
-        raise Unauthenticated("ユーザー名またはパスワードが違います")
-    limiter.succeeded(*keys)
-    raw, sess = security.create_session(
-        conn, row["id"], remember=remember, days=settings.session_days,
-        short_hours=settings.session_hours_short, user_agent=request.headers.get("user-agent"), ip=ip)
-    with Tx(conn):
-        audit(conn, "login", user_id=row["id"], ip=ip)
-    response.set_cookie(
-        security.SESSION_COOKIE, raw, httponly=True, secure=settings.cookie_secure, samesite="lax", path="/",
-        max_age=settings.session_days * 86400 if remember else None,
-    )
-    return um.User.from_row(row), sess.csrf_token
+             username: str, password: str, remember: bool, next_url: str | None = None) -> authn.LoginResult:
+    """パスワードでログインする（API と画面で共通）。確認コードを設定したユーザーは 2 段階目が要る。"""
+    return authn.password_login(conn, settings, request, response, username, password, remember, next_url)
 
 
 @router.post("/auth/login")
 def api_login(body: LoginIn, request: Request, response: Response,
               conn: sqlite3.Connection = Depends(get_conn), settings: Settings = Depends(get_settings)):
-    user, csrf = do_login(conn, settings, request, response, body.username, body.password, body.remember)
-    return {"user": user_json(user), "csrf_token": csrf}
+    res = do_login(conn, settings, request, response, body.username, body.password, body.remember)
+    if res.second_factor:
+        # 確認コードを POST /auth/second-factor に送る（Cookie docseed_2fa、5 分）
+        return {"second_factor_required": True, "methods": ["totp", "recovery"]}
+    return {"user": user_json(res.user), "csrf_token": res.csrf_token}
 
 
 @router.post("/auth/logout", status_code=204)

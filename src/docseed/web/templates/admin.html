@@ -80,8 +80,31 @@
   </form>
 </section>
 
+<section class="panel panel-wide" id="login-settings">
+  <h2>ログイン</h2>
+  <form method="post" action="/admin/auth-settings" class="form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="check"><input type="checkbox" name="require_2fa" value="1" {% if auth_settings.require_2fa %}checked{% endif %}>
+      パスワードでログインする人に 2 段階認証（確認コード）を必須にする</label>
+    <p class="muted small">必須にすると、まだ設定していないユーザーはログイン直後に設定画面へ移り、設定するまでほかの画面を使えません。パスキーや外部アカウントでログインした人は対象外です。</p>
+    {% if oidc_enabled %}
+    <label>外部アカウントで連携できるメールアドレスのドメイン <span class="muted small">（空なら制限しない。複数はスペースかカンマで区切る）</span>
+      <input name="oidc_allowed_domains" value="{{ auth_settings.oidc_allowed_domains | join(' ') }}" placeholder="例: example.com"></label>
+    {% else %}
+    <input type="hidden" name="oidc_allowed_domains" value="{{ auth_settings.oidc_allowed_domains | join(' ') }}">
+    {% endif %}
+    <div><button type="submit" class="btn btn-primary">保存</button></div>
+  </form>
+</section>
+
 <section class="panel panel-wide">
   <h2>ユーザー</h2>
+  {% if reset_done %}
+  <div class="token-new">
+    <p><b>{{ reset_done.username }}</b> のログイン方法をリセットしました（パスキー・確認コード・外部アカウントの連携を削除し、すべての端末をログアウト）。次の仮のパスワードを本人に伝え、ログイン後に変更してもらってください。この画面を離れると二度と表示されません。</p>
+    <code class="token-value" data-select-all>{{ reset_done.password }}</code>
+  </div>
+  {% endif %}
   <table class="plain">
     <thead><tr><th>ユーザー名</th><th>表示名</th><th>ロール</th><th>状態</th><th><span class="sr">操作</span></th></tr></thead>
     <tbody>
@@ -104,6 +127,10 @@
             <input type="hidden" name="action" value="password">
             <input name="password" type="password" minlength="12" placeholder="新しいパスワード" autocomplete="new-password" required aria-label="{{ u.username }} の新しいパスワード">
             <button class="btn btn-sm">再設定</button>
+          </form>
+          <form method="post" action="/admin/users/{{ u.id }}/reset-auth" data-confirm="{{ u.username }} のログイン方法（パスキー・確認コード・外部アカウントの連携）をすべて消し、仮のパスワードを発行しますか？">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn btn-sm btn-danger">ログイン方法をリセット</button>
           </form>
           {% else %}<span class="muted small">あなた</span>{% endif %}
         </div></td>
