@@ -22,6 +22,11 @@ from .users import User, get_user
 
 CHALLENGE_TTL = 300                 # 5 分
 SECOND_FACTOR_COOKIE = "docseed_2fa"
+# ログインに成功した端末の印（docs/design/security.md 2.4）。この Cookie があるユーザー名の試行は、
+# ユーザー名単位のロックではなく端末単位で数える。署名付き・ユーザー名ごと・1 年
+DEVICE_COOKIE = "docseed_device"
+DEVICE_DAYS = 365
+LOCK_HINTS = {"u:": "以前このアカウントでログインした端末か、パスキーでならログインできます"}
 
 # ログイン試行の制限。パスワード・確認コード・復旧コード・パスキーの失敗をまとめて数える（5.1 節）
 limiter = security.LoginLimiter()
@@ -231,9 +236,45 @@ def check_second_factor(conn: sqlite3.Connection, user_id: int, code: str) -> st
     return "totp" if cur.rowcount else None
 
 
+# ---------------------------------------------------------------------------
+# ログインに成功した端末（デバイス Cookie）
+# ---------------------------------------------------------------------------
+
+def _norm(username: str) -> str:
+    return username.strip().lower()
+
+
+def trusted_device(settings: Settings, request: Request, username: str) -> str | None:
+    """この端末がそのユーザー名でログインに成功したことがあれば、端末の ID を返す。"""
+    d = security.unsign_value(settings.secret_key, "device", request.cookies.get(DEVICE_COOKIE))
+    if not isinstance(d, dict) or d.get("u") != _norm(username) or not isinstance(d.get("n"), str):
+        return None
+    return d["n"]
+
+
+def set_device_cookie(settings: Settings, request: Request, response: Response, username: str) -> None:
+    nonce = trusted_device(settings, request, username) or secrets.token_urlsafe(12)
+    value = security.sign_value(settings.secret_key, "device", {"u": _norm(username), "n": nonce},
+                                DEVICE_DAYS * 86400)
+    response.set_cookie(DEVICE_COOKIE, value, httponly=True, secure=settings.cookie_secure, samesite="lax",
+                        path="/", max_age=DEVICE_DAYS * 86400)
+
+
+def login_keys(settings: Settings, request: Request, username: str, ip: str) -> tuple[str, ...]:
+    """パスワードでのログインの試行を数えるキー。
+
+    - ログインに成功したことのある端末: その端末だけで数える（ユーザー名や IP のロックに巻き込まれない）
+    - それ以外: ユーザー名と IP で数える。攻撃者がユーザー名をロックしても、本人は使い慣れた端末や
+      パスキー（IP だけで数える）でログインできる
+    """
+    dev = trusted_device(settings, request, username)
+    return (f"dev:{dev}",) if dev else (f"u:{_norm(username)}", f"ip:{ip}")
+
+
 def reauth_with_password(conn: sqlite3.Connection, user: User, session: security.Session, password: str,
                          code: str, ip: str | None) -> None:
-    keys = (f"u:{user.username.lower()}", f"ip:{ip or '-'}")
+    # ログイン済みのセッションからだけ呼ばれるので、ユーザー名のロックとは別に数える
+    keys = (f"reauth:{user.id}",)
     limiter.check(*keys)
     row = conn.execute("SELECT password_hash FROM users WHERE id = ?", (user.id,)).fetchone()
     ok = security.verify_password(row["password_hash"], password)
@@ -271,6 +312,8 @@ def start_session(conn: sqlite3.Connection, settings: Settings, request: Request
         max_age=settings.session_days * 86400 if remember else None,
     )
     response.delete_cookie(SECOND_FACTOR_COOKIE, path="/")
+    user = get_user(conn, user_id)
+    set_device_cookie(settings, request, response, user.username)
     return sess.csrf_token
 
 
@@ -287,8 +330,8 @@ def password_login(conn: sqlite3.Connection, settings: Settings, request: Reques
     from .deps import client_ip
     from .users import find_by_username
     ip = client_ip(request) or "-"
-    keys = (f"u:{username.strip().lower()}", f"ip:{ip}")
-    limiter.check(*keys)
+    keys = login_keys(settings, request, username, ip)
+    limiter.check(*keys, hints=LOCK_HINTS)
     row = find_by_username(conn, username)
     ok = security.verify_password(row["password_hash"] if row else None, password)
     if not ok or not row["is_active"]:
@@ -325,7 +368,9 @@ def finish_second_factor(conn: sqlite3.Connection, settings: Settings, request: 
     if row is None:
         raise Unauthenticated("時間が経ちすぎました。もう一度ユーザー名とパスワードを入力してください")
     user = get_user(conn, row["user_id"])
-    keys = (f"u:{user.username.lower()}", f"ip:{ip}")
+    # 2 段階目に来られるのはパスワードを知っている人だけなので、ユーザー名のロックとは別に数える
+    first = login_keys(settings, request, user.username, ip)
+    keys = (f"2fa:{user.id}", *(k for k in first if k.startswith("ip:")))
     limiter.check(*keys)
     kind = check_second_factor(conn, user.id, code)
     if kind is None or not user.is_active:
@@ -333,7 +378,7 @@ def finish_second_factor(conn: sqlite3.Connection, settings: Settings, request: 
         with Tx(conn):
             audit(conn, "second_factor_failed", user_id=user.id, ip=ip)
         raise ValidationFailed("確認コードが違います")
-    limiter.succeeded(*keys)
+    limiter.succeeded(*keys, *first)
     challenge_delete(conn, row["id"])
     data = json.loads(row["challenge"] or b"{}")
     csrf = start_session(conn, settings, request, response, user.id, f"password+{kind}", bool(data.get("remember")))

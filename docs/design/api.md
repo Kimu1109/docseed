@@ -12,7 +12,7 @@
 | 日時 | ISO 8601 UTC（`2026-11-07T12:34:56Z`） |
 | ID | 整数 |
 | 一覧のページング | `?cursor=<不透明な文字列>&limit=50`（最大 200）。応答に `next_cursor`（無ければ null） |
-| 仕様書 | FastAPI が生成する OpenAPI を `/api/v1/openapi.json`、画面を `/api/docs` で提供（ログイン必須） |
+| 仕様書 | FastAPI が生成する OpenAPI を `/api/v1/openapi.json`、画面を `/api/docs` で提供（ログイン必須。内側の接続元からだけ） |
 
 ### 1.1 エラー
 
@@ -257,5 +257,5 @@ GET /api/v1/search?q=振込先 請求書&mode=hybrid&type=pdf&tag=経理&folder=
 
 | メソッド | パス | 説明 |
 |---|---|---|
-| GET | `/healthz` | 認証不要。`{status: "ok", db: "ok", worker_last_seen: "..."}`。worker の生存は worker が 30 秒ごとに `settings` の `worker.heartbeat` を更新することで判定 |
+| GET | `/healthz` | 認証不要（Caddy で内側の接続元からだけに制限。[セキュリティ](security.md) 8 章）。`{status: "ok", db: "ok", worker_last_seen: "..."}`。worker の生存は worker が 30 秒ごとに `settings` の `worker.heartbeat` を更新することで判定 |
 | GET | `/api/v1/events` | Server-Sent Events。自分に関係する文書の処理状況の変化を通知（UI の進捗表示用）。api が 2 秒ごとに `blobs.updated_at` の変化を DB から読み、接続中のクライアントへ送る |

@@ -123,3 +123,66 @@ def test_unwritable_data_dir_gives_clear_message(tmp_path, monkeypatch):
     with pytest.raises(SystemExit) as e:
         Settings(data_dir=tmp_path / "data", secret_key="x" * 40).ensure_dirs()
     assert "sudo chown -R" in str(e.value) and "データディレクトリに書き込めません" in str(e.value)
+
+
+def test_username_lockout_does_not_block_known_device(app, users):
+    """攻撃者がユーザー名を狙って失敗を重ねても、ログインしたことのある端末の本人は締め出されない。"""
+    from docseed.api import routes
+    from docseed.authn import DEVICE_COOKIE
+    routes.limiter._fail.clear()
+    owner = TestClient(app)
+    assert owner.post("/api/v1/auth/login", json={"username": "bob", "password": PASSWORD}).status_code == 200
+    assert owner.cookies.get(DEVICE_COOKIE)
+
+    # 別の端末・別の IP から bob の名前で失敗を重ねる（IP ごとのロックに掛からないよう IP を変える）
+    for i in range(6):
+        routes.limiter.failed("u:bob", f"ip:203.0.113.{i}")
+    attacker = TestClient(app)
+    r = attacker.post("/api/v1/auth/login", json={"username": "bob", "password": PASSWORD})
+    assert r.status_code == 429 and "パスキー" in r.json()["detail"]
+
+    # 本人の端末からは入れる
+    assert owner.post("/api/v1/auth/login", json={"username": "Bob ", "password": PASSWORD}).status_code == 200
+    routes.limiter._fail.clear()
+
+
+def test_known_device_failures_are_limited_per_device(app, users):
+    from docseed.api import routes
+    routes.limiter._fail.clear()
+    dev = TestClient(app)
+    assert dev.post("/api/v1/auth/login", json={"username": "bob", "password": PASSWORD}).status_code == 200
+    for _ in range(5):
+        assert dev.post("/api/v1/auth/login", json={"username": "bob", "password": "nope-nope-nope"}).status_code == 401
+    assert dev.post("/api/v1/auth/login", json={"username": "bob", "password": PASSWORD}).status_code == 429
+    # 端末で数えるので、ユーザー名と IP はロックされていない（同じ IP の別の端末から入れる）
+    assert TestClient(app).post("/api/v1/auth/login", json={"username": "bob", "password": PASSWORD}).status_code == 200
+    routes.limiter._fail.clear()
+
+
+def test_device_cookie_is_per_user_and_signed(app, users):
+    from docseed.api import routes
+    from docseed.authn import DEVICE_COOKIE
+    routes.limiter._fail.clear()
+    c = TestClient(app)
+    assert c.post("/api/v1/auth/login", json={"username": "alice", "password": PASSWORD}).status_code == 200
+    for i in range(6):
+        routes.limiter.failed("u:bob", f"ip:203.0.113.{i}")
+    # alice の端末の印では bob のロックを避けられない
+    assert c.post("/api/v1/auth/login", json={"username": "bob", "password": PASSWORD}).status_code == 429
+    # 書き換えた Cookie は無効（alice のロックも避けられなくなる）
+    for i in range(6):
+        routes.limiter.failed("u:alice", f"ip:203.0.113.{i}")
+    assert c.post("/api/v1/auth/login", json={"username": "alice", "password": PASSWORD}).status_code == 200
+    v = c.cookies.get(DEVICE_COOKIE)
+    c.cookies.clear()   # 元の Cookie を残すと、httpx の版によってはそちらが先に送られる
+    c.cookies.set(DEVICE_COOKIE, v[:-1] + ("0" if v[-1] != "0" else "1"))
+    assert c.post("/api/v1/auth/login", json={"username": "alice", "password": PASSWORD}).status_code == 429
+    routes.limiter._fail.clear()
+
+
+def test_limiter_memory_is_bounded():
+    lim = security.LoginLimiter()
+    lim.MAX_KEYS = 100
+    for i in range(1000):
+        lim.failed(f"u:random-{i}")
+    assert len(lim._fail) <= 100

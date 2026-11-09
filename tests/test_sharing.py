@@ -267,3 +267,55 @@ def test_inbox_waits_for_writes(scanner, settings, login):
     _age(f)
     assert scanner.scan(conn) == 0             # 大きさ・時刻が変わったので記録し直し
     assert scanner.scan(conn) == 1
+
+
+def _upload_link(alice, folder_id, **kw):
+    r = alice.post("/api/v1/shares", json={"target_type": "folder", "target_id": folder_id,
+                                           "permission": "upload", **kw})
+    return r
+
+
+def test_upload_link_expiry_is_limited(login):
+    alice = login("alice")
+    assert _upload_link(alice, alice.root, expires="never").status_code == 422
+    assert _upload_link(alice, alice.root, expires="31d").status_code == 422
+    r = _upload_link(alice, alice.root, expires="30d")
+    assert r.status_code == 201
+    # 後から無期限にもできない
+    assert alice.patch(f"/api/v1/shares/{r.json()['id']}", json={"expires": "never"}).status_code == 422
+    # 閲覧用は今まで通り無期限にできる
+    assert alice.post("/api/v1/shares", json={"target_type": "folder", "target_id": alice.root,
+                                              "expires": "never"}).status_code == 201
+
+
+def _send(anon, tok, name, data):
+    return anon.post(f"/s/{tok}/upload", files=[("files", (name, io.BytesIO(data)))])
+
+
+def test_upload_link_limits(app, login, monkeypatch):
+    import dataclasses
+    import shutil
+    from types import SimpleNamespace
+
+    alice = login("alice")
+    tok1 = token_of(_upload_link(alice, alice.root).json()["url"])
+    tok2 = token_of(_upload_link(alice, alice.root).json()["url"])
+    anon = public(app)
+    gb = 1024 ** 3
+    # 1 リンク 1536 バイト、すべてのリンクの 24 時間で 3000 バイト
+    app.state.settings = dataclasses.replace(app.state.settings, share_upload_link_gb=1536 / gb,
+                                             share_upload_daily_gb=3000 / gb)
+    assert "送信しました" in _send(anon, tok1, "a.bin", b"a" * 1536).text
+    assert "合計容量" in _send(anon, tok1, "b.bin", b"b").text            # 1 リンクの合計
+    assert "送信しました" in _send(anon, tok2, "c.bin", b"c" * 1000).text  # 24 時間の残りは 464
+    assert "送信しました" not in _send(anon, tok2, "d.bin", b"d" * 500).text
+    assert "送信しました" in _send(anon, tok2, "e.bin", b"e" * 464).text
+    assert "混み合って" in _send(anon, tok2, "f.bin", b"f").text          # すべてのリンクの合計
+
+    # 空きが 10% を下回ったら受け取らない。ログインしたユーザーは 5% までは使える
+    app.state.settings = dataclasses.replace(app.state.settings, share_upload_link_gb=10, share_upload_daily_gb=20,
+                                             share_upload_min_free_pct=10.0)
+    monkeypatch.setattr(shutil, "disk_usage", lambda p: SimpleNamespace(total=100, used=92, free=8))
+    assert "空き容量" in _send(anon, tok2, "g.bin", b"g").text
+    r = alice.upload(alice.root, {"mine.txt": b"x"})
+    assert r.status_code < 300 and r.json()["results"][0].get("document"), r.text

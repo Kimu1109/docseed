@@ -88,9 +88,10 @@
       <label>有効期限
         <select name="expires">
           <option value="1d">1 日</option><option value="7d" selected>7 日</option><option value="30d">30 日</option>
-          <option value="never">無期限（おすすめしません）</option>
+          <option value="never">無期限（閲覧用のみ。おすすめしません）</option>
         </select>
       </label>
+      {% if target_type == "folder" %}<p class="muted small">受け取り用のリンクの期限は 30 日までです。</p>{% endif %}
       <label>パスワード <span class="muted small">（任意。4 文字以上）</span><input name="password" type="text" autocomplete="off" minlength="4"></label>
       <label>ダウンロード回数の上限 <span class="muted small">（任意）</span><input name="max_downloads" type="number" min="1" max="100000"></label>
       <button type="submit" class="btn btn-primary">リンクを作成</button>

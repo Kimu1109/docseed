@@ -14,6 +14,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
+      # tests/test_deploy.py の fail2ban-regex の確認に使う
+      - run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends fail2ban
       - run: ruff check src tests
       - run: pytest
       - run: python scripts/build_icons.py --check
@@ -33,8 +35,75 @@ jobs:
                 -e DOCSEED_HTTPS_PORT=8443 -e DOCSEED_HTTP_PORT=8080 \
                 -e DOCSEED_TLS_CERT=live/x/fullchain.pem -e DOCSEED_TLS_KEY=live/x/privkey.pem \
                 caddy:2 caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/out.json
+              # 外側からの管理系のパスの 404 と、IP のサイトの切断（docs/design/security.md 8 章）
+              grep -q '"100.64.0.0/10"' /tmp/out.json
+              grep -q '"/api/v1/admin/\*"' /tmp/out.json
+              grep -q '"abort":true' /tmp/out.json
+              grep -q 'Permissions-Policy' /tmp/out.json
+              grep -q '"install_trust":false' /tmp/out.json
             done
           done
+      - name: 入口の制限が実際に効くこと（外側 = 内側の範囲に入らない接続元）
+        run: |
+          docker network create ct
+          printf ':8000 {\n\theader X-Powered-By test\n\trespond "upstream" 200\n}\n' > /tmp/Stub
+          docker run -d --name api --network ct -v /tmp/Stub:/etc/caddy/Caddyfile:ro caddy:2
+          probe() {  # $1 = DOCSEED_TRUSTED_NETS, 以降 = "パス 期待するコード"
+            nets=$1; shift
+            docker rm -f c1 >/dev/null 2>&1 || true
+            docker run -d --name c1 --network ct -v "$PWD/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
+              -e DOCSEED_HOST=docseed.example.com -e DOCSEED_LAN_IP=c1 -e DOCSEED_TRUSTED_NETS="$nets" caddy:2
+            sleep 3
+            ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' c1)
+            for t in "$@"; do
+              set -- $t
+              got=$(docker run --rm --network ct curlimages/curl:8.10.1 -sk -o /dev/null -w '%{http_code}' \
+                --resolve docseed.example.com:443:$ip "https://docseed.example.com$1" || true)
+              echo "[$nets] $1 -> $got"; [ "$got" = "$2" ]
+            done
+          }
+          probe "10.99.0.0/16" "/ 200" "/s/x 200" "/api/v1/folders 200" "/admin 404" "/admin/users 404" \
+            "/api/v1/admin/users 404" "/api/v1/%61dmin/users 404" "/api/docs 404" "/api/v1/openapi.json 404" "/healthz 404"
+          got=$(docker run --rm --network ct curlimages/curl:8.10.1 -sk -o /dev/null -w '%{http_code}' https://c1/ || true)
+          echo "IP site from outside -> $got"; [ "$got" = "000" ]
+          probe "private_ranges 100.64.0.0/10" "/admin 200" "/api/docs 200" "/healthz 200"
+          h=$(docker run --rm --network ct curlimages/curl:8.10.1 -skI https://c1/)
+          echo "$h"
+          echo "$h" | grep -qi '^permissions-policy:'
+          echo "$h" | grep -qi '^cross-origin-opener-policy: same-origin'
+          if echo "$h" | grep -qiE '^(x-powered-by|server|via):'; then echo "外すはずのヘッダが残っている"; exit 1; fi
+      - name: Cloudflare Tunnel 経由の判定（docs/design/security.md 10 章）
+        run: |
+          docker rm -f api c1 >/dev/null 2>&1 || true
+          docker network create --subnet 10.213.47.0/28 tun
+          # api の代わりに、届いた X-Forwarded-For をそのまま返す
+          printf ':8000 {\n\trespond "xff={header.X-Forwarded-For}" 200\n}\n' > /tmp/Stub
+          docker run -d --name api --network ct -v /tmp/Stub:/etc/caddy/Caddyfile:ro caddy:2
+          docker run -d --name c1 --network ct -v "$PWD/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            -e DOCSEED_HOST=docseed.example.com -e DOCSEED_LAN_IP=c1 caddy:2
+          docker network connect tun c1
+          sleep 3
+          ct_ip=$(docker inspect -f '{{(index .NetworkSettings.Networks "ct").IPAddress}}' c1)
+          tun_ip=$(docker inspect -f '{{(index .NetworkSettings.Networks "tun").IPAddress}}' c1)
+          req() {  # $1 = ネットワーク, $2 = Caddy の IP, $3 = パス, 以降 = curl の追加の引数
+            net=$1; ip=$2; path=$3; shift 3
+            docker run --rm --network $net curlimages/curl:8.10.1 -sk "$@" \
+              --resolve docseed.example.com:443:$ip "https://docseed.example.com$path" || true
+          }
+          code() { req "$@" -o /dev/null -w '%{http_code}'; }
+          check() { echo "$1 -> $2 (want $3)"; [ "$2" = "$3" ]; }
+          # トンネル経由: ヘッダの値に関係なく管理系は 404。アプリには CF-Connecting-IP の値だけが届く
+          check "tunnel CF=public /admin"  "$(code tun $tun_ip /admin -H 'CF-Connecting-IP: 203.0.113.9')" 404
+          check "tunnel CF=private /admin" "$(code tun $tun_ip /admin -H 'CF-Connecting-IP: 192.168.1.5')" 404
+          check "tunnel no CF /healthz"    "$(code tun $tun_ip /healthz)" 404
+          check "tunnel xff" "$(req tun $tun_ip / -H 'CF-Connecting-IP: 203.0.113.9' -H 'X-Forwarded-For: 6.6.6.6')" \
+            "xff=203.0.113.9"
+          check "tunnel IP site" "$(docker run --rm --network tun curlimages/curl:8.10.1 -sk -o /dev/null \
+            -w '%{http_code}' --resolve c1:443:$tun_ip https://c1/ || true)" 000
+          # トンネル以外（内側）: CF-Connecting-IP と X-Forwarded-For は無視して、本当の接続元を渡す
+          xff=$(req ct $ct_ip / -H 'CF-Connecting-IP: 203.0.113.9' -H 'X-Forwarded-For: 6.6.6.6')
+          echo "direct xff -> $xff"; case "$xff" in xff=172.*|xff=10.*|xff=192.168.*) ;; *) exit 1 ;; esac
+          check "direct /admin" "$(code ct $ct_ip /admin -H 'CF-Connecting-IP: 203.0.113.9')" 200
       - name: acme_dns（DNS のプラグイン入りの Caddy をビルドして展開）
         run: |
           docker build -t docseed-caddy docker/caddy
@@ -50,3 +119,47 @@ jobs:
               if [ "$staging" = true ]; then grep -q acme-staging-v02 /tmp/out.json; fi
             done
           done
+
+  # 強化した compose（read_only・cap_drop など）のまま起動して、ログインとアップロードができること
+  # （docs/design/deployment.md 2.1.1）
+  compose:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: 起動
+        run: |
+          sudo mkdir -p /srv/docseed-ci && sudo chown 1000:1000 /srv/docseed-ci
+          cat > .env <<'ENV'
+          DOCSEED_HOST=docseed.example.com
+          DOCSEED_SECRET_KEY=ci-secret-key-ci-secret-key-ci-secret-key-ci
+          DOCSEED_DATA_DIR=/srv/docseed-ci
+          ENV
+          docker compose build api
+          docker compose up -d caddy api worker
+          for i in $(seq 1 30); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' docseed-api-1)" = healthy ] && break; sleep 2
+          done
+          docker compose ps
+      - name: ログインとアップロード
+        run: |
+          printf 'correct-horse-battery\ncorrect-horse-battery\n' | docker compose exec -T api docseed create-admin --username admin
+          C="curl -sfk --resolve docseed.example.com:443:127.0.0.1 -c /tmp/jar -b /tmp/jar"
+          csrf=$($C -H 'Content-Type: application/json' \
+            -d '{"username":"admin","password":"correct-horse-battery"}' \
+            https://docseed.example.com/api/v1/auth/login | python3 -c 'import json,sys; print(json.load(sys.stdin)["csrf_token"])')
+          root=$($C https://docseed.example.com/api/v1/me | python3 -c 'import json,sys; print(json.load(sys.stdin)["root_folder_id"])')
+          head -c 5000000 /dev/urandom > /tmp/big.bin
+          $C -H "X-CSRF-Token: $csrf" -F folder_id=$root -F files=@/tmp/big.bin https://docseed.example.com/api/v1/documents \
+            | grep -q '"size_bytes":5000000'
+      - name: コンテナが書き換えられないこと
+        run: |
+          if docker compose exec -T api touch /app/x; then echo "api の /app に書けてしまう"; exit 1; fi
+          if docker compose exec -T worker touch /home/docseed/x; then echo "worker の HOME に書けてしまう"; exit 1; fi
+          for s in caddy api worker; do
+            docker inspect -f '{{.Name}} ro={{.HostConfig.ReadonlyRootfs}} caps={{.HostConfig.CapDrop}}' docseed-$s-1
+            [ "$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' docseed-$s-1)" = true ]
+          done
+          [ "$(docker compose ps --status running -q | wc -l)" = 3 ]
+      - name: ログ
+        if: always()
+        run: docker compose logs --tail 50

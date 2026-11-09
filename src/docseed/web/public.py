@@ -29,8 +29,20 @@ def _invalid(request: Request, status: int = 404) -> HTMLResponse:
                                       status_code=status)
 
 
+def _resolve(conn: sqlite3.Connection, request: Request, token: str) -> sh.ShareAccess:
+    """トークンを確かめる。無効なら、流量の制限（ratelimit.RateLimitMiddleware）が数えられるよう印を付ける。
+
+    リンクは有効で中のファイルが無いだけの 404 は数えない（共有フォルダの閲覧者を誤って止めないため）。
+    """
+    try:
+        return sh.resolve(conn, token)
+    except NotFound:
+        request.state.bad_share_token = True
+        raise
+
+
 def _access(conn: sqlite3.Connection, settings: Settings, request: Request, token: str) -> sh.ShareAccess:
-    acc = sh.resolve(conn, token)
+    acc = _resolve(conn, request, token)
     if acc.share["password_hash"] and not sh.check_pass_cookie(
             settings.secret_key, token, request.cookies.get(sh.cookie_name(token))):
         raise _NeedPassword()
@@ -99,7 +111,7 @@ def share_auth(token: str, request: Request, password: str = Form(""), conn: sql
                settings: Settings = Depends(get_settings)):
     keys = (f"share:{token}:{client_ip(request)}",)
     try:
-        acc = sh.resolve(conn, token)
+        acc = _resolve(conn, request, token)
         pass_limiter.check(*keys)
     except NotFound:
         return _invalid(request)
@@ -207,11 +219,9 @@ def share_upload(token: str, request: Request, files: list[UploadFile] = File(..
         if not f.filename:
             continue
         try:
-            used = sh.uploaded_bytes(conn, acc.share["id"])
-            if used >= sh.UPLOAD_LIMIT_PER_LINK:
-                raise AppError("このリンクで受け取れる合計容量（10GB）を超えました")
+            left = sh.upload_allowance(conn, settings, store.files_dir, acc.share["id"])
             r = dm.upload(conn, store, acc.creator, acc.folder_id, f.filename, f.file,
-                          max_bytes=min(settings.max_upload_bytes, sh.UPLOAD_LIMIT_PER_LINK - used),
+                          max_bytes=min(settings.max_upload_bytes, left),
                           on_conflict="rename", ip=client_ip(request), via_share_id=acc.share["id"])
             results.append({"name": f.filename, "ok": True, "saved_as": r.filename})
         except AppError as e:

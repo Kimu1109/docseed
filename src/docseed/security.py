@@ -214,18 +214,33 @@ def load_api_token(conn: sqlite3.Connection, raw: str) -> sqlite3.Row | None:
 # ---------------------------------------------------------------------------
 
 class LoginLimiter:
+    """キーごとに、window_s 秒の間の失敗が max_failures 回に達したら止める。
+
+    キーの例: "ip:<アドレス>"、"u:<ユーザー名>"、"dev:<端末の ID>"。ユーザー名のキーは、ログインに成功した
+    ことのある端末（authn.DEVICE_COOKIE）からの試行には使わない（攻撃者が本人を締め出せないように）。
+    """
+
+    MAX_KEYS = 20000   # 存在しないユーザー名を大量に試されてもメモリを使い切らないように
+
     def __init__(self, max_failures: int = 5, window_s: int = 900):
         self.max = max_failures
         self.window = window_s
         self._fail: dict[str, list[float]] = {}
         self._lock = threading.Lock()
 
+    def _prune(self, t: float) -> None:
+        for k in [k for k, v in self._fail.items() if not v or t - v[-1] >= self.window]:
+            del self._fail[k]
+        while len(self._fail) >= self.MAX_KEYS:   # それでも多ければ古いものから捨てる
+            del self._fail[next(iter(self._fail))]
+
     def _recent(self, key: str, t: float) -> list[float]:
         v = [x for x in self._fail.get(key, []) if t - x < self.window]
         self._fail[key] = v
         return v
 
-    def check(self, *keys: str) -> None:
+    def check(self, *keys: str, hints: dict[str, str] | None = None) -> None:
+        """hints: キーの接頭辞（"u:" など）→ そのキーで止まったときに足す案内。"""
         t = time.monotonic()
         with self._lock:
             for k in keys:
@@ -233,12 +248,15 @@ class LoginLimiter:
                 if len(v) >= self.max:
                     retry = int(self.window - (t - v[0])) + 1
                     minutes = retry // 60 + 1
-                    raise RateLimited(f"ログインの失敗が続いたため、{minutes} 分ほど待ってから再度お試しください",
-                                      retry_after=retry)
+                    msg = f"ログインの失敗が続いたため、{minutes} 分ほど待ってから再度お試しください"
+                    hint = next((h for prefix, h in (hints or {}).items() if k.startswith(prefix)), None)
+                    raise RateLimited(f"{msg}。{hint}" if hint else msg, retry_after=retry)
 
     def failed(self, *keys: str) -> None:
         t = time.monotonic()
         with self._lock:
+            if len(self._fail) >= self.MAX_KEYS:
+                self._prune(t)
             for k in keys:
                 self._recent(k, t).append(t)
 

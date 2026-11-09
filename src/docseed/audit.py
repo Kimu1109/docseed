@@ -12,6 +12,9 @@ from .db import now
 def audit(conn: sqlite3.Connection, action: str, *, user_id: int | None = None,
           target_type: str | None = None, target_id: int | None = None,
           ip: str | None = None, **detail: Any) -> None:
+    from .ratelimit import AUDIT_EVENTS, security_event
+    if action in AUDIT_EVENTS or (action == "share_access" and detail.get("what") == "password_failed"):
+        security_event("share_password_failed" if action == "share_access" else action, ip)
     conn.execute(
         "INSERT INTO audit_log(at, user_id, action, target_type, target_id, ip, detail) VALUES (?,?,?,?,?,?,?)",
         (now(), user_id, action, target_type, target_id, ip,

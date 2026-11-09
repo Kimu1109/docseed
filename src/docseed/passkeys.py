@@ -155,6 +155,8 @@ def authenticate(conn: sqlite3.Connection, settings: Settings, request: Request,
         user_id = _authenticate(conn, settings, request, challenge_id, credential, ip)
     except Unauthenticated:
         authn.limiter.failed(*keys)
+        from .ratelimit import security_event
+        security_event("passkey_failed", ip)
         raise
     authn.limiter.succeeded(*keys)
     return user_id

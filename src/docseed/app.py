@@ -86,7 +86,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from .tlscheck import start_background
     start_background(settings)
 
+    from .ratelimit import RateLimitMiddleware, setup_security_log
+    setup_security_log(settings.data_dir / "logs")
     app.add_middleware(SecurityHeaders)
+    # 流量の制限（docs/design/security.md 9 章）。SecurityHeaders より外側に置き、429 にもヘッダを付けない
+    app.add_middleware(RateLimitMiddleware, enabled=settings.rate_limit_enabled)
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "web" / "static"), name="static")
     app.include_router(health)
     app.include_router(api_router)

@@ -17,7 +17,7 @@ from .security import _ph, verify_password
 from .users import User, get_user
 
 PERMISSIONS = ("read", "upload")
-UPLOAD_LIMIT_PER_LINK = 10 * 1024 ** 3   # 1 リンクで受け取る合計の上限（10GB）
+UPLOAD_MAX_DAYS = 30   # 受け取り用リンクの期限の上限（無期限にはできない）
 PASS_COOKIE_HOURS = 12
 INVALID = "リンクが無効か、期限が切れています"
 
@@ -67,6 +67,13 @@ def parse_expiry(value: str | None) -> str | None:
     return _iso(exp)
 
 
+def _check_upload_expiry(expires_at: str | None) -> None:
+    """受け取り用リンクは誰でもファイルを送れるので、無期限や長すぎる期限にはしない。"""
+    limit = _iso(dt.datetime.now(dt.UTC) + dt.timedelta(days=UPLOAD_MAX_DAYS, minutes=1))
+    if expires_at is None or expires_at > limit:
+        raise ValidationFailed(f"受け取り用のリンクの期限は {UPLOAD_MAX_DAYS} 日以内にしてください")
+
+
 def create_share(conn: sqlite3.Connection, user: User, target_type: str, target_id: int, *,
                  permission: str = "read", expires: str | None = "7d", password: str | None = None,
                  max_downloads: int | None = None) -> sqlite3.Row:
@@ -79,6 +86,8 @@ def create_share(conn: sqlite3.Connection, user: User, target_type: str, target_
     if password is not None and password != "" and len(password) < 4:
         raise ValidationFailed("リンクのパスワードは 4 文字以上にしてください")
     expires_at = parse_expiry(expires)
+    if permission == "upload":
+        _check_upload_expiry(expires_at)
     with Tx(conn):
         fo.require_folder_role(conn, user, _target_folder(conn, target_type, target_id), "editor")
         token = secrets.token_urlsafe(32)
@@ -123,7 +132,10 @@ def update_share(conn: sqlite3.Connection, user: User, share_id: int, *, expires
     with Tx(conn):
         s = get_share_for_manage(conn, user, share_id)
         if expires is not None:
-            conn.execute("UPDATE shares SET expires_at = ? WHERE id = ?", (parse_expiry(expires), s["id"]))
+            expires_at = parse_expiry(expires)
+            if s["permission"] == "upload":
+                _check_upload_expiry(expires_at)
+            conn.execute("UPDATE shares SET expires_at = ? WHERE id = ?", (expires_at, s["id"]))
         if clear_password:
             conn.execute("UPDATE shares SET password_hash = NULL WHERE id = ?", (s["id"],))
         elif password:
@@ -237,6 +249,35 @@ def uploaded_bytes(conn: sqlite3.Connection, share_id: int) -> int:
     return conn.execute(
         "SELECT coalesce(sum(b.size_bytes), 0) FROM documents d JOIN blobs b ON b.id = d.blob_id"
         " WHERE d.uploaded_via_share_id = ?", (share_id,)).fetchone()[0]
+
+
+def uploaded_bytes_recent(conn: sqlite3.Connection, hours: int = 24) -> int:
+    """すべての受け取り用リンクで、直近 hours 時間に受け取った合計（削除したものも数える）。"""
+    since = _iso(dt.datetime.now(dt.UTC) - dt.timedelta(hours=hours))
+    return conn.execute(
+        "SELECT coalesce(sum(b.size_bytes), 0) FROM documents d JOIN blobs b ON b.id = d.blob_id"
+        " WHERE d.uploaded_via_share_id IS NOT NULL AND d.created_at >= ?", (since,)).fetchone()[0]
+
+
+def upload_allowance(conn: sqlite3.Connection, settings, files_dir, share_id: int) -> int:
+    """このリンクで次に受け取れるバイト数。受け取れないときは理由を付けて AppError を出す。
+
+    1 リンクの合計・すべてのリンクの 24 時間の合計・保存先の空きの 3 つで制限する（docs/design/security.md 4.3）。
+    """
+    import shutil
+
+    from .errors import InsufficientStorage
+    st = shutil.disk_usage(files_dir)
+    if st.total and st.free / st.total * 100 < settings.share_upload_min_free_pct:
+        raise InsufficientStorage("保存先の空き容量が少ないため、いまはファイルを受け取れません")
+    gb = 1024 ** 3
+    link_left = int(settings.share_upload_link_gb * gb) - uploaded_bytes(conn, share_id)
+    if link_left <= 0:
+        raise ValidationFailed(f"このリンクで受け取れる合計容量（{settings.share_upload_link_gb:g}GB）を超えました")
+    daily_left = int(settings.share_upload_daily_gb * gb) - uploaded_bytes_recent(conn)
+    if daily_left <= 0:
+        raise ValidationFailed("受け取りが一時的に混み合っています。時間をおいてから送ってください")
+    return min(link_left, daily_left)
 
 
 # ---- パスワード確認済みの Cookie（トークンごと、HMAC 署名つき） ----------

@@ -13,9 +13,23 @@ from docseed.users import create_user
 PASSWORD = "correct-horse-battery"
 
 
+@pytest.fixture(autouse=True)
+def _reset_login_limits():
+    """ログイン試行の制限はプロセス全体で共有するので、テストごとに空にする（失敗したテストの状態を持ち越さない）。"""
+    from docseed import authn
+    from docseed.web.public import pass_limiter
+    authn.limiter._fail.clear()
+    pass_limiter._fail.clear()
+    yield
+    authn.limiter._fail.clear()
+    pass_limiter._fail.clear()
+
+
 @pytest.fixture()
 def settings(tmp_path) -> Settings:
-    return Settings(data_dir=tmp_path / "data", secret_key="x" * 40, cookie_secure=False)
+    # 受け取り用リンクの空き容量の確認は、テストを動かす機械のディスクに左右されないよう切る（test_sharing で確かめる）
+    return Settings(data_dir=tmp_path / "data", secret_key="x" * 40, cookie_secure=False,
+                    share_upload_min_free_pct=0.0)
 
 
 @pytest.fixture()
