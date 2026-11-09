@@ -67,6 +67,10 @@ class Settings:
     llm_model: str = "sarashina2.2-1b-instruct-v0.1-Q4_K_M.gguf"   # DOCSEED_LLM_MODEL（models/llm/ の GGUF）
     llm_timeout_s: int = 180          # DOCSEED_LLM_TIMEOUT_S
     llm_max_input_chars: int = 3000   # DOCSEED_LLM_MAX_INPUT_CHARS
+    # 受け取り用の共有リンク（ログインなしでアップロードできる。docs/design/security.md 4.3）
+    share_upload_link_gb: float = 10.0    # DOCSEED_SHARE_UPLOAD_LINK_GB（1 リンクの合計）
+    share_upload_daily_gb: float = 20.0   # DOCSEED_SHARE_UPLOAD_DAILY_GB（すべてのリンクの 24 時間の合計）
+    share_upload_min_free_pct: float = 10.0   # DOCSEED_SHARE_UPLOAD_MIN_FREE_PCT（空きがこれを下回ったら受け取らない）
     extra: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -159,6 +163,9 @@ class Settings:
             llm_model=e.get("DOCSEED_LLM_MODEL") or "sarashina2.2-1b-instruct-v0.1-Q4_K_M.gguf",
             llm_timeout_s=int(e.get("DOCSEED_LLM_TIMEOUT_S") or "180"),
             llm_max_input_chars=int(e.get("DOCSEED_LLM_MAX_INPUT_CHARS") or "3000"),
+            share_upload_link_gb=float(e.get("DOCSEED_SHARE_UPLOAD_LINK_GB") or "10"),
+            share_upload_daily_gb=float(e.get("DOCSEED_SHARE_UPLOAD_DAILY_GB") or "20"),
+            share_upload_min_free_pct=float(e.get("DOCSEED_SHARE_UPLOAD_MIN_FREE_PCT") or "10"),
         )
 
 

@@ -33,6 +33,8 @@
 	https_port {$DOCSEED_HTTPS_PORT:443}
 	default_sni {$DOCSEED_LAN_IP:localhost}
 	auto_https disable_redirects
+	# 内部 CA をコンテナの中の信頼ストアに入れない（意味がなく、read_only のコンテナでは失敗する）
+	skip_install_trust
 }
 
 (tls_internal) {

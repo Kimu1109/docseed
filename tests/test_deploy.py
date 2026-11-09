@@ -86,3 +86,36 @@ def test_llm_service():
     assert "/models:ro" in block
     for var in ("DOCSEED_SUGGEST_ENABLED", "DOCSEED_LLM_ENABLED", "DOCSEED_LLM_MODEL", "DOCSEED_LLM_TIMEOUT_S"):
         assert var in ENV_EXAMPLE
+
+
+def _service(name: str) -> str:
+    return COMPOSE.split(f"\n  {name}:", 1)[1].split("\n\n", 1)[0]
+
+
+def test_containers_are_hardened():
+    """インターネットに公開しても、乗っ取られたコンテナでできることを小さくする（deployment.md 2.3）。"""
+    anchor = COMPOSE.split("x-hardening: &hardening", 1)[1].split("\n\n", 1)[0]
+    for line in ("read_only: true", "cap_drop: [ALL]", 'security_opt: ["no-new-privileges:true"]', "/tmp:"):
+        assert line in anchor
+    for name in ("caddy", "api", "worker", "fetcher", "llm"):
+        block = _service(name)
+        assert "<<: *hardening" in block, name
+        assert "pids_limit:" in block, name
+    # Caddy は 80 / 443 を待ち受ける権限だけ戻し、設定の控えを書く /config を用意する
+    caddy = _service("caddy")
+    assert "cap_add: [NET_BIND_SERVICE]" in caddy and "/config:" in caddy
+    # 大きなアップロードの一時ファイルは RAM（tmpfs の /tmp）ではなくデータディレクトリに置く
+    for name in ("api", "worker", "fetcher"):
+        assert "TMPDIR: /srv/docseed/files/.tmp" in _service(name), name
+
+
+def test_caddy_skips_trust_install():
+    """read_only の Caddy は、内部 CA をコンテナの信頼ストアに入れられない（入れる意味もない）。"""
+    global_options = CADDYFILE.split("\n{\n", 1)[1].split("\n}", 1)[0]
+    assert "skip_install_trust" in global_options
+
+
+def test_share_upload_limits_documented():
+    for var in ("DOCSEED_SHARE_UPLOAD_LINK_GB", "DOCSEED_SHARE_UPLOAD_DAILY_GB", "DOCSEED_SHARE_UPLOAD_MIN_FREE_PCT",
+                "DOCSEED_TRUSTED_NETS"):
+        assert var in ENV_EXAMPLE

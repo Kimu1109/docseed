@@ -15,7 +15,9 @@ PASSWORD = "correct-horse-battery"
 
 @pytest.fixture()
 def settings(tmp_path) -> Settings:
-    return Settings(data_dir=tmp_path / "data", secret_key="x" * 40, cookie_secure=False)
+    # 受け取り用リンクの空き容量の確認は、テストを動かす機械のディスクに左右されないよう切る（test_sharing で確かめる）
+    return Settings(data_dir=tmp_path / "data", secret_key="x" * 40, cookie_secure=False,
+                    share_upload_min_free_pct=0.0)
 
 
 @pytest.fixture()

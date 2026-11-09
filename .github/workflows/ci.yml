@@ -38,6 +38,7 @@ jobs:
               grep -q '"/api/v1/admin/\*"' /tmp/out.json
               grep -q '"abort":true' /tmp/out.json
               grep -q 'Permissions-Policy' /tmp/out.json
+              grep -q '"install_trust":false' /tmp/out.json
             done
           done
       - name: 入口の制限が実際に効くこと（外側 = 内側の範囲に入らない接続元）
@@ -84,3 +85,47 @@ jobs:
               if [ "$staging" = true ]; then grep -q acme-staging-v02 /tmp/out.json; fi
             done
           done
+
+  # 強化した compose（read_only・cap_drop など）のまま起動して、ログインとアップロードができること
+  # （docs/design/deployment.md 2.1.1）
+  compose:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: 起動
+        run: |
+          sudo mkdir -p /srv/docseed-ci && sudo chown 1000:1000 /srv/docseed-ci
+          cat > .env <<'ENV'
+          DOCSEED_HOST=docseed.example.com
+          DOCSEED_SECRET_KEY=ci-secret-key-ci-secret-key-ci-secret-key-ci
+          DOCSEED_DATA_DIR=/srv/docseed-ci
+          ENV
+          docker compose build api
+          docker compose up -d caddy api worker
+          for i in $(seq 1 30); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' docseed-api-1)" = healthy ] && break; sleep 2
+          done
+          docker compose ps
+      - name: ログインとアップロード
+        run: |
+          printf 'correct-horse-battery\ncorrect-horse-battery\n' | docker compose exec -T api docseed create-admin --username admin
+          C="curl -sfk --resolve docseed.example.com:443:127.0.0.1 -c /tmp/jar -b /tmp/jar"
+          csrf=$($C -H 'Content-Type: application/json' \
+            -d '{"username":"admin","password":"correct-horse-battery"}' \
+            https://docseed.example.com/api/v1/auth/login | python3 -c 'import json,sys; print(json.load(sys.stdin)["csrf_token"])')
+          root=$($C https://docseed.example.com/api/v1/me | python3 -c 'import json,sys; print(json.load(sys.stdin)["root_folder_id"])')
+          head -c 5000000 /dev/urandom > /tmp/big.bin
+          $C -H "X-CSRF-Token: $csrf" -F folder_id=$root -F files=@/tmp/big.bin https://docseed.example.com/api/v1/documents \
+            | grep -q '"size_bytes":5000000'
+      - name: コンテナが書き換えられないこと
+        run: |
+          if docker compose exec -T api touch /app/x; then echo "api の /app に書けてしまう"; exit 1; fi
+          if docker compose exec -T worker touch /home/docseed/x; then echo "worker の HOME に書けてしまう"; exit 1; fi
+          for s in caddy api worker; do
+            docker inspect -f '{{.Name}} ro={{.HostConfig.ReadonlyRootfs}} caps={{.HostConfig.CapDrop}}' docseed-$s-1
+            [ "$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' docseed-$s-1)" = true ]
+          done
+          [ "$(docker compose ps --status running -q | wc -l)" = 3 ]
+      - name: ログ
+        if: always()
+        run: docker compose logs --tail 50

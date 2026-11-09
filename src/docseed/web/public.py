@@ -207,11 +207,9 @@ def share_upload(token: str, request: Request, files: list[UploadFile] = File(..
         if not f.filename:
             continue
         try:
-            used = sh.uploaded_bytes(conn, acc.share["id"])
-            if used >= sh.UPLOAD_LIMIT_PER_LINK:
-                raise AppError("このリンクで受け取れる合計容量（10GB）を超えました")
+            left = sh.upload_allowance(conn, settings, store.files_dir, acc.share["id"])
             r = dm.upload(conn, store, acc.creator, acc.folder_id, f.filename, f.file,
-                          max_bytes=min(settings.max_upload_bytes, sh.UPLOAD_LIMIT_PER_LINK - used),
+                          max_bytes=min(settings.max_upload_bytes, left),
                           on_conflict="rename", ip=client_ip(request), via_share_id=acc.share["id"])
             results.append({"name": f.filename, "ok": True, "saved_as": r.filename})
         except AppError as e:

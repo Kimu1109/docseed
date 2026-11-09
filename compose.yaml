@@ -4,11 +4,31 @@
 #   docker compose --profile tools run --rm tools     # モデルの取得（初回だけ。数分）
 #   docker compose up -d --build
 #   docker compose exec api docseed create-admin --username <名前>
+# コンテナの強化（docs/design/deployment.md 2.3）。インターネットに公開しても、1 つのコンテナが乗っ取られたときの
+# 被害を小さくする:
+#   - read_only        : イメージの中を書き換えさせない（書けるのはデータディレクトリのボリュームと /tmp だけ）
+#   - cap_drop: [ALL]  : Linux の特権（capabilities）をすべて外す
+#   - no-new-privileges: setuid などで権限を上げさせない
+#   - /tmp は RAM 上（tmpfs）。大きなアップロードの一時ファイルは TMPDIR でデータディレクトリ（SSD）に置く
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs:
+    - /tmp:size=256m,mode=1777
+
 services:
   caddy:
     # acme_dns のときは DNS のプラグイン入りの Caddy を使う（下の caddy-acme でビルドし、
     # .env の DOCSEED_CADDY_IMAGE=docseed-caddy:latest にする）
     image: ${DOCSEED_CADDY_IMAGE:-caddy:2}
+    <<: *hardening
+    # コンテナの中では root で 80 / 443 を待ち受けるため、その権限だけ戻す
+    cap_add: [NET_BIND_SERVICE]
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /config:size=16m        # Caddy が設定の控え（autosave.json）を書く場所
+    pids_limit: 128
     # ポート。80 / 443 が他のサービスで使われている場合は .env で変える。
     # Caddy はコンテナの中でも同じ番号で待ち受ける（転送先の URL にこの番号を使わせるため）
     ports:
@@ -45,9 +65,14 @@ services:
       target: base
     image: docseed:latest
     command: ["docseed", "serve", "--port", "8000"]
+    <<: *hardening
+    pids_limit: 256
     env_file: .env
     environment:
       DOCSEED_DATA_DIR: /srv/docseed
+      # アップロードの受信中の一時ファイル（最大 1GB）を RAM ではなく SSD に置く
+      TMPDIR: /srv/docseed/files/.tmp
+      HF_HOME: /tmp/hf          # docseed fetch-models --llm の取得で使う
       # 証明書の監視（6 時間ごとに Caddy へ TLS で接続して期限を読む）
       DOCSEED_TLS_CHECK_ADDR: caddy:${DOCSEED_HTTPS_PORT:-443}
     volumes:
@@ -63,9 +88,12 @@ services:
   worker:
     image: docseed:latest
     command: ["docseed", "worker"]
+    <<: *hardening
+    pids_limit: 256
     env_file: .env
     environment:
       DOCSEED_DATA_DIR: /srv/docseed
+      TMPDIR: /srv/docseed/files/.tmp
     volumes:
       - ${DOCSEED_DATA_DIR:-/srv/docseed}:/srv/docseed
       - /sys/class/thermal:/host/thermal:ro
@@ -84,9 +112,12 @@ services:
     profiles: ["webclip"]
     image: docseed:latest
     command: ["docseed", "fetcher"]
+    <<: *hardening
+    pids_limit: 128
     env_file: .env
     environment:
       DOCSEED_DATA_DIR: /srv/docseed
+      TMPDIR: /srv/docseed/files/.tmp
     volumes:
       - ${DOCSEED_DATA_DIR:-/srv/docseed}:/srv/docseed
     mem_limit: 384m
@@ -100,6 +131,8 @@ services:
   llm:
     profiles: ["llm"]
     image: ${DOCSEED_LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}
+    <<: *hardening
+    pids_limit: 128
     command: ["-m", "/models/llm/${DOCSEED_LLM_MODEL:-sarashina2.2-1b-instruct-v0.1-Q4_K_M.gguf}",
               "--host", "0.0.0.0", "--port", "8080", "-t", "${DOCSEED_LLM_THREADS:-3}",
               "-c", "4096", "--parallel", "1"]
@@ -127,6 +160,9 @@ services:
       dockerfile: docker/Dockerfile
       target: tools
     image: docseed-tools:latest
+    # モデルの変換でキャッシュを書くので read_only にはしない
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     command: ["docseed", "fetch-models"]
     env_file: .env
     environment:

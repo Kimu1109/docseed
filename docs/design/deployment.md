@@ -93,6 +93,22 @@ FROM python:3.12-slim-bookworm（arm64）
 - モデルはイメージに含めない（大きいため。`/srv/docseed/models` に置く）。
 - Pi 上で直接ビルドするか、GitHub Actions の arm64 ランナーでビルドして GHCR に置く（Phase 1 で決める）。
 
+### 2.1.1 コンテナの強化
+
+インターネットに公開しても、1 つのコンテナが乗っ取られたときの被害を小さくするため、`compose.yaml` の `x-hardening` を caddy・api・worker・fetcher・llm に適用する。
+
+| 設定 | 内容 |
+|---|---|
+| `read_only: true` | イメージの中を書き換えさせない。書けるのはデータディレクトリ（ボリューム）と `/tmp`（tmpfs、256MB）だけ |
+| `cap_drop: [ALL]` | Linux の capabilities をすべて外す。Caddy だけ 80 / 443 を待ち受けるため `NET_BIND_SERVICE` を戻す |
+| `no-new-privileges` | setuid などで権限を上げさせない |
+| `pids_limit` | プロセス数の上限（fork 爆弾の対策）。api・worker 256、ほかは 128 |
+| `TMPDIR` | api・worker・fetcher は `/srv/docseed/files/.tmp`。アップロードの受信中の一時ファイル（最大 1GB）を RAM ではなく SSD に置く |
+
+- Caddy は設定の控え（`/config/caddy/autosave.json`）を tmpfs の `/config` に書く。証明書と内部 CA は `/data`（ボリューム）。内部 CA をコンテナの信頼ストアに入れる処理は `skip_install_trust` で止める
+- tools（モデルの取得と変換）はキャッシュを書くので `read_only` にしない（`cap_drop` と `no-new-privileges` だけ）
+- 確認済み: caddy（80 / 443 の待ち受け）、api（ログイン・5MB のアップロード・受け取り用リンク）、worker（PDF の画像化と OCR）、fetcher、llm（llama-server の起動と /health）が、この設定のまま動くこと
+
 ### 2.2 Caddyfile の概要
 
 ```
