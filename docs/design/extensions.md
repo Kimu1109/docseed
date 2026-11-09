@@ -51,7 +51,7 @@ RAM 8GB での目安は、api 1.5 + worker 3 + llm 2 + Caddy・OS 1 = 7.5GB で�
 
 | 番号 | 内容 | フェーズ |
 |---|---|---|
-| 0002 | `blobs` に派生ファイルと画像の情報の列を追加。`jobs` を作り直して種類を増やす（Phase 6〜9 の分をまとめて） | Phase 6 |
+| 0002 | `blobs` に派生ファイルと画像の情報の列を追加。`jobs` を作り直して種類を増やす（Phase 6〜9 の分をまとめて）（**実装済み**: `0002_derived_files.sql`。0003 を先に適用した DB にも後から適用できることをテストで確かめた） | Phase 6 |
 | 0003 | `webauthn_credentials`, `user_totp`, `user_recovery_codes`, `user_identities`, `auth_challenges` を追加。`users` と `sessions` に列を追加（**実装済み**: `0003_login_methods.sql`） | Phase 7 |
 | 0004 | `web_clips` を追加。`documents` に `kind` を追加 | Phase 8 |
 | 0005 | `blob_summaries`, `document_suggestions`, `user_prefs` を追加 | Phase 9 |
@@ -70,14 +70,21 @@ RAM 8GB での目安は、api 1.5 + worker 3 + llm 2 + Caddy・OS 1 = 7.5GB で�
 |---|---|---|---|
 | `internal`（既定。今と同じ） | LAN の中だけで使う | Caddy の内部 CA | 各端末に CA 証明書を入れる |
 | `file`（**実装済み**） | 手元に証明書がある（certbot で取った Let's Encrypt の証明書など） | 指定したファイル | `DOCSEED_TLS_CERT_DIR`（`/certs` にマウント）と、その中の相対パス `DOCSEED_TLS_CERT` / `DOCSEED_TLS_KEY`。更新後に Caddy を再起動する certbot のフック（`scripts/ops/install-cert-hook.sh`） |
-| `tailscale` | Tailscale 経由で使う（推奨） | Let's Encrypt（tailscaled が取得） | Pi に Tailscale、管理画面で MagicDNS と HTTPS を有効化、`DOCSEED_HOST=<機械名>.<tailnet>.ts.net` |
-| `acme_dns` | 自分のドメインを LAN で使う | Let's Encrypt（DNS-01） | ドメイン、DNS 事業者の API トークン、Caddy の独自ビルド |
+| `tailscale`（**実装済み**） | Tailscale 経由で使う（推奨） | Let's Encrypt（tailscaled が取得） | Pi に Tailscale、管理画面で MagicDNS と HTTPS を有効化、`DOCSEED_HOST=<機械名>.<tailnet>.ts.net` |
+| `acme_dns`（**実装済み**） | 自分のドメインを LAN で使う | Let's Encrypt（DNS-01） | ドメイン、DNS 事業者の API トークン、Caddy の独自ビルド |
 
 `DOCSEED_LAN_IP` を設定した場合、IP アドレスで開くサイトは**どの方式でも内部 CA の証明書**で応える（公的な証明書は LAN の IP に出ないため）。IP で開いたときはパスキーを使えない（5.2 節）。
 
 ### 2.2 Caddyfile
 
-> **実装済み（internal / file）:** 方式ごとの設定は、別のファイルではなく Caddyfile の中のスニペット（`(tls_internal)`, `(tls_file)`）にし、`import tls_{$DOCSEED_TLS_MODE:internal}` で切り替える。環境変数は Caddyfile の解析の前に置き換わる（Caddy の公式の文書）ので、スニペットの名前にも使える。`tailscale` と `acme_dns` も同じ形で `(tls_tailscale)`, `(tls_acme_dns)` を足す。下は当初の案。
+> **実装済み（4 方式）:** 方式ごとの設定は、別のファイルではなく Caddyfile の中のスニペット（`(tls_internal)`, `(tls_file)`, `(tls_tailscale)`, `(tls_acme_dns)`）にし、`import tls_{$DOCSEED_TLS_MODE:internal}` で切り替える。環境変数は Caddyfile の解析の前に置き換わる（Caddy の公式の文書）ので、スニペットの名前にも使える。実装で決めた点:
+>
+> - `DOCSEED_ACME_STAGING` も同じ方法で `import acme_ca_{$DOCSEED_ACME_STAGING:false}`（`(acme_ca_true)` / `(acme_ca_false)` に試験用 / 本番の `ca`）。`DOCSEED_ACME_EMAIL` は `tls {$DOCSEED_ACME_EMAIL} {` に置き、空なら連絡先なしになる（グローバルの `email` は空だと書けないため）。TXT レコードの確認には `resolvers 1.1.1.1 1.0.0.1` を使う（LAN の DNS が自分のドメインを LAN の IP に向けていても確認できるように）。
+> - acme_dns 用の Caddy は compose の profile で Caddy を差し替えるのではなく、ビルド専用のサービス `caddy-acme`（profile `acme`、イメージ `docseed-caddy:latest`）でビルドし、`caddy` のイメージを `.env` の `DOCSEED_CADDY_IMAGE` で切り替える。profile で 2 つの Caddy を切り替えると、同じポートを取り合い、今の `.env` のままでは Caddy が起動しなくなるため。
+> - tailscale は、ホストの `/var/run/tailscale`（`DOCSEED_TAILSCALE_SOCKET_DIR`）を読み取り専用でマウントする。ソケットのファイルではなくディレクトリをマウントするのは、Tailscale が無いホストで Docker が `tailscaled.sock` という名前のディレクトリを作ってしまわないようにするため。
+> - 確認: CI（`.github/workflows/ci.yml` の `caddy`）で、公式の `caddy:2` で internal / file / tailscale を、`docker/caddy/Dockerfile` でビルドした Caddy で acme_dns（試験用・本番、連絡先あり・なし）を `caddy adapt` で展開する。
+>
+> 下は当初の案。
 
 方式ごとの設定を別のファイルにして、`.env` の値で読み込むファイルを切り替える。
 
@@ -133,6 +140,8 @@ docker/
 
 ### 2.4 監視
 
+> **実装済み**（`tlscheck.py`）。compose で api に `DOCSEED_TLS_CHECK_ADDR=caddy:<DOCSEED_HTTPS_PORT>` を渡したときだけ動く（開発・テストでは動かない）。起動の 2 分後に 1 回目を確かめ、結果を `settings` の `tls.status` に置く。管理画面に「HTTPS の証明書」（状態・期限・方式・発行者）を表示する。検証に失敗したときも、証明書が読めれば期限は表示する。
+
 管理画面の「確認が必要な項目」（`monitor.py`）に証明書の項目を足す。
 
 - api が 6 時間ごとに `caddy:<DOCSEED_HTTPS_PORT>` へ `DOCSEED_HOST` の名前（SNI）で TLS 接続し、証明書を検証して有効期限を読む。`internal` のときは `/srv/docseed/caddy/caddy/pki/authorities/local/root.crt` を信頼する CA として読み込む。
@@ -153,6 +162,14 @@ docker/
 ---
 
 ## 3. アイコン（Phase 6）
+
+> **実装済み。** 実装で決めた点:
+>
+> - SVG は google/material-design-icons ではなく、npm の **`@material-symbols/svg-400`**（版を固定。Sharp・太さ 400・塗りなし。Apache-2.0）から取る。公式のアイコンの SVG を 1 つの tarball で取れ、版を固定しやすいため。`scripts/build_icons.py` が registry から取得し（`--src` で展開済みのものも可）、`icons.txt` の名前だけを `<symbol>` にまとめる。CI では `--check` で `icons.txt` と `icons.svg` が合っているかを確かめる。
+> - テンプレートでは Jinja のマクロではなく、Python の関数 `icon(name, label=None)` をテンプレートのグローバルにした（htmx で返す断片のテンプレートでも import なしで使えるように）。`icons.txt` に無い名前を使うとエラーにし、テストでテンプレートで使った名前がすべてスプライトにあることを確かめる。
+> - スプライトの URL には内容のハッシュを付ける（`/static/icons.svg?v=<ハッシュ>`）。
+> - `auto_awesome` は今の Material Symbols に無いので外した（Phase 9 で候補・要約の印を選び直す）。代わりに一覧の種類に `description`（テキスト）・`folder_zip`（圧縮ファイル）・`movie`（音声・動画）を、操作に `more_horiz`（行のメニュー）・`create_new_folder`・`logout`、状態に `schedule`（処理待ち）を足した。
+> - もともと絵文字は使っていなかったので、置き換えは無い。一覧では、サムネイルが無いファイルの名前の前に種類のアイコンを出す（左端の色の縦帯はそのまま）。
 
 ### 3.1 選定
 
@@ -200,6 +217,16 @@ src/docseed/web/static/icons.svg    生成したスプライト（リポジト�
 ---
 
 ## 4. 画像形式とサムネイル・プレビュー（Phase 6）
+
+> **実装済み**（`pipeline/derive.py`、`jobs/process.py`）。実装で決めた点:
+>
+> - **`PIPELINE_VERSION` は上げない。** 上げると「古い版で処理したファイルを再処理」がすべての文書の OCR をやり直すことになるが、既存の形式の抽出は何も変わっていない。新しく読める HEIC / AVIF は `reprocess unsupported`、既存の文書の派生ファイルは `derive missing` で足りる。
+> - HEIC / AVIF / WebP / GIF は最初の 1 枚だけを読む（TIFF は今まで通り全ページ）。壊れた画像は、今まで worker の例外（3 回のやり直しの後に失敗）だったが、`corrupt_file` としてすぐ「処理に失敗」にする。
+> - 撮影日時は EXIF の `DateTimeOriginal` に `OffsetTimeOriginal` があれば時差を付ける。カメラは EXIF の `Model` だけ（例 `iPhone 16`。`Make` は付けない）。
+> - 60 秒のタイムアウトは `SIGALRM` で掛ける（worker はメインスレッドで動くため）。メインスレッド以外では掛けない。
+> - 派生ファイルの URL は `Cache-Control: private, max-age=86400`（内容は原本の SHA-256 で決まる。権限は毎回確かめる）。
+> - 共有リンクの公開ページの URL は `/s/{token}/thumb/{id}` と `/s/{token}/view/{id}`。
+> - 確認: HEIC・AVIF・10 ビット HEIC・回転した JPEG・GPS 付き JPEG・ICC プロファイル付き PNG・PDF を Pillow / pillow-heif でテストの中で作り、派生ファイルに EXIF と ICC が無いこと・向き・大きさ・`image_meta` を確かめる（`tests/test_images.py`）。
 
 ### 4.1 対応形式
 

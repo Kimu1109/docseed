@@ -18,11 +18,11 @@
         <input name="password" type="password" autocomplete="current-password" required>
       </label>
       <label class="check"><input type="checkbox" name="remember" value="1"> ログインしたままにする（14 日間）</label>
-      <button type="submit" class="btn btn-primary btn-block">ログイン</button>
+      <button type="submit" class="btn btn-primary btn-block">{{ icon("key") }}ログイン</button>
     </form>
     <div class="login-alt">
       {% if not passkey_reason %}
-      <button type="button" class="btn btn-block" data-passkey-button>パスキーでログイン</button>
+      <button type="button" class="btn btn-block" data-passkey-button>{{ icon("passkey") }}パスキーでログイン</button>
       {% endif %}
       {% for p in oidc_providers %}
       <a class="btn btn-block" href="/auth/oidc/{{ p.name }}/start?purpose=login{% if next %}&amp;next={{ next | urlencode }}{% endif %}">{{ p.label }} でログイン</a>

@@ -28,6 +28,18 @@
   </dl>
 </section>
 
+{% if sys.tls %}
+<section class="panel panel-wide">
+  <h2>HTTPS の証明書</h2>
+  <dl class="stats">
+    <div><dt>状態</dt><dd class="small">{% if sys.tls.ok %}<span class="ok-text">有効</span>{% else %}<span class="err-text">確認できません</span><div class="muted small">{{ sys.tls.error }}</div>{% endif %}</dd></div>
+    <div><dt>期限</dt><dd class="small">{% if sys.tls.not_after %}{{ sys.tls.not_after | localtime }}<div class="muted small">あと {{ sys.tls.days_left | round | int }} 日</div>{% else %}—{% endif %}</dd></div>
+    <div><dt>方式・発行者</dt><dd class="small">{{ sys.tls.mode }}<div class="muted small">{{ sys.tls.issuer or "—" }}（{{ sys.tls.server_name }}）</div></dd></div>
+  </dl>
+  <p class="muted small">6 時間ごとに確かめます（最終確認 {{ sys.tls.checked_at | localtime }}）。証明書は Caddy が自動で更新します。</p>
+</section>
+{% endif %}
+
 <section class="panel panel-wide">
   <h2>バックアップ</h2>
   <dl class="stats">

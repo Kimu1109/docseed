@@ -31,7 +31,7 @@
   </section>
 
   <section class="panel">
-    <h2>パスキー</h2>
+    <h2>{{ icon("passkey") }} パスキー</h2>
     <p class="muted">端末の指紋・顔認証や PIN でログインできます。パスワードより安全で、入力も不要です。</p>
     {% if sec.passkeys %}
     <table class="plain">
@@ -60,7 +60,7 @@
   </section>
 
   <section class="panel">
-    <h2>確認コード（2 段階認証）</h2>
+    <h2>{{ icon("pin") }} 確認コード（2 段階認証）</h2>
     <p class="muted">パスワードでログインするときに、認証アプリ（Google Authenticator・Microsoft Authenticator・1Password など）の 6 桁のコードも求めます。</p>
     {% if recovery_codes %}
       <div class="token-new">
@@ -103,7 +103,7 @@
 
   {% if providers or sec.identities %}
   <section class="panel">
-    <h2>外部アカウントの連携</h2>
+    <h2>{{ icon("link") }} 外部アカウントの連携</h2>
     <p class="muted">連携したアカウント（Google など）でログインできます。連携していないアカウントではログインできません。</p>
     {% if sec.identities %}
     <table class="plain">
@@ -130,7 +130,7 @@
   {% endif %}
 
   <section class="panel">
-    <h2>パスワードでのログイン</h2>
+    <h2>{{ icon("key") }} パスワードでのログイン</h2>
     {% if sec.password_login %}
       <p><span class="state-on">使う</span></p>
       <p class="muted small">パスキーか外部アカウントだけでログインするなら、パスワードでのログインを止められます（パスワードを知られても入られなくなります）。</p>

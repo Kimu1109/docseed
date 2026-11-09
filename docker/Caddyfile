@@ -13,7 +13,12 @@
 #   - file          : 手元の証明書ファイル（certbot で取った Let's Encrypt の証明書など）。
 #                      DOCSEED_TLS_CERT_DIR（ホスト側）をコンテナの /certs に読み取り専用でマウントし、
 #                      DOCSEED_TLS_CERT / DOCSEED_TLS_KEY はその中の相対パスで指定する
-# IP アドレスで開いたときは、どちらの方式でも内部 CA の証明書を使う（公的な証明書は LAN の IP には出ないため）。
+#   - tailscale     : Tailscale の証明書（tailscaled が Let's Encrypt から取る）。DOCSEED_HOST は <機械名>.<tailnet>.ts.net。
+#                      ホストの /var/run/tailscale（tailscaled.sock）を読み取り専用でマウントする
+#   - acme_dns      : 自分のドメインの Let's Encrypt の証明書を DNS-01 で取る（LAN の中だけで使える）。
+#                      DNS のプラグイン入りの Caddy（docker/caddy/Dockerfile）が要る。既定は Cloudflare で、
+#                      トークンは DOCSEED_ACME_DNS_TOKEN。DOCSEED_ACME_STAGING=true で Let's Encrypt の試験用の環境を使う
+# IP アドレスで開いたときは、どの方式でも内部 CA の証明書を使う（公的な証明書は LAN の IP には出ないため）。
 #
 # 環境変数（{$...}）は Caddyfile の解析の前に置き換わるので、import するスニペットの名前にも使える。
 {
@@ -29,6 +34,30 @@
 
 (tls_file) {
 	tls /certs/{$DOCSEED_TLS_CERT} /certs/{$DOCSEED_TLS_KEY}
+}
+
+(tls_tailscale) {
+	tls {
+		get_certificate tailscale
+	}
+}
+
+# DOCSEED_ACME_EMAIL が空なら「tls {」になり、連絡先なしで登録する
+(tls_acme_dns) {
+	tls {$DOCSEED_ACME_EMAIL} {
+		dns cloudflare {env.DOCSEED_ACME_DNS_TOKEN}
+		# LAN の DNS が自分のドメインを Pi の IP に向けていても、TXT レコードの確認は公開の DNS で行う
+		resolvers 1.1.1.1 1.0.0.1
+		import acme_ca_{$DOCSEED_ACME_STAGING:false}
+	}
+}
+
+(acme_ca_false) {
+	ca https://acme-v02.api.letsencrypt.org/directory
+}
+
+(acme_ca_true) {
+	ca https://acme-staging-v02.api.letsencrypt.org/directory
 }
 
 (app) {

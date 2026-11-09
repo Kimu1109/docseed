@@ -34,7 +34,7 @@
     {% for h in result.hits %}
       {% set d = h.document %}{% set k = kind_of(d.mime_type, d.filename) %}
       <li class="result">
-        <span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span>
+        <span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span>{{ icon(kind_icon[k]) }}
         <div class="result-body">
           <div class="result-head">
             <a class="result-name" href="/d/{{ d.id }}?q={{ q | urlencode }}">{{ d.filename }}</a>

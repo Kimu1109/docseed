@@ -81,6 +81,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         import threading
         threading.Thread(target=app.state.query_embedder.get, name="preload-embedder", daemon=True).start()
 
+    from .tlscheck import start_background
+    start_background(settings)
+
     app.add_middleware(SecurityHeaders)
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "web" / "static"), name="static")
     app.include_router(health)

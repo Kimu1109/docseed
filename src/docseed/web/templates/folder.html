@@ -4,12 +4,12 @@
 <div class="page-head">
   {% set link_last = False %}{% include "_crumbs.html" %}
   <div class="actions">
-    <a class="btn" href="/api/v1/folders/{{ folder.id }}/archive" title="このフォルダをまとめてダウンロード">ZIP</a>
+    <a class="btn" href="/api/v1/folders/{{ folder.id }}/archive" title="このフォルダをまとめてダウンロード">{{ icon("folder_zip") }}ZIP</a>
     <button type="button" class="btn" data-open-dialog="dlg-share" hx-get="/x/share?type=folder&id={{ folder.id }}"
-            hx-target="#share-body" hx-swap="outerHTML">共有</button>
+            hx-target="#share-body" hx-swap="outerHTML">{{ icon("share") }}共有</button>
     {% if can_edit %}
-    <button type="button" class="btn" data-open-dialog="dlg-folder">新しいフォルダ</button>
-    <button type="button" class="btn btn-primary" data-upload-pick>アップロード</button>
+    <button type="button" class="btn" data-open-dialog="dlg-folder">{{ icon("create_new_folder") }}新しいフォルダ</button>
+    <button type="button" class="btn btn-primary" data-upload-pick>{{ icon("upload") }}アップロード</button>
     {% endif %}
   </div>
 </div>

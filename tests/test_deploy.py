@@ -18,7 +18,7 @@ def _env_modes() -> set[str]:
 def test_every_tls_mode_has_snippet():
     snippets = set(re.findall(r"^\(tls_(\w+)\)", CADDYFILE, flags=re.MULTILINE))
     modes = _env_modes()
-    assert modes == {"internal", "file"}
+    assert modes == {"internal", "file", "tailscale", "acme_dns"}
     assert modes <= snippets
     assert "import tls_{$DOCSEED_TLS_MODE:internal}" in CADDYFILE
 
@@ -34,3 +34,28 @@ def test_file_mode_paths_are_under_mounted_dir():
 def test_ip_site_keeps_internal_ca():
     ip_block = CADDYFILE.split("{$DOCSEED_LAN_IP:localhost} {", 1)[1].split("}", 1)[0]
     assert "tls internal" in ip_block
+
+
+def test_tailscale_mode_mounts_socket():
+    block = CADDYFILE.split("(tls_tailscale) {", 1)[1].split("\n}", 1)[0]
+    assert "get_certificate tailscale" in block
+    assert ":/var/run/tailscale:ro" in COMPOSE
+
+
+def test_acme_dns_mode():
+    block = CADDYFILE.split("(tls_acme_dns) {", 1)[1].split("\n}", 1)[0]
+    assert "dns cloudflare {env.DOCSEED_ACME_DNS_TOKEN}" in block
+    assert "import acme_ca_{$DOCSEED_ACME_STAGING:false}" in block
+    assert re.search(r"^\(acme_ca_true\) \{\n\tca https://acme-staging-v02", CADDYFILE, flags=re.MULTILINE)
+    assert re.search(r"^\(acme_ca_false\) \{\n\tca https://acme-v02", CADDYFILE, flags=re.MULTILINE)
+    for var in ("DOCSEED_ACME_EMAIL", "DOCSEED_ACME_DNS_TOKEN", "DOCSEED_ACME_STAGING"):
+        assert f"{var}: ${{{var}:-" in COMPOSE
+        assert var in ENV_EXAMPLE
+    assert "image: ${DOCSEED_CADDY_IMAGE:-caddy:2}" in COMPOSE
+    dockerfile = (ROOT / "docker" / "caddy" / "Dockerfile").read_text()
+    assert "xcaddy build --with ${DNS_PLUGIN}" in dockerfile and "caddy-dns/cloudflare" in dockerfile
+
+
+def test_api_checks_certificate():
+    api = COMPOSE.split("\n  api:", 1)[1].split("\n  worker:", 1)[0]
+    assert "DOCSEED_TLS_CHECK_ADDR: caddy:${DOCSEED_HTTPS_PORT:-443}" in api

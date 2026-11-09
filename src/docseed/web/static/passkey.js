@@ -90,7 +90,15 @@
       req.mediation = "conditional";
       req.signal = conditionalAbort.signal;
     }
-    const cred = await navigator.credentials.get(req);
+    let cred;
+    try {
+      cred = await navigator.credentials.get(req);
+    } catch (e) {
+      // 自動入力（conditional）は裏での試みなので、ブラウザ側の失敗（パスキーに対応していない・
+      // 取り消された など）は画面に出さない。サーバーの確認の失敗だけを出す
+      if (conditional) return;
+      throw e;
+    }
     if (!cred) return;
     const remember = !!$("input[name=remember]", form)?.checked;
     const res = await post("/auth/passkeys/login/verify", {

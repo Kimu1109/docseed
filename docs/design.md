@@ -252,7 +252,7 @@ docseed/
 | 3. 検索 | ハイブリッド検索 API と画面、ハイライト、評価スクリプト | **完了**。実データの質問セットでの Recall@5 の測定は利用者の手元で行う（`scripts/eval_search.py`） |
 | 4. 共有 | フォルダ共有（メンバー）、共有リンク、Samba inbox | **完了**。他のユーザー・外部の人と受け渡しができる |
 | 5. 運用 | バックアップ、監視、Office 文書対応 | **実装済み**。開発環境で restic へのバックアップ → 別の場所への復元 → 原本の照合（`scripts/ops/restore-drill.sh`）が成功することを確認。Pi 実機（USB ドライブ）での復旧の練習は導入時に利用者の手元で行う |
-| 6. 基盤の改善 | HTTPS 証明書の方式の切り替え（internal / file / tailscale / acme_dns）、アイコン（Material Symbols）、HEIC / AVIF、サムネイル・プレビュー | 一部実装（証明書ファイルの指定 `file`）。3 方式で HTTPS で開け、iPhone の HEIC 写真が OCR・プレビューされる（[拡張機能](design/extensions.md) 2〜4 章） |
+| 6. 基盤の改善 | HTTPS 証明書の方式の切り替え（internal / file / tailscale / acme_dns）、アイコン（Material Symbols）、HEIC / AVIF、サムネイル・プレビュー | **実装済み**。iPhone の HEIC 写真が OCR・プレビューされる（[拡張機能](design/extensions.md) 2〜4 章）。Caddyfile は 4 方式とも CI で `caddy adapt` により展開を確かめる。Tailscale と DNS-01 での実際の証明書の取得は導入時に利用者の手元で確かめる |
 | 7. ログイン | パスキー、確認コード（TOTP）と復旧コード、OIDC（Google など）、再認証 | **実装済み**。パスキーだけでログインでき、2 段階認証を管理者が必須にできる（同 5 章）。パスキーは Chromium の仮想認証器で登録・ログインまで確認。実機の端末（iPhone・Android など）と Google での確認は導入時に利用者の手元で行う |
 | 8. Web クリップ | URL の取得（SSRF 対策つき）、OGP・Twitter カード・本文の取り出しと検索 | 未着手。URL を貼ると、タイトル・説明・本文で検索できる（同 6 章） |
 | 9. 整理の補助 | 埋め込みによるフォルダ・タグの候補、小型 LLM による要約 | 未着手。Inbox の文書におすすめのフォルダが出る。LLM のモデルは最初の計測で決める（同 7 章） |
@@ -291,3 +291,4 @@ docseed/
 | 1.2 | 2026-11-08 | 拡張機能（Phase 6〜9）の詳細設計を追加: HTTPS 証明書の方式の切り替え、アイコン、HEIC / AVIF とサムネイル・プレビュー、パスキー・TOTP・OIDC、Web クリップ、フォルダ・タグの候補と要約。スコープ外の項目に例外（要約、任意の外部通信）を追記 |
 | 1.3 | 2026-11-08 | 証明書の方式に `file`（certbot などで取った手元の証明書ファイルを使う）を追加して実装。更新後に Caddy を再起動する certbot のフックを追加 |
 | 1.4 | 2026-11-09 | Phase 7 実装（パスキー、確認コード（TOTP）と復旧コード、OIDC、再認証、ログイン方法のリセット、2 段階認証の必須化、ログイン中の端末の一覧）。OIDC は Authlib ではなく joserfc（ID トークンの検証）と httpx（通信）で実装。マイグレーションは 0003（0002 は Phase 6 用に空けた） |
+| 1.5 | 2026-11-09 | Phase 6 実装（証明書の方式 tailscale / acme_dns と証明書の監視、Material Symbols のアイコン、HEIC / AVIF の読み込み、サムネイル・プレビューと画像の情報、位置情報つきの写真の共有の注意）。マイグレーション 0002。`PIPELINE_VERSION` は上げない（既存の形式の抽出は変わらないため。新しく読める HEIC / AVIF は `reprocess unsupported`、派生ファイルは `derive missing`） |
