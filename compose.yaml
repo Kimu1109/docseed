@@ -76,6 +76,22 @@ services:
     logging: *logging
     restart: unless-stopped
 
+  # URL の取り込み（Web クリップ）の取得。外部へ通信するのはこれだけ（worker は通信しないまま）。
+  # .env で DOCSEED_WEBCLIP_ENABLED=true と COMPOSE_PROFILES=webclip にすると起動する
+  fetcher:
+    profiles: ["webclip"]
+    image: docseed:latest
+    command: ["docseed", "fetcher"]
+    env_file: .env
+    environment:
+      DOCSEED_DATA_DIR: /srv/docseed
+    volumes:
+      - ${DOCSEED_DATA_DIR:-/srv/docseed}:/srv/docseed
+    mem_limit: 384m
+    depends_on: [api]
+    logging: *logging
+    restart: unless-stopped
+
   # acme_dns 用の Caddy（DNS のプラグイン入り）のビルドだけに使う:
   #   docker compose --profile acme build caddy-acme
   caddy-acme:

@@ -53,7 +53,7 @@ RAM 8GB での目安は、api 1.5 + worker 3 + llm 2 + Caddy・OS 1 = 7.5GB で�
 |---|---|---|
 | 0002 | `blobs` に派生ファイルと画像の情報の列を追加。`jobs` を作り直して種類を増やす（Phase 6〜9 の分をまとめて）（**実装済み**: `0002_derived_files.sql`。0003 を先に適用した DB にも後から適用できることをテストで確かめた） | Phase 6 |
 | 0003 | `webauthn_credentials`, `user_totp`, `user_recovery_codes`, `user_identities`, `auth_challenges` を追加。`users` と `sessions` に列を追加（**実装済み**: `0003_login_methods.sql`） | Phase 7 |
-| 0004 | `web_clips` を追加。`documents` に `kind` を追加 | Phase 8 |
+| 0004 | `web_clips` を追加。`documents` に `kind` を追加（**実装済み**: `0004_web_clips.sql`） | Phase 8 |
 | 0005 | `blob_summaries`, `document_suggestions`, `user_prefs` を追加 | Phase 9 |
 
 - SQLite では `CHECK` 制約を変えられないので、`jobs.type` の種類を増やすときは表を作り直す（新しい表を作る → 行を移す → 古い表を消して名前を変える → インデックスを作り直す）。0002 で Phase 6〜9 のジョブの種類（`derive_blob`, `fetch_url`, `suggest_document`, `summarize_blob`）をまとめて追加し、作り直しを 1 回で済ませる。まだ使わない種類のジョブは登録されないだけで害はない。
@@ -498,6 +498,20 @@ CREATE TABLE auth_challenges (
 
 ## 6. URL の取り込み（Web クリップ, Phase 8）
 
+> **実装済み**（`webclip/safefetch.py`・`meta.py`・`service.py`・`fetcher.py`、`api/webclips.py`）。実装で決めた点:
+>
+> - **接続先の固定**: httpx の network backend を差し替える代わりに、URL のホストを確かめた IP にし、`Host` ヘッダを元の名前に、TLS は httpx の `sni_hostname` の拡張で SNI と証明書の名前の確認を元の名前にする。手元の TLS サーバーで、名前が合わなければつながらないことをテストで確かめた。取得のたびに新しいクライアントを作るので Cookie は持ち越さない。
+> - **エラーコード**: 6.8 の表に `fetch_connect_error`（名前を引けない・接続できない。リトライする）を足した。
+> - **大きさの上限**: Content-Type を見てから上限を決める（HTML は `DOCSEED_WEBCLIP_MAX_MB`、PDF・画像・テキストは `DOCSEED_MAX_UPLOAD_MB`）。本体は 8MB を超えたら一時ファイルに逃がす（fetcher のメモリ上限 384MB のため）。
+> - **種類の偽装**: PDF・画像は中身（`filetype`）が Content-Type と合わなければ保存しない。HTML は先頭に NUL があれば保存しない。og:image も中身が画像でなければ捨てる。
+> - **保存のトランザクション**: 文書の作成と `web_clips` の更新を 1 つのトランザクションにした。worker が HTML を処理し始めた時点で、必ずクリップのタイトル・説明が読めるようにするため。
+> - **og:image の blob** は `status = 'ready'`・ページ数 0 で登録し、文字の読み取りのジョブは積まない。サムネイルは og:image から作り、HTML の blob の `thumb_path` にする。
+> - **`PIPELINE_VERSION` は上げない**（Phase 6 と同じ理由。既存のファイルの HTML を新しい方法で読み直したいときは、その文書の「再処理」）。HTML の本文は trafilatura で取り出し、取り出せなければ今までのタグを除く方法に戻る。
+> - **`web_clips.folder_id`** は `ON DELETE CASCADE` にした（取得待ち・失敗したままのクリップがあるフォルダを完全に削除できるように）。文書になったクリップは、文書の完全な削除で消える（`document_id` の `ON DELETE CASCADE`）。
+> - **画面**: 文書になる前のクリップ（取得中・失敗）は一覧の先頭に出し、失敗したものは理由と「もう一度取得」「取り消す」を出す。ブックマークレットの行き先 `/clip` は、GET では保存せず、保存先を選んで POST する（CSRF のため）。
+> - **監視**: `DOCSEED_WEBCLIP_ENABLED` なのに 10 分以上取得されないジョブがあり、fetcher の応答（`fetcher.heartbeat`）も無ければ、管理画面に警告を出す。
+> - **確認**: 手元の HTTP サーバーと偽の名前の解決で、プライベートな IP・CGNAT・IPv4 を写した IPv6・混在した応答・リダイレクト先の LAN・DNS リバインディング・許可していないポート・5MB 超（Content-Length あり・なし）・Content-Type の偽装・HTTP のエラーとリトライ、OGP・Twitter カード・JSON-LD・oEmbed・文字コード、api → fetcher → worker → 検索まで（`tests/test_webclip.py`）。
+
 ### 6.1 できること
 
 - フォルダの画面の「URL を追加」、または API で URL を渡すと、ページを取得して文書（`kind = 'webclip'`）として保存する。
@@ -626,6 +640,7 @@ CREATE INDEX idx_web_clips_canonical ON web_clips(canonical_url);
 | `fetch_timeout` | 30 秒を超えた | する |
 | `fetch_too_large` | 大きさの上限を超えた | しない |
 | `fetch_http_error` | 4xx / 5xx（`http_status` に保存） | 5xx と 429 だけする |
+| `fetch_connect_error` | 名前を引けない、接続できない（実装で追加） | する |
 | `fetch_unsupported_type` | 保存しない種類 | しない |
 
 ### 6.9 設定

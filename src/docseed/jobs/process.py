@@ -94,8 +94,10 @@ def process_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int, *, force_
          progress_done=len(done_pages), error=None)
 
     # ① 抽出・OCR（ページ単位）
+    clip = webclip_info(conn, blob_id) if extract.kind(mime) == "html" else None
     try:
-        for page in extract.iter_pages(path, mime, dpi=ctx.dpi, skip=done_pages, force_ocr=force_ocr):
+        for page in extract.iter_pages(path, mime, dpi=ctx.dpi, skip=done_pages, force_ocr=force_ocr,
+                                       webclip=clip):
             _store_page(conn, ctx, blob_id, page, warnings)
             done_pages.add(page.page_no)
             _set(conn, blob_id, progress_done=len(done_pages), warnings=json.dumps(warnings, ensure_ascii=False))
@@ -122,6 +124,19 @@ def process_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int, *, force_
          embedding_model=ctx.embedder.model_name, progress_done=total,
          warnings=json.dumps(warnings, ensure_ascii=False) if warnings else None)
     return "ready"
+
+
+def webclip_info(conn: sqlite3.Connection, blob_id: int) -> dict | None:
+    """この HTML の blob を使う Web クリップのタイトルなど（最近取得したもの）。無ければ None。"""
+    r = conn.execute(
+        "SELECT w.url, w.final_url, w.title, w.site_name, w.description, w.meta FROM web_clips w"
+        " JOIN documents d ON d.id = w.document_id WHERE d.blob_id = ? AND d.kind = 'webclip'"
+        " ORDER BY w.fetched_at DESC, w.id DESC LIMIT 1", (blob_id,)).fetchone()
+    if r is None:
+        return None
+    meta = json.loads(r["meta"]) if r["meta"] else {}
+    return {"url": r["final_url"] or r["url"], "title": r["title"], "site_name": r["site_name"],
+            "description": r["description"], "oembed_text": (meta.get("oembed") or {}).get("text")}
 
 
 def _derive(conn: sqlite3.Connection, ctx: Context, blob: sqlite3.Row) -> list[dict]:
@@ -197,9 +212,11 @@ def embed_chunks(conn: sqlite3.Connection, ctx: Context, blob_id: int) -> int:
     if not todo:
         return 0
     name = conn.execute(
-        "SELECT filename FROM documents WHERE blob_id = ? ORDER BY deleted_at IS NOT NULL, id LIMIT 1",
+        "SELECT filename, kind FROM documents WHERE blob_id = ? ORDER BY deleted_at IS NOT NULL, id LIMIT 1",
         (blob_id,)).fetchone()
     title = name[0] if name else ""
+    if name and name[1] == "webclip":
+        title = title.removesuffix(".url")   # Web クリップはタイトル（拡張子 .url は付けない）
     # Excel のシートは、途中から始まるチャンクにもシート名と見出し行を文脈として付ける（pipeline.md 5.2）
     headers = {r[0]: office.table_header(r[1]) for r in conn.execute(
         "SELECT page_no, text FROM pages WHERE blob_id = ? AND source = 'office' AND substr(text, 1, ?) = ?",

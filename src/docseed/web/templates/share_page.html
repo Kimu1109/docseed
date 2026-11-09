@@ -10,7 +10,7 @@
 <main class="public">
 
 {% if doc %}
-  {% set k = kind_of(doc.mime_type, doc.filename) %}
+  {% set k = kind_of(doc.mime_type, doc.filename, doc.kind) %}
   <div class="doc-title">
     <span class="kind kind-{{ k }} kind-lg" title="{{ kind_label[k] }}"></span>
     <h1>{{ doc.filename }}</h1>
@@ -68,7 +68,7 @@
       </tr>
     {% endfor %}
     {% for d in docs %}
-      {% set k = kind_of(d.mime_type, d.filename) %}
+      {% set k = kind_of(d.mime_type, d.filename, d.kind) %}
       <tr>
         <td class="col-kind"><span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span></td>
         <td class="col-name"><div class="cell-name">{% if d.thumb_path %}<img class="thumb" src="/s/{{ token }}/thumb/{{ d.id }}" alt="" loading="lazy">{% else %}<span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span>{% endif %}{% if d.view_path %}<a class="name" href="/s/{{ token }}/view/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% elif can_preview(d.mime_type) %}<a class="name" href="/s/{{ token }}/preview/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% else %}<span class="name">{{ d.filename }}</span>{% endif %}</div></td>

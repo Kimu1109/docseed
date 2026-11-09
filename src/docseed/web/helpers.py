@@ -25,10 +25,14 @@ STATUS_LABEL = {
 KIND_LABEL = {
     "folder": "フォルダ", "pdf": "PDF", "image": "画像", "text": "テキスト", "doc": "文書",
     "sheet": "表計算", "slide": "スライド", "archive": "圧縮ファイル", "media": "音声・動画", "other": "ファイル",
+    "webclip": "Web クリップ",
 }
 
 
-def kind_of(mime: str | None, filename: str = "") -> str:
+def kind_of(mime: str | None, filename: str = "", doc_kind: str | None = None) -> str:
+    """一覧・画面に出す種類。doc_kind は documents.kind（Web クリップなら 'webclip'）。"""
+    if doc_kind == "webclip":
+        return "webclip"
     m = mime or ""
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if m == "application/pdf":
@@ -97,6 +101,7 @@ WARNING_TEXT = {
     "ocr_slow": "{page} ページ目の文字の読み取りに {seconds} 秒かかりました",
     "ocr_timeout": "{page} ページ目の文字の読み取りが時間切れになりました",
     "sheet_truncated": "シート「{sheet}」はセルが多いため、先頭 {cells} セルだけを検索の対象にしました",
+    "webclip_text_short": "本文を取り出せませんでした（JavaScript で描くページなど）。タイトルと説明だけで検索できます",
     "thumbnail_failed": "サムネイル・プレビューを作れませんでした（文字の読み取りと検索には影響しません）",
 }
 
@@ -141,6 +146,7 @@ ICONS_URL = "/static/icons.svg?v=" + hashlib.sha256(_icons_text.encode()).hexdig
 KIND_ICON = {
     "folder": "folder", "pdf": "picture_as_pdf", "image": "image", "text": "description", "doc": "article",
     "sheet": "table", "slide": "slideshow", "archive": "folder_zip", "media": "movie", "other": "draft",
+    "webclip": "link",
 }
 STATUS_ICON = {"pending": "schedule", "processing": "progress_activity", "ready": "check_circle",
                "failed": "error", "unsupported": "block"}

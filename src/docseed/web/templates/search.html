@@ -32,7 +32,7 @@
     <p class="result-count"><b>{{ result.total }}</b> 件<span class="muted">（{{ result.took_ms }} ミリ秒）</span></p>
     <ol class="results">
     {% for h in result.hits %}
-      {% set d = h.document %}{% set k = kind_of(d.mime_type, d.filename) %}
+      {% set d = h.document %}{% set k = kind_of(d.mime_type, d.filename, d.kind) %}
       <li class="result">
         <span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span>{{ icon(kind_icon[k]) }}
         <div class="result-body">

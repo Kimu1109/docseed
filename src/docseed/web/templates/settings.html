@@ -56,6 +56,15 @@
     {% endif %}
   </section>
 
+  {% if bookmarklet %}
+  <section class="panel panel-wide">
+    <h2>{{ icon("link") }} ブックマークレット（見ているページを保存）</h2>
+    <p class="muted">次のリンクをブラウザのブックマークバーにドラッグして登録します。保存したいページでそのブックマークを開くと、保存先を選ぶ画面に移ります。</p>
+    <p><a class="btn" href="{{ bookmarklet }}" data-bookmarklet>docseed に保存</a></p>
+    <p class="small muted">スマホではブックマークを作ってから、URL をこの文字列に書き換えます: <code class="token-value" data-select-all>{{ bookmarklet }}</code></p>
+  </section>
+  {% endif %}
+
   <section class="panel panel-wide">
     <h2>API トークン</h2>
     <p class="muted">スクリプトやコマンドラインからファイルを扱うときに使います。トークンはアカウントと同じ権限を持つので、他人に渡さないでください。</p>

@@ -56,7 +56,23 @@ def doc_json(conn: sqlite3.Connection, d: sqlite3.Row, role: str | None = None) 
         "tags": dm.document_tags(conn, d["id"]),
         "created_by": d["created_by"], "created_at": d["created_at"], "updated_at": d["updated_at"],
         "my_role": role,
+        "kind": d["kind"] if "kind" in d.keys() else "file",
+        "webclip": _webclip_json(conn, d),
     }
+
+
+def _webclip_json(conn: sqlite3.Connection, d: sqlite3.Row) -> dict | None:
+    if "kind" not in d.keys() or d["kind"] != "webclip":
+        return None
+    from ..webclip.service import clip_for_document
+    c = clip_for_document(conn, d["id"])
+    if c is None:
+        return None
+    thumb = d["thumb_path"] if "thumb_path" in d.keys() else None
+    return {"id": c["id"], "url": c["url"], "canonical_url": c["canonical_url"], "site_name": c["site_name"],
+            "title": c["title"], "description": c["description"], "author": c["author"],
+            "published_at": c["published_at"], "fetched_at": c["fetched_at"], "status": c["status"],
+            "image_url": f"/api/v1/documents/{d['id']}/thumbnail" if thumb else None}
 
 
 def folder_json(conn: sqlite3.Connection, f: sqlite3.Row, role: str | None) -> dict[str, Any]:

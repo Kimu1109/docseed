@@ -61,6 +61,9 @@ DONE_MESSAGES = {
     "reprocess": "再処理を受け付けました。順番に処理されます",
     "retried": "ジョブをやり直します",
     "share_revoked": "共有リンクを無効にしました",
+    "clip": "URL を受け付けました。取得が済むと一覧に表示されます",
+    "clip_dup": "URL を受け付けました（このページは既に保存されています）",
+    "refetch": "もう一度取得します。終わると内容が新しくなります",
     "reauthed": "本人確認ができました。10 分間はログイン方法を変更できます",
     "totp_disabled": "確認コードを無効にしました",
     "passkey_added": "パスキーを登録しました",
@@ -181,9 +184,12 @@ def listing_context(request: Request, conn: sqlite3.Connection, auth: Auth, fold
     folder = fo.get_folder_row(conn, folder_id)
     folders, docs = fo.list_children(conn, folder_id, sort=sort, order=order)
     owner = um.get_user(conn, folder["owner_id"])
+    from ..webclip.service import error_message, pending_clips
+    clips = [dict(c) | {"error_message": error_message(c)} for c in pending_clips(conn, folder_id)]
     return base_context(request, conn, auth, folder=folder, crumbs=fo.path(conn, folder_id), role=role,
                         can_edit=role in ("editor", "owner"), folders=folders, docs=docs, sort=sort,
-                        order=order, owner=owner, nav="files" if owner.id == auth.user.id else "shared")
+                        order=order, owner=owner, nav="files" if owner.id == auth.user.id else "shared",
+                        clips=clips, webclip_enabled=request.app.state.settings.webclip_enabled)
 
 
 def render_listing(request: Request, conn: sqlite3.Connection, auth: Auth, folder_id: int,
@@ -209,6 +215,80 @@ def folder_create(folder_id: int, request: Request, name: str = Form(""),
                   conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
     fo.create_folder(conn, auth.user, folder_id, name)
     return render_listing(request, conn, auth, folder_id, f"フォルダ「{name.strip()}」を作成しました")
+
+
+# ---------------------------------------------------------------------------
+# Web クリップ（URL の取り込み）
+# ---------------------------------------------------------------------------
+
+def _dup_message(conn: sqlite3.Connection, auth: Auth, dups: list[dict]) -> str:
+    if not dups:
+        return "URL を受け付けました。取得が済むと一覧に表示されます"
+    return (f"URL を受け付けました。このページは既に「{dups[0]['filename']}」として保存されています"
+            + (f"（ほか {len(dups) - 1} 件）" if len(dups) > 1 else ""))
+
+
+@router.post("/f/{folder_id}/webclips", response_class=HTMLResponse)
+def webclip_create(folder_id: int, request: Request, url: str = Form(""),
+                   conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth),
+                   settings: Settings = Depends(get_settings)):
+    from ..webclip.service import create_clip
+    _cid, dups = create_clip(conn, settings, auth.user, folder_id, url, client_ip(request))
+    return render_listing(request, conn, auth, folder_id, _dup_message(conn, auth, dups))
+
+
+@router.post("/x/webclips/{clip_id}/retry", response_class=HTMLResponse)
+def webclip_retry(clip_id: int, request: Request, current: int = Form(...),
+                  conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth),
+                  settings: Settings = Depends(get_settings)):
+    from ..webclip.service import refetch
+    refetch(conn, settings, auth.user, clip_id, client_ip(request))
+    return render_listing(request, conn, auth, current, "もう一度取得します")
+
+
+@router.post("/x/webclips/{clip_id}/delete", response_class=HTMLResponse)
+def webclip_delete(clip_id: int, request: Request, current: int = Form(...),
+                   conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from ..webclip.service import delete_pending
+    delete_pending(conn, auth.user, clip_id)
+    return render_listing(request, conn, auth, current, "取り消しました")
+
+
+@router.post("/d/{doc_id}/refetch")
+def document_refetch(doc_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                     auth: Auth = Depends(require_auth), settings: Settings = Depends(get_settings)):
+    from ..webclip.service import clip_for_document, refetch
+    dm.get_document(conn, auth.user, doc_id, "editor")
+    c = clip_for_document(conn, doc_id)
+    if c is None:
+        raise AppError("この文書は URL から取り込んだものではありません")
+    refetch(conn, settings, auth.user, c["id"], client_ip(request))
+    return RedirectResponse(f"/d/{doc_id}?done=refetch", status_code=303)
+
+
+@router.get("/clip", response_class=HTMLResponse)
+def clip_page(request: Request, url: str = "", conn: sqlite3.Connection = Depends(get_conn),
+              auth: Auth = Depends(require_auth), settings: Settings = Depends(get_settings)):
+    """ブックマークレットの行き先。保存先を選んで「保存」を押す（GET だけでは保存しない）。"""
+    targets = [(fid, label) for fid, label in fo.folders_of_owner(conn, auth.user.id)]
+    return templates.TemplateResponse(request, "clip.html", base_context(
+        request, conn, auth, nav="files", url=url[:2048], targets=targets, enabled=settings.webclip_enabled,
+        error=None))
+
+
+@router.post("/clip", response_class=HTMLResponse)
+def clip_submit(request: Request, url: str = Form(""), folder_id: int = Form(...),
+                conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth),
+                settings: Settings = Depends(get_settings)):
+    from ..webclip.service import create_clip
+    try:
+        _cid, dups = create_clip(conn, settings, auth.user, folder_id, url, client_ip(request))
+    except AppError as e:
+        targets = [(fid, label) for fid, label in fo.folders_of_owner(conn, auth.user.id)]
+        return templates.TemplateResponse(request, "clip.html", base_context(
+            request, conn, auth, nav="files", url=url, targets=targets, enabled=settings.webclip_enabled,
+            error=e.detail), status_code=e.status)
+    return RedirectResponse(f"/f/{folder_id}?done={'clip_dup' if dups else 'clip'}", status_code=303)
 
 
 @router.post("/x/folders/{item_id}/rename", response_class=HTMLResponse)
@@ -399,7 +479,14 @@ def document_page(doc_id: int, request: Request, conn: sqlite3.Connection = Depe
         truncated=truncated, targets=targets, owner=um.get_user(conn, d["owner_id"]),
         pages=pages, pages_shown=PAGES_SHOWN, error=h.problem_message(d["error"]),
         warnings=h.warning_messages(d["warnings"]), image_meta=json.loads(d["image_meta"] or "null"),
+        clip=_clip_for(conn, d), webclip_enabled=request.app.state.settings.webclip_enabled,
         nav="files" if d["owner_id"] == auth.user.id else "shared"))
+
+
+def _clip_for(conn: sqlite3.Connection, d: sqlite3.Row) -> dict | None:
+    from ..webclip.service import clip_for_document, error_message
+    c = clip_for_document(conn, d["id"])
+    return dict(c) | {"error_message": error_message(c)} if c else None
 
 
 @router.post("/d/{doc_id}/reprocess")
@@ -449,7 +536,7 @@ def display_location(conn: sqlite3.Connection, auth: Auth, folder_id: int, cache
         cache[folder_id] = " / ".join([root] + [c.name for c in crumbs if c.name])
     return cache[folder_id]
 MODE_LABEL = {"hybrid": "すべて", "semantic": "意味が近い", "keyword": "キーワード"}
-TYPE_OPTIONS = ["pdf", "image", "text", "doc", "sheet", "slide"]
+TYPE_OPTIONS = ["pdf", "image", "text", "doc", "sheet", "slide", "webclip"]
 
 
 @router.get("/search", response_class=HTMLResponse)
@@ -525,8 +612,13 @@ def trash_empty(request: Request, conn: sqlite3.Connection = Depends(get_conn), 
 
 def settings_context(request: Request, conn: sqlite3.Connection, auth: Auth, **extra) -> dict:
     from ..shares import list_shares
+    settings = request.app.state.settings
+    base = settings.public_url or str(request.base_url).rstrip("/")
+    bookmarklet = ("javascript:location.href='" + base + "/clip?url='+encodeURIComponent(location.href)"
+                   if settings.webclip_enabled else None)
     return base_context(request, conn, auth, nav="settings", tokens=token_rows(conn, auth.user.id),
                         my_shares=list_shares(conn, auth.user), base_url=str(request.base_url).rstrip("/"),
+                        bookmarklet=bookmarklet,
                         new_token=None, error=None, **extra)
 
 

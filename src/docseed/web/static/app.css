@@ -28,6 +28,7 @@
   --k-archive: #7a5c99;
   --k-media: #a0477a;
   --k-other: #9aa3a0;
+  --k-webclip: #1f7a8c;
 
   --font: "BIZ UDPGothic", "IBM Plex Sans JP", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
   --mono: "BIZ UDGothic", "IBM Plex Mono", "Noto Sans Mono CJK JP", ui-monospace, monospace;
@@ -175,6 +176,7 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .kind-slide { background: var(--k-slide); }
 .kind-archive { background: var(--k-archive); }
 .kind-media { background: var(--k-media); }
+.kind-webclip { background: var(--k-webclip); }
 .kind-lg { width: 8px; height: 32px; flex: none; }
 
 .status { font-size: 13px; padding: 2px 8px; border: 1px solid var(--line); color: var(--muted); }
@@ -457,3 +459,13 @@ mark { background: #ffe58a; color: inherit; padding: 0 1px; }
 .rowmenu summary .icon { width: 20px; height: 20px; }
 .nav-toggle .icon { width: 20px; height: 20px; }
 .panel h2 .icon, .login-alt .icon { color: var(--muted); }
+
+/* Web クリップ */
+.clip-card { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: var(--s4); padding: var(--s4); }
+.clip-image { width: 200px; height: 200px; object-fit: cover; border: 1px solid var(--line); background: var(--bg); }
+.clip-site { margin: 0; color: var(--muted); font-size: 13px; }
+.clip-title { margin: 4px 0 var(--s2); font-size: 18px; }
+.clip-desc { margin: 0 0 var(--s3); }
+.clip-body a { overflow-wrap: anywhere; }
+.clip-error { margin-top: 2px; padding-left: 46px; overflow-wrap: anywhere; }  /* 名前（36px の枠 + 間隔）の位置にそろえる */
+@media (max-width: 860px) { .clip-card { grid-template-columns: minmax(0, 1fr); } .clip-image { width: 100%; height: auto; max-height: 240px; } }
