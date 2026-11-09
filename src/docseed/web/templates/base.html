@@ -14,9 +14,10 @@
 {% if user %}
 <header class="top">
   <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>docseed</a>
-  <button class="nav-toggle" type="button" aria-controls="side" aria-expanded="false" data-nav-toggle>メニュー</button>
+  <button class="nav-toggle" type="button" aria-controls="side" aria-expanded="false" data-nav-toggle aria-label="メニュー" title="メニュー">{{ icon("menu") }}</button>
   {% if nav != "search" %}
   <form class="topsearch" method="get" action="/search" role="search">
+    {{ icon("search", cls="search-icon") }}
     <input type="search" name="q" placeholder="ファイルの中身を検索" aria-label="検索" autocomplete="off" data-search-shortcut>
     <kbd class="kbd" aria-hidden="true">/</kbd>
   </form>
@@ -24,12 +25,12 @@
   <div class="top-right">
     {% block top_actions %}{% endblock %}
     <details class="usermenu">
-      <summary>{{ user.display_name }}</summary>
+      <summary>{{ icon("account_circle") }}{{ user.display_name }}</summary>
       <div class="usermenu-panel">
-        <a href="/settings">設定</a>
+        <a href="/settings">{{ icon("settings") }}設定</a>
         <form method="post" action="/logout">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button type="submit" class="linkish">ログアウト</button>
+          <button type="submit" class="linkish">{{ icon("logout") }}ログアウト</button>
         </form>
       </div>
     </details>
@@ -37,11 +38,11 @@
 </header>
 <div class="shell">
   <nav class="side" id="side" aria-label="メイン">
-    <a href="/f/{{ root_id }}" {% if nav == 'files' %}aria-current="page"{% endif %}>マイファイル</a>
-    <a href="/search" {% if nav == 'search' %}aria-current="page"{% endif %}>検索</a>
-    <a href="/shared" {% if nav == 'shared' %}aria-current="page"{% endif %}>共有されたフォルダ</a>
-    <a href="/trash" {% if nav == 'trash' %}aria-current="page"{% endif %}>ゴミ箱</a>
-    {% if user.is_admin %}<a href="/admin" {% if nav == 'admin' %}aria-current="page"{% endif %}>管理{% if alert_count %} <span class="alert-badge" title="確認が必要な項目が {{ alert_count }} 件あります" aria-label="警告 {{ alert_count }} 件">!{{ alert_count }}</span>{% endif %}</a>{% endif %}
+    <a href="/f/{{ root_id }}" {% if nav == 'files' %}aria-current="page"{% endif %}>{{ icon("folder") }}マイファイル</a>
+    <a href="/search" {% if nav == 'search' %}aria-current="page"{% endif %}>{{ icon("search") }}検索</a>
+    <a href="/shared" {% if nav == 'shared' %}aria-current="page"{% endif %}>{{ icon("folder_shared") }}共有されたフォルダ</a>
+    <a href="/trash" {% if nav == 'trash' %}aria-current="page"{% endif %}>{{ icon("delete") }}ゴミ箱</a>
+    {% if user.is_admin %}<a href="/admin" {% if nav == 'admin' %}aria-current="page"{% endif %}>{{ icon("admin_panel_settings") }}管理{% if alert_count %} <span class="alert-badge" title="確認が必要な項目が {{ alert_count }} 件あります" aria-label="警告 {{ alert_count }} 件">!{{ alert_count }}</span>{% endif %}</a>{% endif %}
     <div class="side-foot">
       <div>使用量 <b>{{ usage | filesize }}</b></div>
       {% if pending %}<div>処理待ち <b>{{ pending }}</b> 件</div>{% endif %}

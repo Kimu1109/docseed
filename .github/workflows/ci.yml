@@ -16,3 +16,37 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check src tests
       - run: pytest
+      - run: python scripts/build_icons.py --check
+
+  # docker/Caddyfile が証明書の方式ごとに展開できること（docs/design/extensions.md 10 章）
+  caddy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: internal / file / tailscale（公式の caddy:2）
+        run: |
+          for mode in internal file tailscale; do
+            for ip in localhost 192.168.1.20; do  # compose は空のとき localhost を渡す
+              echo "== $mode (LAN_IP=$ip)"
+              docker run --rm -v "$PWD/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
+                -e DOCSEED_HOST=docseed.example.com -e DOCSEED_LAN_IP=$ip -e DOCSEED_TLS_MODE=$mode \
+                -e DOCSEED_HTTPS_PORT=8443 -e DOCSEED_HTTP_PORT=8080 \
+                -e DOCSEED_TLS_CERT=live/x/fullchain.pem -e DOCSEED_TLS_KEY=live/x/privkey.pem \
+                caddy:2 caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/out.json
+            done
+          done
+      - name: acme_dns（DNS のプラグイン入りの Caddy をビルドして展開）
+        run: |
+          docker build -t docseed-caddy docker/caddy
+          for staging in false true; do
+            for email in "" admin@example.com; do
+              echo "== acme_dns (staging=$staging, email=$email)"
+              docker run --rm -v "$PWD/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
+                -e DOCSEED_HOST=docseed.example.com -e DOCSEED_TLS_MODE=acme_dns \
+                -e DOCSEED_ACME_STAGING=$staging -e DOCSEED_ACME_EMAIL=$email -e DOCSEED_ACME_DNS_TOKEN=dummy \
+                docseed-caddy caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/out.json
+              grep -q '"provider":{"api_token":"{env.DOCSEED_ACME_DNS_TOKEN}","name":"cloudflare"}' /tmp/out.json \
+                || grep -q cloudflare /tmp/out.json
+              if [ "$staging" = true ]; then grep -q acme-staging-v02 /tmp/out.json; fi
+            done
+          done

@@ -10,7 +10,7 @@ Raspberry Pi 5 で動くローカルのドキュメントサーバーです。�
 | Phase 3 | 検索 | 完了 |
 | Phase 4 | 共有（フォルダのメンバー、共有リンク、受け取り箱） | 完了 |
 | Phase 5 | 運用（バックアップ、監視、Office 文書） | 実装済み（Pi での復旧の練習は導入時に） |
-| Phase 6 | HTTPS 証明書の方式の切り替え・アイコン・HEIC など | 一部実装（手元の証明書ファイルの指定） |
+| Phase 6 | HTTPS 証明書の方式の切り替え（internal / file / tailscale / acme_dns）と監視、アイコン、HEIC / AVIF、サムネイル・プレビュー | 実装済み |
 | Phase 7 | ログイン（パスキー・確認コード・復旧コード・Google などの OIDC・再認証） | 実装済み |
 
 ## Raspberry Pi で動かす（Docker）
@@ -74,6 +74,69 @@ sudo scripts/ops/install-cert-hook.sh               # certbot の更新のたび
 - IP アドレス（`DOCSEED_LAN_IP`）で開いたときは、今まで通り内部 CA の証明書になります
 - Caddy は証明書ファイルの変更を監視しないので、更新後の再起動（上の `install-cert-hook.sh`）が必要です。certbot の更新がインターネットからの接続（HTTP-01）を使う場合、WAN から届かないと更新に失敗します。`sudo certbot renew --dry-run` で確かめ、失敗するなら DNS-01 での取得に切り替えてください
 
+### Tailscale の証明書を使う（おすすめ）
+
+Pi と使う端末に [Tailscale](https://tailscale.com/) を入れていれば、Tailscale が Let's Encrypt の証明書を取ってくれます。ブラウザの警告が出ず、パスキーも使え、インターネットに Pi を公開する必要もありません。
+
+1. Tailscale の管理画面（DNS）で **MagicDNS** と **HTTPS Certificates** を有効にします
+2. Pi の名前を確かめます: `tailscale status --json | jq -r .Self.DNSName`（末尾の `.` を除いた `<機械名>.<tailnet>.ts.net`）
+3. `.env` を変えて Caddy を作り直します
+
+```bash
+# .env
+DOCSEED_TLS_MODE=tailscale
+DOCSEED_HOST=docseed.tailxxxx.ts.net
+```
+
+```bash
+docker compose up -d --force-recreate caddy
+docker compose logs caddy | tail -n 20
+```
+
+Caddy はホストの `/var/run/tailscale/tailscaled.sock` を通して証明書をもらいます。Tailscale を入れていない端末からは、今まで通り `DOCSEED_LAN_IP` の IP アドレスで開けます（内部 CA の証明書。パスキーは使えません）。
+
+### 自分のドメインの証明書を DNS-01 で取る
+
+自分のドメイン（例 `docseed.example.com`）があり、DNS を Cloudflare で管理していれば、Pi をインターネットに公開せずに Let's Encrypt の証明書を取れます（DNS の TXT レコードで確認するため）。
+
+1. Cloudflare で **Zone:DNS:Edit の権限だけ**を付けた API トークンを作ります
+2. DNS に `docseed.example.com` の A レコードを Pi の LAN の IP（または Tailscale の IP）で登録します。ルーターに「DNS リバインディングの保護」がある場合は、そのドメインを除外します（または Pi-hole などの LAN の DNS で引きます）
+3. DNS のプラグイン入りの Caddy をビルドし（数分かかります）、`.env` を変えます
+
+```bash
+docker compose --profile acme build caddy-acme
+```
+
+```bash
+# .env
+DOCSEED_TLS_MODE=acme_dns
+DOCSEED_HOST=docseed.example.com
+DOCSEED_CADDY_IMAGE=docseed-caddy:latest
+DOCSEED_ACME_DNS_TOKEN=xxxxxxxx
+DOCSEED_ACME_EMAIL=you@example.com    # 空でもよい
+DOCSEED_ACME_STAGING=true             # 最初は試験用の環境で確かめる（回数の制限に当たらないように）
+```
+
+```bash
+docker compose up -d --force-recreate caddy
+docker compose logs caddy | grep -i -E "certificate|error"   # 「certificate obtained successfully」が出れば成功
+```
+
+試験用の環境で取れたら `DOCSEED_ACME_STAGING=false` にして、もう一度 `docker compose up -d --force-recreate caddy` します。Cloudflare 以外の DNS 事業者は、`docker/caddy/Dockerfile` の `DNS_PLUGIN` と `docker/Caddyfile` の `(tls_acme_dns)` をその事業者のものに変えてください（[Caddy の DNS プラグインの一覧](https://caddyserver.com/docs/modules/)）。
+
+### 証明書の監視
+
+api が 6 時間ごとに Caddy の証明書を確かめ、検証できない（名前が合わない・期限切れ）ときと、期限まで 7 日を切ったときに、管理画面の「確認が必要な項目」に出します。証明書の状態は管理画面の「HTTPS の証明書」で見られます。
+
+### Phase 7 までから更新する場合（写真・サムネイル）
+
+```bash
+git pull
+docker compose up -d --build
+docker compose exec api docseed reprocess unsupported   # 以前に保存した HEIC / AVIF の文字を読み取る
+docker compose exec api docseed derive missing          # 保存済みの画像・PDF のサムネイルとプレビューを作る（文字の読み取りはやり直さない）
+```
+
 ### Phase 4 から更新する場合（Office 文書・バックアップ）
 
 ```bash
@@ -93,8 +156,10 @@ docker compose exec api docseed reprocess unsupported   # 以前に保存した 
 | ファイルが「処理に失敗」になり、ジョブのエラーに「モデルがありません」と出る | `docker compose --profile tools run --rm tools` でモデルを取得し、管理画面の「失敗したファイルをすべて再処理」 |
 | `PermissionError: ... '/srv/docseed/...'` または「データディレクトリに書き込めません」 | コンテナは UID 1000 で動くため、データディレクトリの所有者を合わせる: `sudo chown -R 1000:1000 /srv/docseed`（`.env` の `DOCSEED_DATA_DIR` を変えている場合はその場所） |
 | ポートを変えたのに、開くと Apache など 80 / 443 の別のサービスに飛ぶ・IP アドレスで開けない | `git pull` で最新にし（Caddy が中でも同じポートで待ち受ける設定）、IP で開くなら `.env` の `DOCSEED_LAN_IP` に Pi の IP を設定して `docker compose up -d --force-recreate caddy` |
+| `caddy` のログに `get_certificate tailscale` / `tailscaled.sock` のエラー | Pi で `tailscale status` が動いているか、管理画面で HTTPS Certificates が有効か、`DOCSEED_HOST` が `tailscale status --json` の `DNSName` と同じかを確認 |
+| `caddy` のログに `module not registered: dns.providers.cloudflare` | `DOCSEED_TLS_MODE=acme_dns` には DNS のプラグイン入りの Caddy が要ります。`docker compose --profile acme build caddy-acme` と `.env` の `DOCSEED_CADDY_IMAGE=docseed-caddy:latest` |
 | 証明書の警告で先に進めない（「この接続ではプライバシーが保護されません」で例外を追加するボタンが出ない） | 開いた名前と証明書が合っていません。そのドメインに HSTS（以前に Let's Encrypt の証明書で開いたなど）が付いていると、ブラウザは例外を許しません。上の「手元の証明書を使う」でその名前の証明書を Caddy に使わせてください |
-| `caddy` が起動しない・`loading certificates` や `open /certs/...: no such file` のエラー | `.env` の `DOCSEED_TLS_CERT_DIR` と、その中の相対パス `DOCSEED_TLS_CERT` / `DOCSEED_TLS_KEY` を確認（`sudo ls -l /etc/letsencrypt/live/<名前>/`）。`DOCSEED_TLS_MODE` は `internal` か `file` |
+| `caddy` が起動しない・`loading certificates` や `open /certs/...: no such file` のエラー | `.env` の `DOCSEED_TLS_CERT_DIR` と、その中の相対パス `DOCSEED_TLS_CERT` / `DOCSEED_TLS_KEY` を確認（`sudo ls -l /etc/letsencrypt/live/<名前>/`）。`DOCSEED_TLS_MODE` は `internal` / `file` / `tailscale` / `acme_dns` のどれか |
 | `api` がすぐ止まる | `docker compose logs api` を確認。`.env` の `DOCSEED_SECRET_KEY` 未設定や、`/srv/docseed` の所有者（UID 1000 が必要）が原因のことが多い |
 
 ## ログイン方法（パスキー・確認コード・Google など）
@@ -154,6 +219,14 @@ Pocket ID・Authelia・Keycloak など、ほかの OIDC の提供者も同じ書
 
 自分の文書に対する「質問」と「正解のファイル名」を 20〜30 件ほど JSON に書き、`scripts/eval_search.py` で Recall@5 / MRR を測れます（使い方はスクリプト冒頭のコメント）。
 意味検索で無関係なファイルが多く出る・逆に見つからない場合は、`--sem-min 0.75,0.80,0.85` で類似度の下限を比べ、良かった値を `.env` の `DOCSEED_SEARCH_SEM_MIN` に設定します（既定 0.80）。
+
+## 写真（HEIC など）とサムネイル
+
+iPhone の写真（HEIC / HEIF）と AVIF も、ほかの画像と同じように文字を読み取って検索できます。
+
+- 一覧には画像と PDF のサムネイルを、文書の画面には写真の大きさ・撮影日時・カメラを表示します
+- HEIC など、Safari 以外のブラウザが表示できない形式や、とても大きな画像は、表示用のプレビュー（WebP）を作って表示します。ダウンロードすると原本（そのままのファイル）が手に入ります
+- サムネイルとプレビューは、向きを直して位置情報などの EXIF を消したものです。**原本には撮影場所が残る**ので、位置情報を含む写真を共有リンクで渡そうとすると、共有ダイアログに注意が出ます
 
 ## Office 文書
 
@@ -299,6 +372,7 @@ API の仕様は起動後に `/api/docs` で確認できます（ログインが
 | `docseed status [--json]` | 状態と警告を表示する（管理画面と同じ内容） |
 | `docseed worker` | 文字の読み取り（OCR）と埋め込みの処理を行う |
 | `docseed fetch-models` | OCR と埋め込みのモデルを取得する（`.[tools]` が必要） |
+| `docseed derive missing\|all` | 画像・PDF のサムネイルとプレビューを作る（`all` は作り直す。文字の読み取りはやり直さない） |
 | `docseed reprocess failed\|outdated\|unsupported\|all` | 文書を再処理する（`--force-ocr` で PDF も画像として読み取る） |
 
 ## 文書

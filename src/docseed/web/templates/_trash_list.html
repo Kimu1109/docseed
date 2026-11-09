@@ -18,14 +18,14 @@
     {% set k = "folder" if it.type == "folder" else kind_of(it.mime_type, it.name) %}
     <tr>
       <td class="col-kind"><span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span></td>
-      <td class="col-name"><span class="name">{{ it.name }}</span>{% if it.type == "folder" %} <span class="muted small">{{ it.files }} ファイル</span>{% endif %}</td>
+      <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span><span class="name">{{ it.name }}</span>{% if it.type == "folder" %} <span class="muted small">{{ it.files }} ファイル</span>{% endif %}</div></td>
       <td class="muted">{{ it.location }}</td>
       <td class="col-date">{{ it.deleted_at | shortdate }}</td>
       <td class="col-size">{{ it.size | filesize if it.size is not none else "" }}</td>
       <td class="col-actions">
-        <button type="button" class="btn btn-sm" hx-post="/trash/{{ it.type }}/{{ it.id }}/restore" hx-target="#trash" hx-swap="outerHTML">元に戻す</button>
+        <button type="button" class="btn btn-sm" hx-post="/trash/{{ it.type }}/{{ it.id }}/restore" hx-target="#trash" hx-swap="outerHTML">{{ icon("restore_from_trash") }}元に戻す</button>
         <button type="button" class="btn btn-sm btn-danger" hx-post="/trash/{{ it.type }}/{{ it.id }}/purge" hx-target="#trash" hx-swap="outerHTML"
-                hx-confirm="「{{ it.name }}」を完全に削除します。元に戻せません。よろしいですか？">完全に削除</button>
+                hx-confirm="「{{ it.name }}」を完全に削除します。元に戻せません。よろしいですか？">{{ icon("delete_forever") }}完全に削除</button>
       </td>
     </tr>
   {% endfor %}

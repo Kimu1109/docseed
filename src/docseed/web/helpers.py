@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import os
+import re
+from pathlib import Path
 from zoneinfo import ZoneInfo
+
+from markupsafe import Markup, escape
 
 TZ = ZoneInfo(os.environ.get("DOCSEED_TIMEZONE", "Asia/Tokyo"))
 
@@ -57,6 +62,19 @@ def filesize(n: int | None) -> str:
     return f"{size:.1f} TB"
 
 
+def taken_at(iso: str | None) -> str:
+    """EXIF の撮影日時（時差つきなら画面のタイムゾーンに直す。無ければそのまま）。"""
+    if not iso:
+        return "—"
+    try:
+        t = dt.datetime.fromisoformat(iso)
+    except ValueError:
+        return iso
+    if t.tzinfo is not None:
+        t = t.astimezone(TZ)
+    return t.strftime("%Y/%m/%d %H:%M")
+
+
 def localtime(iso: str | None, fmt: str = "%Y/%m/%d %H:%M") -> str:
     if not iso:
         return "—"
@@ -79,6 +97,7 @@ WARNING_TEXT = {
     "ocr_slow": "{page} ページ目の文字の読み取りに {seconds} 秒かかりました",
     "ocr_timeout": "{page} ページ目の文字の読み取りが時間切れになりました",
     "sheet_truncated": "シート「{sheet}」はセルが多いため、先頭 {cells} セルだけを検索の対象にしました",
+    "thumbnail_failed": "サムネイル・プレビューを作れませんでした（文字の読み取りと検索には影響しません）",
 }
 
 
@@ -107,3 +126,31 @@ def warning_messages(raw: str | None) -> list[str]:
         except (KeyError, IndexError):
             out.append(tmpl)
     return out
+
+
+# ---------------------------------------------------------------------------
+# アイコン（Material Symbols の SVG スプライト。docs/design/extensions.md 3 章）
+# ---------------------------------------------------------------------------
+
+_ICONS_SVG = Path(__file__).parent / "static" / "icons.svg"
+_icons_text = _ICONS_SVG.read_text()
+ICON_NAMES = frozenset(re.findall(r'<symbol id="i-([a-z0-9_]+)"', _icons_text))
+# ファイルの内容が変わったら URL も変わるようにする（ブラウザのキャッシュ対策）
+ICONS_URL = "/static/icons.svg?v=" + hashlib.sha256(_icons_text.encode()).hexdigest()[:10]
+
+KIND_ICON = {
+    "folder": "folder", "pdf": "picture_as_pdf", "image": "image", "text": "description", "doc": "article",
+    "sheet": "table", "slide": "slideshow", "archive": "folder_zip", "media": "movie", "other": "draft",
+}
+STATUS_ICON = {"pending": "schedule", "processing": "progress_activity", "ready": "check_circle",
+               "failed": "error", "unsupported": "block"}
+
+
+def icon(name: str, label: str | None = None, cls: str = "") -> Markup:
+    """<svg class="icon"><use href=".../icons.svg#i-<name>"/></svg>。label を渡すと読み上げ用の名前を付ける。"""
+    if name not in ICON_NAMES:
+        raise ValueError(f"アイコン「{name}」は icons.svg にありません（src/docseed/web/icons.txt に足して"
+                         " scripts/build_icons.py を実行）")
+    a11y = f' role="img" aria-label="{escape(label)}"' if label else ' aria-hidden="true" focusable="false"'
+    extra = f" {escape(cls)}" if cls else ""
+    return Markup(f'<svg class="icon{extra}"{a11y}><use href="{ICONS_URL}#i-{name}"/></svg>')

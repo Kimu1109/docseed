@@ -1,0 +1,49 @@
+# 画面で使うアイコン（Material Symbols Sharp、太さ 400、塗りなし）。1 行 1 つ、Material Symbols の名前。
+# 足したら scripts/build_icons.py を実行して static/icons.svg を作り直す（docs/design/extensions.md 3 章）。
+# ヘッダ
+search
+upload
+account_circle
+menu
+logout
+# サイドバー
+folder
+folder_shared
+delete
+settings
+admin_panel_settings
+# 一覧の種類
+picture_as_pdf
+image
+table
+slideshow
+article
+link
+draft
+description
+folder_zip
+movie
+# 操作
+share
+download
+edit
+drive_file_move
+content_copy
+restore_from_trash
+delete_forever
+refresh
+more_horiz
+create_new_folder
+# 状態
+progress_activity
+check_circle
+error
+warning
+block
+schedule
+# ログイン
+passkey
+key
+pin
+# 整理の補助（Phase 9）。auto_awesome は今の Material Symbols に無いので、Phase 9 で候補・要約の印を選び直す
+label

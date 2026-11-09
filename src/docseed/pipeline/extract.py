@@ -23,7 +23,29 @@ MAX_IMAGE_PIXELS = 100_000_000
 Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS  # 画像の展開爆弾対策（security.md 6 章）
 
 TEXT_TYPES = {"application/json", "application/xml", "application/x-yaml"}
-IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/tiff", "image/gif", "image/bmp"}
+IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/tiff", "image/gif", "image/bmp",
+               "image/heic", "image/heif", "image/avif"}
+# 1 枚目（主画像）だけを使う形式（HEIC の複数画像・AVIF のアニメーションなど）
+SINGLE_FRAME_TYPES = {"image/heic", "image/heif", "image/avif", "image/webp", "image/gif"}
+
+_plugins_registered = False
+
+
+def register_image_plugins() -> None:
+    """HEIC / HEIF を Pillow で開けるようにする（pillow-heif）。AVIF は Pillow 11.3 以上が自前で読む。"""
+    global _plugins_registered
+    if _plugins_registered:
+        return
+    try:
+        from pillow_heif import register_heif_opener
+        register_heif_opener()
+    except ImportError:  # pragma: no cover - 依存に入っているので通常は起きない
+        pass
+    _plugins_registered = True
+
+
+def _frames(im: Image.Image, mime: str) -> int:
+    return 1 if mime in SINGLE_FRAME_TYPES else getattr(im, "n_frames", 1)
 
 
 class Unsupported(Exception):
@@ -67,8 +89,12 @@ def page_count(path: Path, mime: str) -> int:
             raise _pdf_error(e) from e
         return len(doc)
     if k == "image":
-        with Image.open(path) as im:
-            return getattr(im, "n_frames", 1)
+        register_image_plugins()
+        try:
+            with Image.open(path) as im:
+                return _frames(im, mime)
+        except (OSError, SyntaxError, ValueError) as e:
+            raise Unsupported("corrupt_file", "画像を読み込めませんでした（壊れているか、未対応の形式です）") from e
     if k in ("text", "html"):
         return 1
     if k in OFFICE_KINDS:
@@ -180,8 +206,9 @@ def iter_pages(path: Path, mime: str, *, dpi: int = 200, skip: set[int] | None =
         return
 
     if k == "image":
+        register_image_plugins()
         with Image.open(path) as im:
-            n = min(getattr(im, "n_frames", 1), MAX_PAGES)
+            n = min(_frames(im, mime), MAX_PAGES)
             for i in range(n):
                 if i + 1 in skip:
                     continue

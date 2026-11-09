@@ -53,6 +53,9 @@ class Settings:
     rp_id_override: str = ""          # DOCSEED_RP_ID
     public_url_override: str = ""     # DOCSEED_PUBLIC_URL（通常は空。DOCSEED_HOST とポートから作る）
     oidc_providers: tuple[OidcProvider, ...] = ()
+    # 証明書（Phase 6、docs/design/extensions.md 2 章）
+    tls_mode: str = "internal"        # DOCSEED_TLS_MODE
+    tls_check_addr: str = ""          # DOCSEED_TLS_CHECK_ADDR（例 caddy:443）。空なら証明書を監視しない
     extra: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -134,6 +137,8 @@ class Settings:
             rp_id_override=e.get("DOCSEED_RP_ID", "").strip(),
             public_url_override=e.get("DOCSEED_PUBLIC_URL", "").strip(),
             oidc_providers=_oidc_from_env(e),
+            tls_mode=e.get("DOCSEED_TLS_MODE", "internal").strip() or "internal",
+            tls_check_addr=e.get("DOCSEED_TLS_CHECK_ADDR", "").strip(),
         )
 
 

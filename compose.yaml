@@ -6,7 +6,9 @@
 #   docker compose exec api docseed create-admin --username <名前>
 services:
   caddy:
-    image: caddy:2
+    # acme_dns のときは DNS のプラグイン入りの Caddy を使う（下の caddy-acme でビルドし、
+    # .env の DOCSEED_CADDY_IMAGE=docseed-caddy:latest にする）
+    image: ${DOCSEED_CADDY_IMAGE:-caddy:2}
     # ポート。80 / 443 が他のサービスで使われている場合は .env で変える。
     # Caddy はコンテナの中でも同じ番号で待ち受ける（転送先の URL にこの番号を使わせるため）
     ports:
@@ -14,16 +16,22 @@ services:
       - "${DOCSEED_HTTP_PORT:-80}:${DOCSEED_HTTP_PORT:-80}"
     environment:
       DOCSEED_HOST: ${DOCSEED_HOST}
-      DOCSEED_LAN_IP: ${DOCSEED_LAN_IP:-}
+      # 空だと Caddy の {$DOCSEED_LAN_IP:localhost} の既定値が使われず default_sni が空になるので、ここで補う
+      DOCSEED_LAN_IP: ${DOCSEED_LAN_IP:-localhost}
       DOCSEED_HTTPS_PORT: ${DOCSEED_HTTPS_PORT:-443}
       DOCSEED_HTTP_PORT: ${DOCSEED_HTTP_PORT:-80}
       # 証明書の方式（docker/Caddyfile の冒頭を参照）。file のときは DOCSEED_TLS_CERT_DIR を /certs に読み取り専用で入れる
       DOCSEED_TLS_MODE: ${DOCSEED_TLS_MODE:-internal}
       DOCSEED_TLS_CERT: ${DOCSEED_TLS_CERT:-}
       DOCSEED_TLS_KEY: ${DOCSEED_TLS_KEY:-}
+      DOCSEED_ACME_EMAIL: ${DOCSEED_ACME_EMAIL:-}
+      DOCSEED_ACME_DNS_TOKEN: ${DOCSEED_ACME_DNS_TOKEN:-}
+      DOCSEED_ACME_STAGING: ${DOCSEED_ACME_STAGING:-false}
     volumes:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
       - ${DOCSEED_TLS_CERT_DIR:-./docker/certs}:/certs:ro
+      # tailscale のとき: tailscaled.sock に問い合わせて証明書をもらう（Tailscale が無ければ空のディレクトリ）
+      - ${DOCSEED_TAILSCALE_SOCKET_DIR:-/var/run/tailscale}:/var/run/tailscale:ro
       - ${DOCSEED_DATA_DIR:-/srv/docseed}/caddy:/data
     depends_on: [api]
     restart: unless-stopped
@@ -38,6 +46,8 @@ services:
     env_file: .env
     environment:
       DOCSEED_DATA_DIR: /srv/docseed
+      # 証明書の監視（6 時間ごとに Caddy へ TLS で接続して期限を読む）
+      DOCSEED_TLS_CHECK_ADDR: caddy:${DOCSEED_HTTPS_PORT:-443}
     volumes:
       - ${DOCSEED_DATA_DIR:-/srv/docseed}:/srv/docseed
       - /sys/class/thermal:/host/thermal:ro
@@ -65,6 +75,15 @@ services:
     stop_grace_period: 30s
     logging: *logging
     restart: unless-stopped
+
+  # acme_dns 用の Caddy（DNS のプラグイン入り）のビルドだけに使う:
+  #   docker compose --profile acme build caddy-acme
+  caddy-acme:
+    profiles: ["acme"]
+    build:
+      context: docker/caddy
+    image: docseed-caddy:latest
+    command: ["caddy", "version"]
 
   # モデルの取得と ONNX への変換（初回とモデル変更時だけ）: docker compose --profile tools run --rm tools
   tools:

@@ -14,7 +14,7 @@
   {% for f in shared %}
     <tr>
       <td class="col-kind"><span class="kind kind-folder"></span></td>
-      <td class="col-name"><a class="name" href="/f/{{ f.id }}">{{ f.name or "（ルート）" }}</a></td>
+      <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon("folder_shared") }}</span><a class="name" href="/f/{{ f.id }}">{{ f.name or "（ルート）" }}</a></div></td>
       <td>{{ f.owner_name }}</td>
       <td>{{ {"editor": "編集できる", "viewer": "閲覧のみ"}[f.role] }}</td>
     </tr>

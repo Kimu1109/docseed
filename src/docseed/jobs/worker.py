@@ -17,7 +17,7 @@ from ..documents import purge_expired
 from ..monitor import cpu_temp
 from ..storage import BlobStore
 from . import queue
-from .process import Context, process_blob, reembed_blob, reset_blob
+from .process import Context, derive_blob, process_blob, reembed_blob, reset_blob
 
 log = logging.getLogger("docseed.worker")
 
@@ -119,6 +119,8 @@ class Worker:
                 result = process_blob(self.conn, self.ctx, job["blob_id"], force_ocr=bool(payload.get("force_ocr")))
             elif job["type"] == "reembed_blob":
                 result = reembed_blob(self.conn, self.ctx, job["blob_id"])
+            elif job["type"] == "derive_blob":
+                result = derive_blob(self.conn, self.ctx, job["blob_id"])
             elif job["type"] == "purge_trash":
                 self.daily()
                 result = "done"
@@ -191,4 +193,5 @@ def default_context(settings: Settings, between_pages) -> Context:
         embedder_factory=lambda: OnnxEmbedder(settings.models_dir, settings.embed_model,
                                               threads=settings.embed_threads),
         dpi=settings.ocr_dpi, min_score=settings.ocr_min_score, between_pages=between_pages,
+        data_dir=settings.data_dir,
     )

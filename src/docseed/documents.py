@@ -23,7 +23,7 @@ ON_CONFLICT = ("rename", "replace", "error")
 def get_document(conn: sqlite3.Connection, user: User, doc_id: int, role: str = "viewer") -> sqlite3.Row:
     r = conn.execute(
         "SELECT d.*, b.size_bytes, b.mime_type, b.sha256, b.storage_path, b.status, b.page_count,"
-        " b.progress_done, b.progress_total, b.error, b.warnings, f.owner_id,"
+        " b.progress_done, b.progress_total, b.error, b.warnings, b.thumb_path, b.view_path, b.image_meta, f.owner_id,"
         " u.display_name AS created_by_name"
         " FROM documents d JOIN blobs b ON b.id = d.blob_id JOIN folders f ON f.id = d.folder_id"
         " JOIN users u ON u.id = d.created_by WHERE d.id = ? AND d.deleted_at IS NULL",
@@ -363,10 +363,12 @@ def gc_blobs(conn: sqlite3.Connection, store: BlobStore) -> int:
     """どの文書からも参照されていない blob を削除する（抽出結果・ベクトルはカスケードで消える）。"""
     with Tx(conn):
         rows = conn.execute(
-            "SELECT id, storage_path FROM blobs b WHERE NOT EXISTS (SELECT 1 FROM documents d WHERE d.blob_id = b.id)"
+            "SELECT id, storage_path, thumb_path, view_path FROM blobs b"
+            " WHERE NOT EXISTS (SELECT 1 FROM documents d WHERE d.blob_id = b.id)"
         ).fetchall()
         for r in rows:
             conn.execute("DELETE FROM blobs WHERE id = ?", (r["id"],))
-    for r in rows:  # ファイルは DB の確定後に消す
+    for r in rows:  # ファイルは DB の確定後に消す（派生ファイルも）
         store.delete(r["storage_path"])
+        store.delete_derived(r["thumb_path"], r["view_path"])
     return len(rows)

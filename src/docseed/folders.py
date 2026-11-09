@@ -122,7 +122,7 @@ def list_children(conn: sqlite3.Connection, folder_id: int, *, sort: str = "name
     direction = "DESC" if order == "desc" else "ASC"
     docs = conn.execute(
         f"SELECT d.*, b.size_bytes, b.mime_type, b.status, b.sha256, b.page_count,"
-        f" b.progress_done, b.progress_total, b.warnings"
+        f" b.progress_done, b.progress_total, b.warnings, b.thumb_path, b.view_path"
         f" FROM documents d JOIN blobs b ON b.id = d.blob_id"
         f" WHERE d.folder_id = ? AND d.deleted_at IS NULL ORDER BY {key} {direction}, d.id",
         (folder_id,),

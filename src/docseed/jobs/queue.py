@@ -9,7 +9,7 @@ from ..db import Tx, now
 
 MAX_ATTEMPTS = 3
 STALE_MINUTES = 30
-PRIORITY = {"process_blob": 0, "reprocess": 5, "reembed_blob": 10, "purge_trash": 20}
+PRIORITY = {"process_blob": 0, "reprocess": 5, "reembed_blob": 10, "derive_blob": 10, "purge_trash": 20}
 
 
 def _iso(t: dt.datetime) -> str:

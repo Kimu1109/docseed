@@ -103,6 +103,11 @@ def status(conn: sqlite3.Connection, settings: Settings, *, now: dt.datetime | N
                             "登録済みのパスキーは使えません。DOCSEED_HOST / DOCSEED_RP_ID を戻すか、各ユーザーが"
                             "パスキーを登録し直してください"))
 
+    from .tlscheck import alerts as tls_alerts
+    from .tlscheck import stored_status as tls_status
+    tls = tls_status(conn)
+    alerts.extend(Alert(level, code, msg) for level, code, msg in tls_alerts(tls))
+
     temp = cpu_temp()
     if temp is not None and temp >= settings.thermal_pause_c:
         alerts.append(Alert("warning", "thermal", f"CPU の温度が {temp:.0f}℃ です。文字の読み取りを一時停止しています"))
@@ -116,6 +121,7 @@ def status(conn: sqlite3.Connection, settings: Settings, *, now: dt.datetime | N
         "jobs": {k: jobs.get(k, 0) for k in ("pending", "running", "failed", "done")},
         "disk": {"total": disk.total, "free": disk.free, "free_ratio": round(ratio, 4)},
         "cpu_temp_c": temp,
+        "tls": tls,
         "backup": {"db_snapshot": snap.name if snap else None, "db_snapshot_at": iso(snap_time),
                    "restic": restic, "restic_at": iso(restic_time)},
     }

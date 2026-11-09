@@ -90,6 +90,13 @@ def cmd_fetch_models(args: argparse.Namespace) -> None:
     fetch_all(Settings.from_env(), force=args.force)
 
 
+def cmd_derive(args: argparse.Namespace) -> None:
+    from .reprocess import enqueue_derive
+    conn = _conn(Settings.from_env())
+    n = enqueue_derive(conn, args.scope)
+    print(f"{n} 件のサムネイル・プレビューの作成を受け付けました（worker が順に作ります）")
+
+
 def cmd_reprocess(args: argparse.Namespace) -> None:
     from .reprocess import reprocess
     conn = _conn(Settings.from_env())
@@ -216,6 +223,10 @@ def main(argv: list[str] | None = None) -> None:
     s = sub.add_parser("fetch-models", help="OCR と埋め込みのモデルを取得する（初回に 1 度）")
     s.add_argument("--force", action="store_true", help="取得済みでも取り直す")
     s.set_defaults(func=cmd_fetch_models)
+
+    s = sub.add_parser("derive", help="画像・PDF のサムネイルとプレビューを作る（文字の読み取りはやり直さない）")
+    s.add_argument("scope", choices=["missing", "all"], help="missing: まだ無いもの / all: すべて作り直す")
+    s.set_defaults(func=cmd_derive)
 
     s = sub.add_parser("reprocess", help="文書を再処理する")
     s.add_argument("scope", choices=["failed", "outdated", "unsupported", "all"],
