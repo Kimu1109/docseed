@@ -148,7 +148,7 @@ def summarize_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int) -> str:
         return "disabled"
     inp = llm.summary_input(conn, blob_id)
     if inp is None:
-        return "empty"
+        return "too_short"   # 本文が短すぎるので要約しない
     ctx.between_pages()          # 温度による一時停止は呼ぶ前に確かめる
     try:
         s = ctx.llm.summarize(*inp)

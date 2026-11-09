@@ -30,7 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from docseed.llm import LlmClient, LlmError, LlmTimeout, LlmUnavailable  # noqa: E402
+from docseed.llm import MIN_INPUT_CHARS, LlmClient, LlmError, LlmTimeout, LlmUnavailable, too_short  # noqa: E402
 
 
 def main() -> None:
@@ -54,8 +54,10 @@ def main() -> None:
     with (out_dir / f"{stamp}-llm-{a.label}.jsonl").open("w") as jl:
         for f in a.files:
             text = f.read_text(encoding="utf-8", errors="replace")
-            if not text.strip():
-                print(f"{f.name}: 空のファイルなので飛ばします")
+            if too_short(text):
+                # docseed も、本文がこれより短い文書は要約しない
+                print(f"{f.name}: 本文が {MIN_INPUT_CHARS} 字未満なので飛ばします")
+                md.append(f"| {f.name} | 飛ばした | 本文が {MIN_INPUT_CHARS} 字未満（docseed も要約しない） | | | |")
                 continue
             try:
                 s = client.summarize(f.stem, None, text)
