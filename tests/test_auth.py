@@ -174,6 +174,7 @@ def test_device_cookie_is_per_user_and_signed(app, users):
         routes.limiter.failed("u:alice", f"ip:203.0.113.{i}")
     assert c.post("/api/v1/auth/login", json={"username": "alice", "password": PASSWORD}).status_code == 200
     v = c.cookies.get(DEVICE_COOKIE)
+    c.cookies.clear()   # 元の Cookie を残すと、httpx の版によってはそちらが先に送られる
     c.cookies.set(DEVICE_COOKIE, v[:-1] + ("0" if v[-1] != "0" else "1"))
     assert c.post("/api/v1/auth/login", json={"username": "alice", "password": PASSWORD}).status_code == 429
     routes.limiter._fail.clear()
