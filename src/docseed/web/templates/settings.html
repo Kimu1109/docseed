@@ -56,6 +56,28 @@
     {% endif %}
   </section>
 
+  {% if suggest_enabled or llm_enabled %}
+  <section class="panel panel-wide">
+    <h2>{{ icon("wand_stars") }} 整理の補助</h2>
+    <p class="muted">似ている文書から、置くフォルダと付けるタグの候補を出します。候補は提案だけで、移動やタグ付けはボタンを押したときに行います。</p>
+    <form method="post" action="/settings/prefs" class="form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% if suggest_enabled %}
+      <label class="check"><input type="checkbox" name="suggest_folders" value="1" {% if prefs.suggest_folders %}checked{% endif %}> フォルダの候補を出す</label>
+      <label class="check"><input type="checkbox" name="auto_move" value="1" {% if prefs.auto_move %}checked{% endif %}> おすすめのフォルダへ自動で移動する（Inbox と共有リンクで受け取った文書で、確かさが高いときだけ。元に戻せます）</label>
+      <label class="check"><input type="checkbox" name="suggest_tags" value="1" {% if prefs.suggest_tags %}checked{% endif %}> タグの候補を出す</label>
+      <label class="check"><input type="checkbox" name="auto_tag" value="1" {% if prefs.auto_tag %}checked{% endif %}> 似た文書の多くに付いているタグを自動で付ける</label>
+      {% else %}
+      {% for k in ["suggest_folders", "auto_move", "suggest_tags", "auto_tag"] %}{% if prefs[k] %}<input type="hidden" name="{{ k }}" value="1">{% endif %}{% endfor %}
+      {% endif %}
+      {% if llm_enabled %}
+      <label class="check"><input type="checkbox" name="show_summary" value="1" {% if prefs.show_summary %}checked{% endif %}> 自動で作った要約を表示する</label>
+      {% elif prefs.show_summary %}<input type="hidden" name="show_summary" value="1">{% endif %}
+      <div><button type="submit" class="btn btn-primary">保存</button></div>
+    </form>
+  </section>
+  {% endif %}
+
   {% if bookmarklet %}
   <section class="panel panel-wide">
     <h2>{{ icon("link") }} ブックマークレット（見ているページを保存）</h2>

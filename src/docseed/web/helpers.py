@@ -102,6 +102,7 @@ WARNING_TEXT = {
     "ocr_timeout": "{page} ページ目の文字の読み取りが時間切れになりました",
     "sheet_truncated": "シート「{sheet}」はセルが多いため、先頭 {cells} セルだけを検索の対象にしました",
     "webclip_text_short": "本文を取り出せませんでした（JavaScript で描くページなど）。タイトルと説明だけで検索できます",
+    "summary_timeout": "要約が {seconds} 秒以内に終わらなかったため、要約なしにしました",
     "thumbnail_failed": "サムネイル・プレビューを作れませんでした（文字の読み取りと検索には影響しません）",
 }
 

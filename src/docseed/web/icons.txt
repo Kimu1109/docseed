@@ -45,5 +45,8 @@ schedule
 passkey
 key
 pin
-# 整理の補助（Phase 9）。auto_awesome は今の Material Symbols に無いので、Phase 9 で候補・要約の印を選び直す
+# 整理の補助（Phase 9）。auto_awesome は今の Material Symbols に無いので、候補・要約の印は wand_stars にした
 label
+wand_stars
+check
+close

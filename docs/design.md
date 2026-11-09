@@ -255,7 +255,7 @@ docseed/
 | 6. 基盤の改善 | HTTPS 証明書の方式の切り替え（internal / file / tailscale / acme_dns）、アイコン（Material Symbols）、HEIC / AVIF、サムネイル・プレビュー | **実装済み**。iPhone の HEIC 写真が OCR・プレビューされる（[拡張機能](design/extensions.md) 2〜4 章）。Caddyfile は 4 方式とも CI で `caddy adapt` により展開を確かめる。Tailscale と DNS-01 での実際の証明書の取得は導入時に利用者の手元で確かめる |
 | 7. ログイン | パスキー、確認コード（TOTP）と復旧コード、OIDC（Google など）、再認証 | **実装済み**。パスキーだけでログインでき、2 段階認証を管理者が必須にできる（同 5 章）。パスキーは Chromium の仮想認証器で登録・ログインまで確認。実機の端末（iPhone・Android など）と Google での確認は導入時に利用者の手元で行う |
 | 8. Web クリップ | URL の取得（SSRF 対策つき）、OGP・Twitter カード・本文の取り出しと検索 | **実装済み**。URL を貼ると、タイトル・説明・本文で検索できる（同 6 章）。実際のインターネットのサイトからの取得は導入時に利用者の手元で確かめる |
-| 9. 整理の補助 | 埋め込みによるフォルダ・タグの候補、小型 LLM による要約 | 未着手。Inbox の文書におすすめのフォルダが出る。LLM のモデルは最初の計測で決める（同 7 章） |
+| 9. 整理の補助 | 埋め込みによるフォルダ・タグの候補、小型 LLM による要約 | **実装済み**。Inbox の文書におすすめのフォルダが出る（同 7 章）。LLM のモデルは sarashina2.2-1b（Q4_K_M）を仮の既定とし、Pi 5 での計測（`scripts/poc/bench_llm.py`）で決める。しきい値は `docseed eval-suggest` で実データから決める |
 
 ## 12. 未決事項・リスク
 
@@ -293,3 +293,4 @@ docseed/
 | 1.4 | 2026-11-09 | Phase 7 実装（パスキー、確認コード（TOTP）と復旧コード、OIDC、再認証、ログイン方法のリセット、2 段階認証の必須化、ログイン中の端末の一覧）。OIDC は Authlib ではなく joserfc（ID トークンの検証）と httpx（通信）で実装。マイグレーションは 0003（0002 は Phase 6 用に空けた） |
 | 1.5 | 2026-11-09 | Phase 6 実装（証明書の方式 tailscale / acme_dns と証明書の監視、Material Symbols のアイコン、HEIC / AVIF の読み込み、サムネイル・プレビューと画像の情報、位置情報つきの写真の共有の注意）。マイグレーション 0002。`PIPELINE_VERSION` は上げない（既存の形式の抽出は変わらないため。新しく読める HEIC / AVIF は `reprocess unsupported`、派生ファイルは `derive missing`） |
 | 1.6 | 2026-11-09 | Phase 8 実装（Web クリップ: fetcher、SSRF 対策つきの取得、OGP・Twitter カード・JSON-LD・oEmbed、trafilatura による本文の取り出し、og:image のサムネイル、再取得、ブックマークレット）。マイグレーション 0004。`PIPELINE_VERSION` は上げない |
+| 1.7 | 2026-11-09 | Phase 9 実装（埋め込みによるフォルダ・タグの候補と自動での適用、受け取り箱のおすすめとまとめての移動、llama-server による要約と新しいタグの提案、利用者の設定、管理画面の LLM の状態）。マイグレーション 0005。LLM のモデルとしきい値は仮の値で、実機と実データで決める |

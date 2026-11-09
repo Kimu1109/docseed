@@ -60,6 +60,13 @@ class Settings:
     webclip_enabled: bool = False     # DOCSEED_WEBCLIP_ENABLED
     webclip_max_mb: int = 5           # HTML の大きさの上限
     webclip_proxy: str = ""           # DOCSEED_WEBCLIP_PROXY
+    # 整理の補助（Phase 9、docs/design/extensions.md 7 章）
+    suggest_enabled: bool = True      # DOCSEED_SUGGEST_ENABLED（フォルダ・タグの候補）
+    llm_enabled: bool = False         # DOCSEED_LLM_ENABLED（要約と新しいタグの提案）
+    llm_url: str = "http://llm:8080"  # DOCSEED_LLM_URL（llama-server）
+    llm_model: str = "sarashina2.2-1b-instruct-v0.1-Q4_K_M.gguf"   # DOCSEED_LLM_MODEL（models/llm/ の GGUF）
+    llm_timeout_s: int = 180          # DOCSEED_LLM_TIMEOUT_S
+    llm_max_input_chars: int = 3000   # DOCSEED_LLM_MAX_INPUT_CHARS
     extra: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -146,6 +153,12 @@ class Settings:
             webclip_enabled=_bool(e.get("DOCSEED_WEBCLIP_ENABLED"), False),
             webclip_max_mb=int(e.get("DOCSEED_WEBCLIP_MAX_MB") or "5"),
             webclip_proxy=e.get("DOCSEED_WEBCLIP_PROXY", "").strip(),
+            suggest_enabled=_bool(e.get("DOCSEED_SUGGEST_ENABLED"), True),
+            llm_enabled=_bool(e.get("DOCSEED_LLM_ENABLED"), False),
+            llm_url=(e.get("DOCSEED_LLM_URL") or "http://llm:8080").rstrip("/"),
+            llm_model=e.get("DOCSEED_LLM_MODEL") or "sarashina2.2-1b-instruct-v0.1-Q4_K_M.gguf",
+            llm_timeout_s=int(e.get("DOCSEED_LLM_TIMEOUT_S") or "180"),
+            llm_max_input_chars=int(e.get("DOCSEED_LLM_MAX_INPUT_CHARS") or "3000"),
         )
 
 

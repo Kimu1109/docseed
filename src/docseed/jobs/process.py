@@ -33,9 +33,12 @@ class Context:
 
     def __init__(self, files_dir: Path, *, ocr_factory: Callable[[], OcrEngine],
                  embedder_factory: Callable[[], Embedder], dpi: int = 200, min_score: float = 0.5,
-                 between_pages: Callable[[], None] | None = None, data_dir: Path | None = None):
+                 between_pages: Callable[[], None] | None = None, data_dir: Path | None = None,
+                 suggest_enabled: bool = True, llm=None):
         self.files_dir = files_dir
         self.data_dir = data_dir or files_dir.parent   # 派生ファイルは <data_dir>/derived/
+        self.suggest_enabled = suggest_enabled         # フォルダ・タグの候補（Phase 9）
+        self.llm = llm                                 # 要約（LlmClient。無効なら None）
         self._ocr_factory = ocr_factory
         self._embedder_factory = embedder_factory
         self._ocr: OcrEngine | None = None
@@ -123,7 +126,47 @@ def process_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int, *, force_
     _set(conn, blob_id, status="ready", processed_at=now(), pipeline_version=PIPELINE_VERSION,
          embedding_model=ctx.embedder.model_name, progress_done=total,
          warnings=json.dumps(warnings, ensure_ascii=False) if warnings else None)
+    after_ready(conn, ctx, blob_id)
     return "ready"
+
+
+def after_ready(conn: sqlite3.Connection, ctx: Context, blob_id: int) -> None:
+    """整理の補助のジョブを積む（候補は受け取り箱などの文書だけ。要約は LLM が有効なら）。"""
+    from .. import llm, suggest
+    if ctx.suggest_enabled:
+        suggest.enqueue_for_blob(conn, blob_id)
+    if ctx.llm is not None:
+        s = llm.get_summary(conn, blob_id)
+        if s is None or s["outdated"]:
+            llm.enqueue_summary(conn, blob_id)
+
+
+def summarize_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int) -> str:
+    """要約と新しいタグの提案（LLM）。1 件の上限を超えたら要約なしにする（警告 summary_timeout）。"""
+    from .. import llm, suggest
+    if ctx.llm is None:
+        return "disabled"
+    inp = llm.summary_input(conn, blob_id)
+    if inp is None:
+        return "empty"
+    ctx.between_pages()          # 温度による一時停止は呼ぶ前に確かめる
+    try:
+        s = ctx.llm.summarize(*inp)
+    except llm.LlmTimeout as e:
+        row = conn.execute("SELECT warnings FROM blobs WHERE id = ?", (blob_id,)).fetchone()
+        warns = [w for w in json.loads(row[0] or "[]") if w.get("code") != "summary_timeout"]
+        warns.append({"code": "summary_timeout", "seconds": ctx.llm.timeout_s})
+        _set(conn, blob_id, warnings=json.dumps(warns, ensure_ascii=False))
+        log.warning("summarize blob=%s: %s", blob_id, e)
+        return "timeout"
+    llm.save_summary(conn, blob_id, s, ctx.llm.model)
+    tags = llm.merge_tags(conn, s.tags, ctx.embedder) if s.tags else []
+    for d in conn.execute("SELECT d.id, f.owner_id FROM documents d JOIN folders f ON f.id = d.folder_id"
+                          " WHERE d.blob_id = ? AND d.deleted_at IS NULL", (blob_id,)).fetchall():
+        if suggest.get_prefs(conn, d["owner_id"])["suggest_tags"]:
+            suggest.store(conn, d["id"], suggest.Result(), folders=False, tags=True, llm_tags=tags)
+    log.info("summarize blob=%s %sms tags=%s", blob_id, s.elapsed_ms, tags)
+    return "summarized"
 
 
 def webclip_info(conn: sqlite3.Connection, blob_id: int) -> dict | None:

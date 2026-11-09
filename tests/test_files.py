@@ -193,4 +193,4 @@ def test_audit_log(login, conn):
 def test_healthz(app):
     from fastapi.testclient import TestClient
     r = TestClient(app).get("/healthz")
-    assert r.status_code == 200 and r.json()["schema_version"] == 4
+    assert r.status_code == 200 and r.json()["schema_version"] == 5

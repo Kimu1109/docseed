@@ -469,3 +469,24 @@ mark { background: #ffe58a; color: inherit; padding: 0 1px; }
 .clip-body a { overflow-wrap: anywhere; }
 .clip-error { margin-top: 2px; padding-left: 46px; overflow-wrap: anywhere; }  /* 名前（36px の枠 + 間隔）の位置にそろえる */
 @media (max-width: 860px) { .clip-card { grid-template-columns: minmax(0, 1fr); } .clip-image { width: 100%; height: auto; max-height: 240px; } }
+
+/* 整理の補助 */
+.suggest-panel h2 .icon { color: var(--accent); }
+.suggest-panel h3 { font-size: 13px; color: var(--muted); margin: var(--s3) 0 var(--s2); }
+.summary-text { margin: 0 0 4px; line-height: 1.7; }
+.suggest-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.suggest-list li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.suggest-list .btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; justify-content: flex-start; }
+.suggest-tags { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-suggest { display: inline-flex; align-items: center; gap: 2px; border-style: dashed; }
+.tag-suggest form { display: inline; }
+.tag-suggest .linkish { display: inline-flex; align-items: center; gap: 2px; color: var(--ink); }
+.tag-suggest .icon { width: 14px; height: 14px; }
+.badge-reco { display: inline-block; padding: 0 6px; font-size: 12px; border: 1px solid var(--accent); color: var(--accent); }
+.result-summary { margin: 2px 0 6px; color: var(--muted); }
+.result-summary .icon { width: 14px; height: 14px; }
+.reco { display: flex; align-items: center; gap: 8px; margin-top: 4px; padding-left: 46px; color: var(--muted); }
+.reco label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reco-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s3);
+  padding: var(--s2) var(--s3); background: var(--surface); border: 1px solid var(--line); flex-wrap: wrap; }
+.auto-moves ul { margin: 4px 0 0; padding-left: 1.2em; }

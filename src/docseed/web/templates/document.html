@@ -50,6 +50,50 @@
   </section>
 
   <aside class="doc-side">
+    {% if sugg and (sugg.folders or sugg.tags or sugg.summary) %}
+    <section class="form-panel suggest-panel" aria-label="整理の候補">
+      <h2>{{ icon("wand_stars") }} 整理の候補</h2>
+      {% if sugg.summary %}
+        <p class="summary-text">{{ sugg.summary.summary }}</p>
+        <p class="muted small">自動で作った要約です（{{ sugg.summary.model }}）。誤りが含まれることがあります。{% if sugg.summary.outdated %}古い方法で作った要約です。{% endif %}</p>
+      {% endif %}
+      {% if sugg.folders %}
+        <h3>フォルダ</h3>
+        <ul class="suggest-list">
+        {% for f in sugg.folders %}
+          <li>
+            <form method="post" action="/d/{{ doc.id }}/suggestions/{{ f.id }}/accept">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-sm {% if f.recommended %}btn-primary{% endif %}" title="似ている文書があるフォルダです">{{ icon("drive_file_move") }}{{ f.path }} へ移動</button>
+            </form>
+            {% if f.recommended %}<span class="badge-reco">おすすめ</span>{% endif %}
+            <form method="post" action="/d/{{ doc.id }}/suggestions/{{ f.id }}/reject">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="linkish small" aria-label="{{ f.path }} の候補を却下">{{ icon("close") }}</button>
+            </form>
+          </li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+      {% if sugg.tags %}
+        <h3>タグ</h3>
+        <ul class="suggest-tags">
+        {% for t in sugg.tags %}
+          <li class="tag tag-suggest">
+            <form method="post" action="/d/{{ doc.id }}/suggestions/{{ t.id }}/accept">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="linkish" title="このタグを付ける">{{ icon("label") }}{{ t.name }}</button>
+            </form>
+            <form method="post" action="/d/{{ doc.id }}/suggestions/{{ t.id }}/reject">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="linkish" aria-label="タグ「{{ t.name }}」の候補を却下">{{ icon("close") }}</button>
+            </form>
+          </li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    </section>
+    {% endif %}
     <dl class="facts">
       <dt>状態</dt><dd><span class="status status-{{ doc.status }}">{{ icon(status_icon[doc.status]) }}{{ status_label[doc.status] }}{% if doc.status == "processing" and doc.progress_total %} {{ doc.progress_done }}/{{ doc.progress_total }}{% endif %}</span>
         {% if doc.status == "pending" %}<div class="muted small">文字の読み取りと検索の準備を待っています。</div>{% endif %}

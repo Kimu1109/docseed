@@ -77,3 +77,12 @@ def test_fetcher_service():
     assert "networks: [internal]" in worker     # worker は外部と通信しないまま
     for var in ("DOCSEED_WEBCLIP_ENABLED", "DOCSEED_WEBCLIP_MAX_MB", "DOCSEED_WEBCLIP_PROXY"):
         assert var in ENV_EXAMPLE
+
+
+def test_llm_service():
+    block = COMPOSE.split("\n  llm:", 1)[1].split("\n\n", 1)[0]
+    assert 'profiles: ["llm"]' in block and "networks: [internal]" in block   # 外部と通信しない
+    assert "ghcr.io/ggml-org/llama.cpp:server" in block and "--parallel" in block and "mem_limit: 2g" in block
+    assert "/models:ro" in block
+    for var in ("DOCSEED_SUGGEST_ENABLED", "DOCSEED_LLM_ENABLED", "DOCSEED_LLM_MODEL", "DOCSEED_LLM_TIMEOUT_S"):
+        assert var in ENV_EXAMPLE
