@@ -26,6 +26,16 @@
   <ol class="uploads-list" id="uploads-list"></ol>
 </section>
 <div class="dropzone" id="dropzone" hidden><div>ここにドロップして「{{ folder.name or "マイファイル" }}」にアップロード</div></div>
+<div class="selbar" id="selbar" hidden role="toolbar" aria-label="選択した項目の操作">
+  <span class="selbar-count" aria-live="polite"><b data-sel-count>0</b> 件を選択中</span>
+  <button type="button" class="btn btn-sm" data-sel-move>{{ icon("drive_file_move") }}移動</button>
+  <button type="button" class="btn btn-sm btn-danger-ghost" data-sel-delete>{{ icon("delete") }}ゴミ箱に移動</button>
+  <button type="button" class="linkish" data-sel-clear>選択を解除</button>
+  <span class="selbar-hint muted small">ドラッグしてフォルダやパンくずへ移動できます</span>
+</div>
+<form id="batch-form" hidden hx-target="#listing" hx-swap="outerHTML">
+  <input type="hidden" name="current" value="{{ folder.id }}">
+</form>
 {% endif %}
 
 {% include "_listing.html" %}

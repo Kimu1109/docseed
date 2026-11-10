@@ -63,6 +63,7 @@
 
     const mv = e.target.closest("[data-move]");
     if (mv) openItemDialog("dlg-move", mv.dataset.move, mv.dataset.name, (form) => {
+      setItemInputs(form, []);
       $("[data-move-name]", form).textContent = "「" + mv.dataset.name + "」を移動します";
       htmx.trigger($("select[name=target]", form), "load-targets");
     });
@@ -179,7 +180,7 @@
   setInterval(() => {
     const listing = $("#listing[data-has-pending]");
     if (!listing || document.hidden || uploading > 0) return;
-    if ($("details.rowmenu[open]") || $("dialog[open]")) return;
+    if ($("details.rowmenu[open]") || $("dialog[open]") || dragItems) return;
     htmx.trigger(listing, "refresh");
   }, 15000);
 
@@ -212,17 +213,26 @@
   window.addEventListener("dragleave", () => {
     if (!$("#upload-input")) return;
     dragDepth = Math.max(0, dragDepth - 1);
-    if (dragDepth === 0) $("#dropzone").hidden = true;
+    if (dragDepth === 0) { $("#dropzone").hidden = true; clearDropTarget(); }
   });
-  window.addEventListener("dragover", (e) => { if ($("#upload-input") && hasFiles(e)) e.preventDefault(); });
+  window.addEventListener("dragover", (e) => {
+    if (!$("#upload-input") || !hasFiles(e)) return;
+    e.preventDefault();
+    const row = e.target.closest?.("tr[data-drop]");
+    setDropTarget(row);
+    $("#dropzone").classList.toggle("dropzone-folder", !!row);
+  });
   window.addEventListener("drop", async (e) => {
     if (!$("#upload-input") || !hasFiles(e)) return;
     e.preventDefault();
     dragDepth = 0;
     $("#dropzone").hidden = true;
+    // フォルダの行の上で離したら、そのフォルダへアップロードする
+    const row = e.target.closest?.("tr[data-drop]");
+    clearDropTarget();
     const entries = Array.from(e.dataTransfer.items || []).map((it) => it.webkitGetAsEntry?.()).filter(Boolean);
     const items = entries.length ? await collectEntries(entries) : Array.from(e.dataTransfer.files).map((f) => ({ file: f, path: "" }));
-    if (items.length) startUploads(items);
+    if (items.length) startUploads(items, row?.dataset.drop, row?.dataset.name);
   });
 
   async function collectEntries(entries, prefix = "") {
@@ -245,15 +255,15 @@
     return out;
   }
 
-  function startUploads(items) {
+  function startUploads(items, toFolder, toName) {
     const input = $("#upload-input");
-    const folderId = input.dataset.folderId;
+    const folderId = toFolder || input.dataset.folderId;
     const panel = $("#uploads");
     const list = $("#uploads-list");
     panel.hidden = false;
     $("[data-uploads-close]").hidden = true;
     $("#uploads-title").textContent = "アップロード中";
-    const queue = items.map((it) => ({ ...it, row: addRow(list, it) }));
+    const queue = items.map((it) => ({ ...it, row: addRow(list, it, toName) }));
     let next = 0;
     let failed = 0;
     const worker = async () => {
@@ -274,11 +284,11 @@
     });
   }
 
-  function addRow(list, it) {
+  function addRow(list, it, into) {
     const li = document.createElement("li");
     const name = document.createElement("span");
     name.className = "up-name";
-    name.textContent = it.path || it.file.name;
+    name.textContent = (into ? into + "/" : "") + (it.path || it.file.name);
     const bar = document.createElement("progress");
     bar.max = 100; bar.value = 0;
     const state = document.createElement("span");
@@ -341,4 +351,247 @@
       xhr.send(fd);
     });
   }
+
+  // ---- エクスプローラー風の選択と、ドラッグ＆ドロップでの移動 -------------
+  // クリックで選択、Ctrl(⌘)+クリックで追加・解除、Shift+クリックで範囲選択、ダブルクリックで開く。
+  // 選んだ行をフォルダの行・パンくず・サイドの「マイファイル」へドラッグすると移動する。
+  // キー: Ctrl+A（すべて選択）、Esc（解除）、↑↓（Shift で範囲）、Enter（開く）、F2（名前を変更）、Delete（ゴミ箱へ）。
+  const DRAG_MIME = "application/x-docseed-items";
+  const INTERACTIVE = "a, button, input, select, textarea, label, summary, details";
+  const selected = new Set();   // "folder:12" / "document:34"
+  let anchor = null;            // Shift で範囲選択するときの起点
+  let cursor = null;            // 矢印キーで動かす現在位置
+  let dragItems = null;         // ドラッグ中の項目（dragover では dataTransfer の中身を読めないため持っておく）
+  let dropEl = null;
+
+  const listingEl = () => $("#listing");
+  const editable = () => !!$("#listing[data-can-edit]");
+  const itemRows = () => $$("#listing tr[data-item]");
+  const rowOf = (key) => itemRows().find((r) => r.dataset.item === key);
+  const selectedRows = () => itemRows().filter((r) => selected.has(r.dataset.item));
+  const describe = (rows) => (rows.length === 1 ? "「" + rows[0].dataset.name + "」" : rows.length + " 件");
+
+  function renderSelection() {
+    const rows = itemRows();
+    const keys = new Set(rows.map((r) => r.dataset.item));
+    // 一覧が描き直されたら、なくなった項目は選択から外す
+    for (const k of [...selected]) if (!keys.has(k)) selected.delete(k);
+    if (anchor && !keys.has(anchor)) anchor = null;
+    if (cursor && !keys.has(cursor)) cursor = null;
+    rows.forEach((r) => {
+      const on = selected.has(r.dataset.item);
+      r.classList.toggle("selected", on);
+      r.classList.toggle("cursor", on && r.dataset.item === cursor);
+      if (editable()) r.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    const bar = $("#selbar");
+    const show = selected.size > 0 && editable();
+    if (bar) {
+      bar.hidden = !show;
+      $("[data-sel-count]", bar).textContent = selected.size;
+    }
+    document.body.classList.toggle("has-selection", show);
+  }
+
+  function clearSelection() {
+    if (!selected.size) return;
+    selected.clear();
+    anchor = cursor = null;
+    renderSelection();
+  }
+
+  function selectItem(key, { toggle = false, range = false } = {}) {
+    const keys = itemRows().map((r) => r.dataset.item);
+    if (range && anchor && keys.includes(anchor)) {
+      const a = keys.indexOf(anchor), b = keys.indexOf(key);
+      if (!toggle) selected.clear();
+      keys.slice(Math.min(a, b), Math.max(a, b) + 1).forEach((k) => selected.add(k));
+    } else if (toggle) {
+      if (selected.has(key)) selected.delete(key); else selected.add(key);
+      anchor = key;
+    } else {
+      selected.clear();
+      selected.add(key);
+      anchor = key;
+    }
+    cursor = key;
+    renderSelection();
+  }
+
+  function openRow(row) {
+    const a = row && $("a.name", row);
+    if (a) location.href = a.href;
+  }
+
+  // 一括の操作は、画面に置いた隠しフォームを htmx で送る（CSRF のヘッダーとお知らせの扱いを揃えるため）
+  function setItemInputs(form, keys) {
+    $$("input[name=item]", form).forEach((i) => i.remove());
+    for (const k of keys) {
+      const i = document.createElement("input");
+      i.type = "hidden"; i.name = "item"; i.value = k;
+      form.append(i);
+    }
+  }
+  function submitBatch(url, keys, target) {
+    const form = $("#batch-form");
+    if (!form || !keys.length) return;
+    setItemInputs(form, keys);
+    let t = $("input[name=target]", form);
+    if (!t) {
+      t = document.createElement("input");
+      t.type = "hidden"; t.name = "target";
+      form.append(t);
+    }
+    t.value = target ?? "";
+    t.disabled = target == null;
+    form.setAttribute("hx-post", url);
+    htmx.process(form);
+    form.requestSubmit();
+  }
+
+  function deleteSelected() {
+    const rows = selectedRows();
+    if (!rows.length) return;
+    const hasFolder = rows.some((r) => r.dataset.item.startsWith("folder:"));
+    if (!confirm(describe(rows) + "をゴミ箱に移動しますか？" + (hasFolder ? "（フォルダは中身ごと移動します）" : ""))) return;
+    submitBatch("/x/items/delete", rows.map((r) => r.dataset.item));
+  }
+
+  document.addEventListener("htmx:afterSettle", renderSelection);
+
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("[data-sel-clear]")) { clearSelection(); return; }
+    if (e.target.closest("[data-sel-delete]")) { deleteSelected(); return; }
+    if (e.target.closest("[data-sel-move]")) {
+      const rows = selectedRows();
+      if (rows.length) openItemDialog("dlg-move", "/x/items/move", "", (form) => {
+        setItemInputs(form, rows.map((r) => r.dataset.item));
+        $("[data-move-name]", form).textContent = describe(rows) + "を移動します";
+        htmx.trigger($("select[name=target]", form), "load-targets");
+      });
+      return;
+    }
+
+    const listing = listingEl();
+    if (!listing || !editable() || e.button !== 0) return;
+    if (e.target.closest("dialog, .selbar, .reco, .reco-bar, .auto-moves, .uploads")) return;
+    const mod = e.ctrlKey || e.metaKey;
+    const row = e.target.closest("tr[data-item]");
+    if (!row || !listing.contains(row)) {
+      // 一覧の外の空いたところをクリックしたら選択を外す
+      if (e.target.closest("#main") && !e.target.closest(INTERACTIVE) && !mod && !e.shiftKey) clearSelection();
+      return;
+    }
+    const control = e.target.closest(INTERACTIVE);
+    if (control && !(control.matches("a.name") && (mod || e.shiftKey))) return; // 名前のリンクは今までどおり開く
+    if (control) e.preventDefault(); // Ctrl/Shift + 名前のクリックは選択に使う
+    selectItem(row.dataset.item, { toggle: mod, range: e.shiftKey });
+  });
+
+  document.addEventListener("dblclick", (e) => {
+    const row = e.target.closest("#listing tr[data-item]");
+    if (!row || e.target.closest(INTERACTIVE)) return;
+    window.getSelection()?.removeAllRanges();
+    openRow(row);
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (!listingEl() || !editable() || e.altKey) return;
+    const t = e.target;
+    if (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName) || $("dialog[open]")) return;
+    const keys = itemRows().map((r) => r.dataset.item);
+    if (!keys.length) return;
+    const mod = e.ctrlKey || e.metaKey;
+    const key = e.key;
+    if (mod && key.toLowerCase() === "a") {
+      e.preventDefault();
+      keys.forEach((k) => selected.add(k));
+      cursor = cursor || keys[0];
+      renderSelection();
+      return;
+    }
+    if (key === "Escape") { clearSelection(); return; }
+    if (key === "ArrowDown" || key === "ArrowUp") {
+      if (t.closest?.("details[open]")) return;
+      e.preventDefault();
+      const i = keys.indexOf(cursor);
+      const step = key === "ArrowDown" ? 1 : -1;
+      const j = i < 0 ? (step > 0 ? 0 : keys.length - 1) : Math.max(0, Math.min(keys.length - 1, i + step));
+      selectItem(keys[j], { range: e.shiftKey });
+      rowOf(keys[j])?.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    if (!selected.size || t.closest?.(INTERACTIVE)) return;
+    const rows = selectedRows();
+    if (key === "Enter" && rows.length === 1) { e.preventDefault(); openRow(rows[0]); }
+    else if (key === "Delete" || (key === "Backspace" && e.metaKey)) { e.preventDefault(); deleteSelected(); }
+    else if (key === "F2" && rows.length === 1) { e.preventDefault(); $("[data-rename]", rows[0])?.click(); }
+  });
+
+  function setDropTarget(el) {
+    if (dropEl === el) return;
+    dropEl?.classList.remove("drop-target");
+    dropEl = el || null;
+    dropEl?.classList.add("drop-target");
+  }
+  function clearDropTarget() { setDropTarget(null); }
+
+  function dragGhost(rows) {
+    let g = $("#drag-ghost");
+    if (!g) {
+      g = document.createElement("div");
+      g.id = "drag-ghost";
+      g.className = "drag-ghost";
+      g.setAttribute("aria-hidden", "true");
+      document.body.append(g);
+    }
+    g.textContent = rows.length === 1 ? rows[0].dataset.name : rows.length + " 項目を移動";
+    return g;
+  }
+
+  document.addEventListener("dragstart", (e) => {
+    const row = e.target.closest?.("#listing[data-can-edit] tr[data-item][draggable=true]");
+    if (!row) return;
+    // 選んでいない行をつかんだら、その行だけを選び直す（Explorer と同じ）
+    if (!selected.has(row.dataset.item)) selectItem(row.dataset.item);
+    const rows = selectedRows();
+    dragItems = rows.map((r) => r.dataset.item);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData(DRAG_MIME, JSON.stringify(dragItems));
+    e.dataTransfer.setData("text/plain", rows.map((r) => r.dataset.name).join("\n"));
+    e.dataTransfer.setDragImage(dragGhost(rows), 14, 14);
+    // ドラッグの開始を描き終えてから薄くする（すぐ変えると Chrome で開始が取り消されることがある）
+    requestAnimationFrame(() => rows.forEach((r) => r.classList.add("dragging")));
+  });
+
+  function internalDropTarget(e) {
+    const el = e.target.closest?.("[data-drop]");
+    if (!el || !dragItems) return null;
+    const id = el.dataset.drop;
+    if (dragItems.includes("folder:" + id)) return null;      // 自分自身の中へは移動しない
+    if (id === listingEl()?.dataset.folderId) return null;    // 今いるフォルダ
+    return el;
+  }
+  document.addEventListener("dragover", (e) => {
+    if (!dragItems) return;
+    const el = internalDropTarget(e);
+    setDropTarget(el);
+    if (el) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+    }
+  });
+  document.addEventListener("drop", (e) => {
+    if (!dragItems) return;
+    const el = internalDropTarget(e);
+    clearDropTarget();
+    if (!el) return;
+    e.preventDefault();
+    submitBatch("/x/items/move", dragItems, el.dataset.drop);
+  });
+  document.addEventListener("dragend", () => {
+    dragItems = null;
+    clearDropTarget();
+    $$("#listing tr.dragging").forEach((r) => r.classList.remove("dragging"));
+  });
 })();

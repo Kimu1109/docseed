@@ -4,6 +4,6 @@
     {%- set label = c.name or ("マイファイル" if owner is not defined or owner.id == user.id else owner.display_name ~ " さんのファイル") %}
     {%- if not loop.first %}<span class="sep" aria-hidden="true">/</span>{% endif %}
     {%- if loop.last and not link_last %}<span aria-current="page">{{ label }}</span>
-    {%- else %}<a href="/f/{{ c.id }}">{{ label }}</a>{% endif %}
+    {%- else %}<a href="/f/{{ c.id }}" data-drop="{{ c.id }}">{{ label }}</a>{% endif %}
   {%- endfor %}
 </nav>

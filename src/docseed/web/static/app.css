@@ -492,3 +492,29 @@ mark { background: #ffe58a; color: inherit; padding: 0 1px; }
 .reco-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s3);
   padding: var(--s2) var(--s3); background: var(--surface); border: 1px solid var(--line); flex-wrap: wrap; }
 .auto-moves ul { margin: 4px 0 0; padding-left: 1.2em; }
+
+/* ---- 選択とドラッグ＆ドロップでの移動（エクスプローラー風） ------------- */
+#listing[data-can-edit] .files tbody tr[data-item] { -webkit-user-select: none; user-select: none; }
+.files tbody tr.selected, .files tbody tr.selected:hover { background: var(--accent-soft); }
+.files tbody tr.cursor td { box-shadow: inset 0 1px 0 var(--accent), inset 0 -1px 0 var(--accent); }
+.files tbody tr.dragging { opacity: .45; }
+.files tbody tr.drop-target, .files tbody tr.drop-target:hover { background: var(--accent-soft); }
+.files tbody tr.drop-target td { box-shadow: inset 0 2px 0 var(--accent), inset 0 -2px 0 var(--accent); }
+.files tbody tr.drop-target td:last-child { box-shadow: inset 0 2px 0 var(--accent), inset 0 -2px 0 var(--accent), inset -2px 0 0 var(--accent); }
+.crumbs a.drop-target, .side > a.drop-target { background: var(--accent-soft); color: var(--accent);
+  outline: 2px solid var(--accent); outline-offset: 1px; text-decoration: none; }
+.dropzone.dropzone-folder { background: transparent; border-color: transparent; }
+.dropzone.dropzone-folder div { display: none; }
+.drag-ghost { position: fixed; top: -1000px; left: 0; max-width: 320px; padding: 6px 12px; background: var(--accent);
+  color: var(--accent-ink); font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.selbar { position: fixed; z-index: 40; left: calc(var(--side-w) + var(--s6)); right: var(--s6); bottom: var(--s4);
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); padding: var(--s2) var(--s3);
+  background: var(--surface); border: 1px solid var(--ink); border-left: 3px solid var(--accent); }
+.selbar-count { margin-right: var(--s2); }
+.selbar-hint { margin-left: auto; }
+body.has-selection .toast { bottom: 80px; }
+body.has-selection .main { padding-bottom: 96px; }
+@media (max-width: 860px) {
+  .selbar { left: var(--s4); right: var(--s4); }
+  .selbar-hint { display: none; }
+}

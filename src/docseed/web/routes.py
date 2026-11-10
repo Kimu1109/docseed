@@ -35,7 +35,7 @@ from ..deps import (
     require_auth,
     require_session,
 )
-from ..errors import AppError
+from ..errors import AppError, ValidationFailed
 from ..files import can_preview, image_src
 from ..storage import BlobStore
 from . import helpers as h
@@ -420,6 +420,85 @@ def doc_delete(item_id: int, request: Request, current: int = Form(...),
                conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
     dm.delete_document(conn, auth.user, item_id, ip=client_ip(request))
     return render_listing(request, conn, auth, current, "ゴミ箱に移動しました")
+
+
+def _parse_items(form) -> list[tuple[str, int]]:
+    """item=folder:12 / item=document:34 の並び（重複は除く・順序は保つ）。"""
+    out: list[tuple[str, int]] = []
+    for v in form.getlist("item"):
+        kind, _, num = str(v).partition(":")
+        if kind in ("folder", "document") and num.isdigit() and (kind, int(num)) not in out:
+            out.append((kind, int(num)))
+    return out
+
+
+def _batch_message(done: int, verb: str, errors: list[str]) -> str:
+    if not errors:
+        return f"{done} 件を{verb}しました"
+    first = errors[0] + (f" ほか {len(errors) - 1} 件" if len(errors) > 1 else "")
+    if not done:
+        return first
+    return f"{done} 件を{verb}しました（{len(errors)} 件はできませんでした: {first}）"
+
+
+@router.post("/x/items/move", response_class=HTMLResponse)
+async def items_move(request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                     auth: Auth = Depends(require_auth)):
+    """選んだフォルダ・文書をまとめて移動する（ドラッグ＆ドロップ・一括の「移動」）。"""
+    form = await request.form()
+    try:
+        target, current = int(form.get("target", "")), int(form.get("current", ""))
+    except ValueError:
+        raise ValidationFailed("移動先を指定してください") from None
+    items = _parse_items(form)
+    if not items:
+        raise ValidationFailed("移動するものを選んでください")
+    moved, errors = 0, []
+    for kind, item_id in items:
+        if kind == "folder" and item_id == target:
+            continue  # 自分自身へのドロップは何もしない
+        try:
+            if kind == "folder":
+                if fo.get_folder_row(conn, item_id)["parent_id"] == target:
+                    continue
+                fo.update_folder(conn, auth.user, item_id, parent_id=target)
+            else:
+                dm.update_document(conn, auth.user, item_id, folder_id=target)
+            moved += 1
+        except AppError as e:
+            errors.append(e.detail)
+    if not moved and not errors:
+        return render_listing(request, conn, auth, current)
+    if not moved:
+        return render_error(request, 400, _batch_message(0, "移動", errors))
+    return render_listing(request, conn, auth, current, _batch_message(moved, "移動", errors))
+
+
+@router.post("/x/items/delete", response_class=HTMLResponse)
+async def items_delete(request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                       auth: Auth = Depends(require_auth)):
+    """選んだフォルダ・文書をまとめてゴミ箱へ移動する。"""
+    form = await request.form()
+    try:
+        current = int(form.get("current", ""))
+    except ValueError:
+        raise ValidationFailed("現在のフォルダを指定してください") from None
+    items = _parse_items(form)
+    if not items:
+        raise ValidationFailed("ゴミ箱に移動するものを選んでください")
+    deleted, errors = 0, []
+    for kind, item_id in items:
+        try:
+            if kind == "folder":
+                fo.delete_folder(conn, auth.user, item_id)
+            else:
+                dm.delete_document(conn, auth.user, item_id, ip=client_ip(request))
+            deleted += 1
+        except AppError as e:
+            errors.append(e.detail)
+    if not deleted:
+        return render_error(request, 400, _batch_message(0, "ゴミ箱に移動", errors))
+    return render_listing(request, conn, auth, current, _batch_message(deleted, "ゴミ箱に移動", errors))
 
 
 @router.get("/x/folders/{folder_id}/targets", response_class=HTMLResponse)

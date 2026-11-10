@@ -194,3 +194,57 @@ def test_healthz(app):
     from fastapi.testclient import TestClient
     r = TestClient(app).get("/healthz")
     assert r.status_code == 200 and r.json()["schema_version"] == 5
+
+
+def test_batch_move_and_delete_from_listing(login, conn):
+    """一覧のドラッグ＆ドロップ・複数選択からの一括の移動と削除（/x/items/*）。"""
+    alice = login("alice")
+    hx = {"HX-Request": "true", "HX-Target": "listing"}
+    a = alice.post("/api/v1/folders", json={"parent_id": alice.root, "name": "A"}).json()
+    b = alice.post("/api/v1/folders", json={"parent_id": alice.root, "name": "B"}).json()
+    child = alice.post("/api/v1/folders", json={"parent_id": a["id"], "name": "子"}).json()
+    d1 = alice.upload(alice.root, {"1.txt": b"one"}).json()["results"][0]["document"]
+    d2 = alice.upload(alice.root, {"2.txt": b"two"}).json()["results"][0]["document"]
+
+    r = alice.post("/x/items/move", headers=hx, data={
+        "item": [f"document:{d1['id']}", f"document:{d2['id']}", f"folder:{a['id']}"],
+        "target": str(b["id"]), "current": str(alice.root)})
+    assert r.status_code == 200 and "3 件を移動しました" in r.text
+    assert 'id="listing"' in r.text
+    folder_of = lambda i: conn.execute("SELECT folder_id FROM documents WHERE id = ?", (i,)).fetchone()[0]  # noqa: E731
+    assert folder_of(d1["id"]) == b["id"] and folder_of(d2["id"]) == b["id"]
+    assert conn.execute("SELECT parent_id FROM folders WHERE id = ?", (a["id"],)).fetchone()[0] == b["id"]
+
+    # 自分の配下へは移動できない（一覧は差し替えず、お知らせだけ）
+    r = alice.post("/x/items/move", headers=hx, data={
+        "item": [f"folder:{b['id']}"], "target": str(child["id"]), "current": str(alice.root)})
+    assert r.headers.get("HX-Reswap") == "none" and "自分自身の中" in r.text
+
+    # 一部だけ失敗した場合は、できた分を移動して件数を知らせる
+    alice.upload(alice.root, {"1.txt": b"other"})
+    r = alice.post("/x/items/move", headers=hx, data={
+        "item": [f"folder:{a['id']}", f"document:{d1['id']}"], "target": str(alice.root), "current": str(b["id"])})
+    assert "1 件を移動しました（1 件はできませんでした" in r.text
+
+    # ほかの人のものは移動・削除できない
+    bob = login("bob")
+    r = bob.post("/x/items/move", headers=hx, data={
+        "item": [f"document:{d2['id']}"], "target": str(bob.root), "current": str(bob.root)})
+    assert r.headers.get("HX-Reswap") == "none"
+    assert folder_of(d2["id"]) == b["id"]
+
+    r = alice.post("/x/items/delete", headers=hx, data={
+        "item": [f"document:{d2['id']}", f"folder:{a['id']}"], "current": str(b["id"])})
+    assert "2 件をゴミ箱に移動しました" in r.text
+    assert conn.execute("SELECT deleted_at FROM documents WHERE id = ?", (d2["id"],)).fetchone()[0]
+    assert conn.execute("SELECT deleted_at FROM folders WHERE id = ?", (child["id"],)).fetchone()[0]
+
+
+def test_listing_marks_rows_for_drag_and_drop(login):
+    alice = login("alice")
+    f = alice.post("/api/v1/folders", json={"parent_id": alice.root, "name": "A"}).json()
+    d = alice.upload(alice.root, {"1.txt": b"one"}).json()["results"][0]["document"]
+    html = alice.get(f"/f/{alice.root}").text
+    assert f'data-item="folder:{f["id"]}"' in html and f'data-drop="{f["id"]}"' in html
+    assert f'data-item="document:{d["id"]}"' in html and 'draggable="true"' in html
+    assert 'id="batch-form"' in html and 'id="selbar"' in html

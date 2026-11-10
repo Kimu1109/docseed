@@ -38,7 +38,7 @@
 </header>
 <div class="shell">
   <nav class="side" id="side" aria-label="メイン">
-    <a href="/f/{{ root_id }}" {% if nav == 'files' %}aria-current="page"{% endif %}>{{ icon("folder") }}マイファイル</a>
+    <a href="/f/{{ root_id }}" data-drop="{{ root_id }}" {% if nav == 'files' %}aria-current="page"{% endif %}>{{ icon("folder") }}マイファイル</a>
     <a href="/search" {% if nav == 'search' %}aria-current="page"{% endif %}>{{ icon("search") }}検索</a>
     <a href="/shared" {% if nav == 'shared' %}aria-current="page"{% endif %}>{{ icon("folder_shared") }}共有されたフォルダ</a>
     <a href="/trash" {% if nav == 'trash' %}aria-current="page"{% endif %}>{{ icon("delete") }}ゴミ箱</a>
