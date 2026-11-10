@@ -664,7 +664,7 @@ CREATE INDEX idx_web_clips_canonical ON web_clips(canonical_url);
 > - **古い候補の片付け**: 手で移動したらフォルダの候補、手でタグを変えたらタグの候補を消す（7.7 では「その文書の open の候補を消す」）。候補を採用したときは、もう片方の種類の候補は残す。
 > - **自動での移動**はルート直下の文書には行わない（Inbox と共有リンクからの受け取りだけ）。お知らせは Inbox の一覧の上に「自動で移動した文書」として出し、「元に戻す」で戻せる（戻したら、その移動先は却下した候補にする）。
 > - **アイコン**: `auto_awesome` は今の Material Symbols に無いので、候補・要約の印は `wand_stars` にした。
-> - **LLM**: 公式の `ghcr.io/ggml-org/llama.cpp:server` が arm64 を配布していることを確かめたので、そのイメージを使う（`DOCSEED_LLM_IMAGE` で変更可）。モデルは `docseed fetch-models --llm <名前>`（`huggingface_hub` で GGUF を取得。tools イメージは要らない）。既定は第一候補の sarashina2.2-1b（Q4_K_M、MIT）を**仮に**置き、Pi 5 での計測（`scripts/poc/bench_llm.py`）で決め直す。
+> - **LLM**: 公式の `ghcr.io/ggml-org/llama.cpp:server` が arm64 を配布していることを確かめたので、そのイメージを使う（`DOCSEED_LLM_IMAGE` で変更可）。モデルは `docseed fetch-models --llm <名前>`（`huggingface_hub` で GGUF を取得。tools イメージは要らない）。既定は第一候補の sarashina2.2-1b（Q4_K_M、MIT）を**仮に**置き、Pi 5 での計測（`scripts/bench_llm.sh`）で決め直す。
 > - **プロンプトの注入への対策**: 本文の中の `<document>` / `</document>` は取り除いてから囲む（囲みを抜けられないように）。
 > - **llama-server の呼び方（Pi 5 での試験の後に変更）**: チャットの API（`/v1/chat/completions`）に `response_format` で JSON スキーマを付けると、llama-server（b12211）が返答を解釈し直す段階で「想定の形式（peg-native）と合わない」として 500 を返した（sarashina2.2-1b）。そこで `/apply-template`（モデル自身のテンプレートで文章を組み立てる）と `/completion`（`json_schema` で縛って続きを書かせる。返答を解釈し直さない）の組み合わせに変えた。
 > - **日本語で書かせる**: JSON のキーが英語（`summary`・`tags`）だと、小さなモデルは英語で要約した。キーを日本語（`要約`・`タグ`）にし、system と依頼の両方に「必ず日本語で」と書き、それでも要約に日本語の文字が無ければ 1 回だけ頼み直す。出力の最後に文字として出る `</s>` などは取り除く。`SUMMARY_VERSION` を 2 にした。
@@ -735,7 +735,7 @@ CREATE INDEX idx_web_clips_canonical ON web_clips(canonical_url);
 
 **モデル**
 
-Phase 9 の最初に、次の候補を Pi 5 で計測して決める（`scripts/poc/bench_llm.py`。速さ、メモリ、自分の文書 20〜30 件での要約の出来を目視で比べる）。
+Phase 9 の最初に、次の候補を Pi 5 で計測して決める（`scripts/bench_llm.sh`。モデルごとに llama-server を本番と同じ設定で起動し、速さ、メモリ、自分の文書 20〜30 件での要約の出来を 1 つの比較表にする。出来は目視で比べる）。
 
 | 候補 | ライセンス | 量子化 | 備考 |
 |---|---|---|---|
@@ -911,13 +911,13 @@ Document の表現に `kind` と、Web クリップなら `webclip: {url, canoni
 | SSRF | 名前がプライベートな IP に解決される場合、グローバルからプライベートへのリダイレクト、DNS リバインディング（1 回目と 2 回目で違う IP を返す偽の resolver）、許可していないポート、5MB 超、Content-Type の偽装 |
 | メタデータ | OGP・Twitter カード・JSON-LD・oEmbed の HTML のサンプルから期待する値が取れること |
 | フォルダの候補 | 合成した文書とフォルダで、似た文書のあるフォルダが 1 位になること、他人のフォルダが出ないこと。実データでの精度は `scripts/eval_suggest.py` |
-| 要約 | LLM はスタブに差し替えて、JSON の解釈・タイムアウト・タグの置き換え（表記ゆれ）を確かめる。モデルの出来は `bench_llm.py` と目視 |
+| 要約 | LLM はスタブに差し替えて、JSON の解釈・タイムアウト・タグの置き換え（表記ゆれ）を確かめる。モデルの出来は `scripts/bench_llm.sh` の比較表と目視（スクリプトの流れは偽の docker で確かめる） |
 
 ## 11. 未決事項
 
 | 項目 | 内容 | 決める時期 |
 |---|---|---|
-| LLM のモデル | 7.4 の候補から、Pi 5 での速さと要約の出来で決める | Phase 9 の最初（**実装時点では未計測**。sarashina2.2-1b を仮の既定にし、`scripts/poc/bench_llm.py` で計測して決める） |
+| LLM のモデル | 7.4 の候補から、Pi 5 での速さと要約の出来で決める | Phase 9 の最初（**実装時点では未計測**。sarashina2.2-1b を仮の既定にし、`scripts/bench_llm.sh` で計測して決める） |
 | 候補のしきい値 | 7.2・7.3 の仮の値を `eval_suggest.py` で決める | Phase 9（**実装時点では仮の値のまま**。実データがたまったら `docseed eval-suggest` で決める） |
 | RAM 8GB での LLM | 1B のモデルでメモリが足りるか。足りなければ 0.6B にするか、llm サービスを処理待ちがあるときだけ起動する | Phase 9（未計測。README では 8GB なら `qwen3-0.6b` を案内している） |
 | `llama-server` の arm64 イメージ | 公式のイメージが arm64 を配布しているか | **解決**: `ghcr.io/ggml-org/llama.cpp:server` は linux/arm64 を配布している |
