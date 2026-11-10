@@ -351,7 +351,35 @@ docker compose up -d
 | `qwen3-1.7b` | Apache-2.0 | |
 | `qwen3-0.6b` | Apache-2.0 | RAM 8GB 向け |
 
-要約は 1 件ずつ、ほかの処理（アップロード・再処理）が無いときだけ行います。1 件 180 秒（`DOCSEED_LLM_TIMEOUT_S`）を超えたら、その文書は要約なしにします。モデルを比べるときは `scripts/poc/bench_llm.py` で、速さと要約の出来（自分の文書 20〜30 件）を確かめてください。
+要約は 1 件ずつ、ほかの処理（アップロード・再処理）が無いときだけ行います。1 件 180 秒（`DOCSEED_LLM_TIMEOUT_S`）を超えたら、その文書は要約なしにします。
+
+#### モデルを比べる
+
+自分の文書で、モデルごとの速さ・メモリ・要約の出来を 1 回のコマンドで比べられます（Pi の上で、リポジトリの中から実行）。
+
+```bash
+scripts/bench_llm.sh sarashina2.2-1b qwen3-1.7b lfm2.5-1.2b-jp   # 名前で選ぶ（未取得なら取得する）
+scripts/bench_llm.sh                                            # models/llm/ にある GGUF を全部比べる
+```
+
+これだけで次を行います。
+
+1. 比べる文書を書き出す（初回だけ。新しい文書から 30 件を `/srv/docseed/bench/docs` に。本文が 100 字未満の文書と、同じ内容のファイルは除く）
+2. 計測の間だけ worker と llm を止める（CPU とメモリを取り合わないように。終わると、Ctrl+C で止めても、起動し直す）
+3. モデルごとに llama-server を本番と同じ設定（`.env` のスレッド数・コンテキスト 4096・メモリ 2GB）で起動し、全文書を要約して時間とメモリを測る
+4. 比較表 `/srv/docseed/bench/llm-<日時>/report.md` を作る
+
+比較表の先頭には、モデルごとの平均・中央値・最大の秒数、失敗と頼み直しの件数、最大のメモリと、条件（1 件 90 秒以内・メモリ 2GB 以内）を満たすかが並びます。その下に文書ごとに各モデルの要約とタグが並ぶので、本文に無いことを書いていないかを見比べて「誤り」の欄に印を付けてください（20 件中 2 件以下が目安）。
+
+| オプション | 内容 |
+|---|---|
+| `--limit N` / `--username NAME` | 書き出す文書の数（既定 30）／そのユーザーの文書だけにする |
+| `--refresh-docs` | 文書を書き出し直す（既定では前回の文書を使い回すので、モデルを後から足しても同じ文書で比べられる） |
+| `--docs DIR` | 手で用意したテキスト（`.txt`）で比べる |
+| `--out DIR` | 前回の結果のディレクトリを渡すと、そこにモデルを足して比較表を作り直す |
+| `--threads N` / `--mem 3g` / `--timeout S` | llama-server のスレッド数・メモリの上限・1 件の上限を変えて試す |
+
+要約には文書の内容が入るので、結果はリポジトリではなくデータディレクトリに置きます。共有するときは先頭の表だけにしてください。
 
 ## 写真（HEIC など）とサムネイル
 
@@ -506,6 +534,7 @@ API の仕様は起動後に `/api/docs` で確認できます（ログインが
 | `docseed worker` | 文字の読み取り（OCR）と埋め込みの処理を行う |
 | `docseed fetch-models` | OCR と埋め込みのモデルを取得する（`.[tools]` が必要） |
 | `docseed fetch-models --llm NAME` | 要約に使う LLM（GGUF）を `models/llm/` に取得する |
+| `docseed export-texts --out DIR` | LLM の比較（`scripts/bench_llm.sh`）に使う文書のテキストを書き出す（`--limit`・`--username`） |
 | `docseed eval-suggest --username NAME` | フォルダの候補のしきい値を、分類済みの文書で評価する |
 | `docseed fetcher` | URL の取り込み（Web クリップ）の取得を行う（`DOCSEED_WEBCLIP_ENABLED=true` のとき。compose の profile `webclip`） |
 | `docseed derive missing\|all` | 画像・PDF のサムネイルとプレビューを作る（`all` は作り直す。文字の読み取りはやり直さない） |

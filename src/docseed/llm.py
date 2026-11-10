@@ -23,6 +23,7 @@ import re
 import sqlite3
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 
@@ -277,6 +278,52 @@ def merge_tags(conn: sqlite3.Connection, tags: list[str], embedder) -> list[str]
         if name.lower() not in {x.lower() for x in out}:
             out.append(name)
     return out
+
+
+def export_texts(conn: sqlite3.Connection, out_dir: Path, *, limit: int = 30,
+                 user_id: int | None = None) -> list[Path]:
+    """モデルの比較（scripts/bench_llm.sh）に使う文書のテキストを、1 文書 1 ファイルで書き出す。
+
+    要約と同じ入力（summary_input: 本文が短すぎる文書は除く）を、新しい文書から limit 件。
+    同じ内容のファイルは 1 件だけ。1 行目はタイトル（「# 」で始まる）、2 行目から本文。
+    """
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    sql = ("SELECT b.id AS blob_id, max(d.id) AS doc_id FROM documents d JOIN blobs b ON b.id = d.blob_id"
+           " WHERE d.deleted_at IS NULL AND b.status = 'ready'")
+    args: list = []
+    if user_id is not None:
+        sql += " AND d.created_by = ?"
+        args.append(user_id)
+    sql += " GROUP BY b.id ORDER BY doc_id DESC"
+    written = []
+    for r in conn.execute(sql, args):
+        if len(written) >= limit:
+            break
+        inp = summary_input(conn, r["blob_id"])
+        if inp is None:
+            continue
+        title, desc, text = inp
+        head = f"# {title}\n" + (f"# {desc}\n" if desc else "")
+        name = re.sub(r"[^\w.-]+", "_", re.sub(r"\.\w{1,5}$", "", title))[:60].strip("_.") or "document"
+        f = out / f"{r['doc_id']:05d}-{name}.txt"
+        f.write_text(head + text, encoding="utf-8")
+        written.append(f)
+    return written
+
+
+def read_exported(path: Path) -> tuple[str, str | None, str]:
+    """export_texts の書き出したファイルを (タイトル, 説明, 本文) に戻す。
+
+    「# 」で始まらないファイル（手で用意したテキスト）は、ファイル名をタイトルにする。
+    """
+    p = Path(path)
+    lines = p.read_text(encoding="utf-8", errors="replace").split("\n")
+    meta = []
+    while lines and lines[0].startswith("# ") and len(meta) < 2:
+        meta.append(lines.pop(0)[2:])
+    title = meta[0] if meta else p.stem
+    return title, (meta[1] if len(meta) > 1 else None), "\n".join(lines)
 
 
 def llm_stats(conn: sqlite3.Connection) -> dict:

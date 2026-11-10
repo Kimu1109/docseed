@@ -125,6 +125,22 @@ def cmd_fetch_models(args: argparse.Namespace) -> None:
     fetch_all(Settings.from_env(), force=args.force)
 
 
+def cmd_export_texts(args: argparse.Namespace) -> None:
+    from .llm import export_texts
+    from .users import find_by_username
+    conn = _conn(Settings.from_env())
+    uid = None
+    if args.username:
+        u = find_by_username(conn, args.username)
+        if u is None:
+            sys.exit(f"ユーザー「{args.username}」が見つかりません")
+        uid = u["id"]
+    files = export_texts(conn, args.out, limit=args.limit, user_id=uid)
+    if not files:
+        sys.exit("書き出せる文書がありません（処理済みで、本文が 100 字以上の文書が必要です）")
+    print(f"{len(files)} 件を {args.out} に書き出しました")
+
+
 def cmd_derive(args: argparse.Namespace) -> None:
     from .reprocess import enqueue_derive
     conn = _conn(Settings.from_env())
@@ -270,6 +286,12 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--force", action="store_true", help="取得済みでも取り直す")
     s.add_argument("--llm", metavar="NAME", help="要約に使う LLM（GGUF）だけを取得する（例 sarashina2.2-1b）")
     s.set_defaults(func=cmd_fetch_models)
+
+    s = sub.add_parser("export-texts", help="LLM の比較に使う文書のテキストを書き出す（scripts/bench_llm.sh）")
+    s.add_argument("--out", required=True, help="書き出し先のディレクトリ")
+    s.add_argument("--limit", type=int, default=30, help="件数（新しい文書から）")
+    s.add_argument("--username", help="このユーザーがアップロードした文書だけにする")
+    s.set_defaults(func=cmd_export_texts)
 
     s = sub.add_parser("derive", help="画像・PDF のサムネイルとプレビューを作る（文字の読み取りはやり直さない）")
     s.add_argument("scope", choices=["missing", "all"], help="missing: まだ無いもの / all: すべて作り直す")
