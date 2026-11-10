@@ -70,6 +70,11 @@ class Settings:
     # 受け取り用の共有リンク（ログインなしでアップロードできる。docs/design/security.md 4.3）
     share_upload_link_gb: float = 10.0    # DOCSEED_SHARE_UPLOAD_LINK_GB（1 リンクの合計）
     share_upload_daily_gb: float = 20.0   # DOCSEED_SHARE_UPLOAD_DAILY_GB（すべてのリンクの 24 時間の合計）
+    # 監視と通知（security.md 11 章）
+    notify_url: str = ""                  # DOCSEED_NOTIFY_URL（ntfy・Discord・Slack・汎用の Webhook。空なら送らない）
+    notify_format: str = "auto"           # DOCSEED_NOTIFY_FORMAT（auto / ntfy / discord / slack / json）
+    notify_login_failures: int = 20       # DOCSEED_NOTIFY_LOGIN_FAILURES（15 分の失敗がこれ以上で知らせる）
+    trusted_nets: str = "private_ranges 100.64.0.0/10"   # DOCSEED_TRUSTED_NETS（Caddy と同じ。内側の接続元）
     rate_limit_enabled: bool = True       # DOCSEED_RATE_LIMIT（ログイン以外の流量制限。security.md 9 章）
     share_upload_min_free_pct: float = 10.0   # DOCSEED_SHARE_UPLOAD_MIN_FREE_PCT（空きがこれを下回ったら受け取らない）
     extra: dict[str, str] = field(default_factory=dict)
@@ -167,6 +172,10 @@ class Settings:
             share_upload_link_gb=float(e.get("DOCSEED_SHARE_UPLOAD_LINK_GB") or "10"),
             share_upload_daily_gb=float(e.get("DOCSEED_SHARE_UPLOAD_DAILY_GB") or "20"),
             rate_limit_enabled=_bool(e.get("DOCSEED_RATE_LIMIT"), True),
+            notify_url=e.get("DOCSEED_NOTIFY_URL", "").strip(),
+            notify_format=(e.get("DOCSEED_NOTIFY_FORMAT") or "auto").strip().lower(),
+            notify_login_failures=int(e.get("DOCSEED_NOTIFY_LOGIN_FAILURES") or "20"),
+            trusted_nets=(e.get("DOCSEED_TRUSTED_NETS") or "private_ranges 100.64.0.0/10").strip(),
             share_upload_min_free_pct=float(e.get("DOCSEED_SHARE_UPLOAD_MIN_FREE_PCT") or "10"),
         )
 

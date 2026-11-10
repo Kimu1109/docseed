@@ -104,6 +104,20 @@ jobs:
           xff=$(req ct $ct_ip / -H 'CF-Connecting-IP: 203.0.113.9' -H 'X-Forwarded-For: 6.6.6.6')
           echo "direct xff -> $xff"; case "$xff" in xff=172.*|xff=10.*|xff=192.168.*) ;; *) exit 1 ;; esac
           check "direct /admin" "$(code ct $ct_ip /admin -H 'CF-Connecting-IP: 203.0.113.9')" 200
+      - name: 通知の「内側」の範囲が Caddy の private_ranges と同じこと（src/docseed/notify.py）
+        run: |
+          docker run --rm -v "$PWD/docker/Caddyfile:/etc/caddy/Caddyfile:ro" -e DOCSEED_HOST=docseed.example.com \
+            caddy:2 caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/out.json
+          python3 - <<'PY'
+          import json, re
+          j = open("/tmp/out.json").read()
+          caddy = json.loads(re.search(r'"client_ip":\{"ranges":(\[[^\]]*\])', j).group(1))
+          caddy = [r for r in caddy if r != "100.64.0.0/10"]   # 既定の DOCSEED_TRUSTED_NETS で足しているもの
+          src = open("src/docseed/notify.py").read()
+          ours = re.findall(r'"([^"]+)"', re.search(r"CADDY_PRIVATE_RANGES = \(([^)]*)\)", src).group(1))
+          print("caddy:", caddy, "notify:", ours)
+          assert caddy == ours
+          PY
       - name: acme_dns（DNS のプラグイン入りの Caddy をビルドして展開）
         run: |
           docker build -t docseed-caddy docker/caddy

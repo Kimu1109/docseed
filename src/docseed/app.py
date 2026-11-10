@@ -85,6 +85,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     from .tlscheck import start_background
     start_background(settings)
+    from . import notify
+    notify.start_background(settings)
 
     from .ratelimit import RateLimitMiddleware, setup_security_log
     setup_security_log(settings.data_dir / "logs")
