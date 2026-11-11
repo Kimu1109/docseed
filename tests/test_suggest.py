@@ -483,6 +483,28 @@ def test_copied_examples_are_dropped():
     assert llm.drop_copied_examples(["地理"], None, "地理の授業", pdf) == ["地理"]
 
 
+def test_title_and_description_words_are_dropped():
+    """6 回目の比較: 種類に題名を書いた（「模試-範囲」「テスト用PDF」）、主題の説明を言い換えた（「国や地域」）。"""
+    text = "数学A 英語 世界史探究 プログラミング"
+    tags = ["模試-範囲", "数学", "国や地域", "出来事", "英語"]
+    assert llm.drop_copied_examples(tags, "模試-範囲.jpeg", None, text) == ["数学", "英語"]
+    assert llm.drop_copied_examples(["テスト用PDF", "Word"], "テスト用.pdf", None, text) == ["Word"]
+    tags = ["中間考査 範囲表", "化学基礎"]
+    assert llm.drop_copied_examples(tags, "中間考査　範囲表 (1).pdf", None, text) == ["化学基礎"]
+    # 1 語の題名と同じタグは、ほかの文書にも付けられるので残す
+    assert llm.drop_copied_examples(["請求書"], "請求書.pdf", None, text) == ["請求書"]
+    # 意味の無い題名（Screenshot …）とは比べない。数学・プログラミングは本文に無くても残す
+    assert llm.drop_copied_examples(["韓国", "プログラミング"], "Screenshot 2026.png", None, "韓国の工業") == [
+        "韓国", "プログラミング"]
+
+
+def test_copied_kind_in_summary_is_replaced():
+    s = llm.fix_copied_kind("この模試では、下水道の仕組みを学ぶ。", "001083138.pdf", None, "下水道のノート")
+    assert s == "この文書では、下水道の仕組みを学ぶ。"
+    s = "この模試は英語の問題です。"
+    assert llm.fix_copied_kind(s, "模試-英語.HEIC", None, "x") == s
+
+
 def test_summarize_drops_copied_examples():
     client = _client(FakeLlm(outputs=[{"種類": "模試", "分野": "地理", "主題": "PDF、フォーム",
                                        "要約": "PDF のフォームの説明。"}]))
