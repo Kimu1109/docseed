@@ -449,7 +449,7 @@ def test_meaningful_title(name, expected):
 def test_input_has_no_labels_and_shows_known_tags():
     x = llm.build_input("Screenshot 2026.png", None, "本文", 100, known_tags=["地理", "数学"])
     assert "ファイル名" not in x and "題名" not in x
-    assert "次の言葉に合うものがあれば、その表記を使ってください: 地理、数学。" in x
+    assert "利用者が使っている言葉を挙げます: 地理、数学。この文書に当てはまるものがあれば" in x
     x = llm.build_input("韓国の工業.pdf", "説明文", "本文", 100)
     assert x.startswith("この文書の題名は「韓国の工業」です。\nこの文書には「説明文」という説明が付いています。")
 
@@ -462,4 +462,38 @@ def test_sampling_and_known_tags_sent(library, worker, fake_llm, settings, llm_o
     assert req["temperature"] == 0.0 and req["repeat_penalty"] > 1.0
     # 利用者がよく使うタグ（使った回数の多い順）を見せる
     user = fake_llm.templates[-1]["messages"][1]["content"]
-    assert "その表記を使ってください: 請求" in user
+    assert "利用者が使っている言葉を挙げます: 請求。" in user
+
+
+
+def test_prompt_has_no_examples_to_copy():
+    """プロンプトの例（地理・模試・プリントなど）を、関係の無い文書にもなぞったので、具体例は書かない。"""
+    for w in ("地理", "数学", "模試", "プリント", "範囲表", "家計", "韓国", "国・地域"):
+        assert w not in llm.SYSTEM_PROMPT, w
+    assert "当てはまらない欄は空" in llm.SYSTEM_PROMPT
+
+
+def test_each_facet_is_split_and_limited():
+    # 分野に並べた語（模試-範囲で「数学、英語、地理、歴史、世界史探究、国際」）は区切って 2 語まで
+    _, t = llm.parse_output(json.dumps({"種類": "範囲表、プリント", "分野": "数学、英語、地理、歴史",
+                                        "主題": "国、地域、模試", "要約": "x。"}, ensure_ascii=False))
+    assert t == ["範囲表", "数学", "英語", "模試"]      # 種類 1・分野 2・主題 2（「国」「地域」は説明の言葉なので除く）
+    # 空の欄は無視する
+    _, t = llm.parse_output(json.dumps({"種類": "", "分野": "プログラミング", "主題": "", "要約": "x。"},
+                                       ensure_ascii=False))
+    assert t == ["プログラミング"]
+
+
+def test_known_tags_are_the_ones_near_the_document(library, worker, settings):
+    a = library["a"]
+    conn = connect(settings.db_path)
+    for d in conn.execute("SELECT d.id, f.id AS fid FROM documents d JOIN folders f ON f.id = d.folder_id"
+                          " WHERE d.filename LIKE 'trip%'").fetchall():
+        a.patch(f"/api/v1/documents/{d['id']}", json={"tags": ["旅行"]})
+    for d in conn.execute("SELECT id FROM documents WHERE filename LIKE 'invoice%'").fetchall():
+        a.patch(f"/api/v1/documents/{d['id']}", json={"tags": ["請求", "経理"]})
+    put(a, library["keiri"], "memo2.txt", "経理のメモ", tags=["経理"])
+    trip_blob = conn.execute("SELECT blob_id FROM documents WHERE filename = 'trip0.txt'").fetchone()[0]
+    # よく使う順なら「経理」（4 件）が先頭だが、旅行の文書には近い「旅行」を先に見せる
+    assert llm.known_tags(conn, trip_blob, None, limit=2)[0] == "経理"     # 埋め込みが無ければよく使う順
+    assert llm.known_tags(conn, trip_blob, TopicEmbedder(), limit=2)[0] == "旅行"
