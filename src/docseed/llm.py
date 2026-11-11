@@ -32,7 +32,7 @@ from .db import Tx, now
 log = logging.getLogger("docseed.llm")
 
 # プロンプトかモデルの扱いを変えたら上げる（古い要約は「古い要約」と表示し、管理画面から作り直せる）
-SUMMARY_VERSION = 7
+SUMMARY_VERSION = 8
 MAX_SUMMARY = 200          # 頼むのは 120 字以内。上限で切れたら最後の「。」までにする
 MIN_INPUT_CHARS = 100      # 本文がこれより短い文書は要約しない（要約するほどの内容が無く、指示をなぞってしまう）
 MAX_TAGS = 5               # 種類・分野・主題（2 語まで）から作るタグの数の上限
@@ -57,7 +57,12 @@ EXAMPLES = {
     "分野": ("地理", "数学", "化学", "プログラミング", "家計"),
     "主題": ("韓国", "工業"),
 }
-EXAMPLE_WORDS = frozenset(w for ws in EXAMPLES.values() for w in ws)
+# なぞられた例の語。本文・題名・説明に無ければタグにしない。数学・化学・プログラミングは、なぞった例が無く、
+# 本文に語そのものが無くても正しいことが多い（雰囲気プログラマの投稿の「プログラミング」）ので含めない
+COPY_PRONE = frozenset(EXAMPLES["種類"] + EXAMPLES["主題"] + ("地理", "家計"))
+EXAMPLE_WORDS = COPY_PRONE      # 古い名前
+# 主題の説明の言葉（国・地域・人物・もの・できごと）。言い換え（「国や地域」「出来事」）もタグにしない
+_DESC_WORDS = {"国", "地域", "人物", "人", "もの", "物", "できごと", "出来事", "事柄", "対象"}
 MAX_WORD_LEN = 12          # これより長いタグは、語ではなく句・文なので使わない（途中で切ると意味が崩れる）
 
 SYSTEM_PROMPT = (
@@ -96,7 +101,7 @@ STOP_TAGS = {
     "文書", "資料", "document", "documents", "tag", "tags", "summary", "title", "filename", "なし", "不明",
     "その他", "特になし", "...", "…",
     # 枠の説明の言葉（なぞったもの）
-    "国", "地域", "人物", "もの", "できごと", "対象", "形式", "教科", "学問", "業種", "内容",
+    "国", "地域", "人物", "もの", "できごと", "対象", "形式", "教科", "学問", "業種", "内容", "出来事",
 }
 
 # 意味の無いファイル名（カメラ・スクリーンショット・変換の出力など）。モデルに題名として伝えない
@@ -229,18 +234,48 @@ def parse_output(content: str) -> tuple[str, list[str]]:
     return summary, tags[:MAX_TAGS]
 
 
-def drop_copied_examples(tags: list[str], title: str | None, description: str | None, text: str) -> list[str]:
-    """プロンプトの例の語（「地理」「模試」「プリント」など）は、本文・題名・説明に出てくるときだけ残す。
+def _norm(s: str) -> str:
+    return re.sub(r"[\s\-_・.()（）「」]+", "", s).lower()
 
-    例の語をなぞっただけのタグ（PDF ビューワーの説明に「地理」）を捨てる。埋め込みで文書との近さを比べる
-    方法も試したが、短い語どうしの差が小さく（ruri-v3-70m で 0.74〜0.85）、韓国の工業のプリントでも
-    「地理」より「家計」が近く出たので使わない。利用者が自分で付けたタグは、似ている文書のタグの候補（7.3）で出る。
+
+def drop_copied_examples(tags: list[str], title: str | None, description: str | None, text: str) -> list[str]:
+    """プロンプトや入力をなぞっただけのタグを捨てる。
+
+    - なぞられた例の語（COPY_PRONE: 「地理」「模試」「プリント」など）は、本文・題名・説明に出てくるときだけ残す
+      （PDF ビューワーの説明に「地理」）。埋め込みで文書との近さを比べる方法も試したが、短い語どうしの差が
+      小さく（ruri-v3-70m で 0.74〜0.85）、韓国の工業のプリントでも「地理」より「家計」が近く出たので使わない
+    - 主題の説明の言葉の言い換え（「国や地域」「出来事」）
+    - 区切りのある題名をそのまま書いたもの・題名に語を足したもの（「模試-範囲」「テスト用PDF」）。
+      ファイル名で分かり、ほかの文書には付かないので要らない
     """
     source = "\n".join(x for x in (title, description, text) if x)
-    dropped = [t for t in tags if t in EXAMPLE_WORDS and t not in source]
-    if dropped:
-        log.info("プロンプトの例をなぞったタグを捨てます: %s", "、".join(dropped))
-    return [t for t in tags if t not in dropped]
+    mt = meaningful_title(title) or ""
+    t_norm = _norm(mt)
+    # 題名が 1 語（「請求書」「雰囲気プログラマ」）なら、そのままのタグは他の文書にも付けられるので残す。
+    # 区切りのある題名（「模試-範囲」「中間考査 範囲表」）や、題名に語を足したもの（「テスト用PDF」）は捨てる
+    multi = bool(re.search(r"[\s\-_・.]", mt))
+    out: list[str] = []
+    for t in tags:
+        if t in COPY_PRONE and t not in source:
+            why = "例"
+        elif all(p in _DESC_WORDS for p in re.split(r"[やと・]", t) if p):
+            why = "説明の言葉"
+        elif len(t_norm) >= 2 and t_norm in _norm(t) and (multi or _norm(t) != t_norm):
+            why = "題名"
+        else:
+            out.append(t)
+            continue
+        log.info("なぞったタグを捨てます（%s）: %s", why, t)
+    return out
+
+
+def fix_copied_kind(summary: str, title: str | None, description: str | None, text: str) -> str:
+    """要約の「この模試では」のような、本文に無い種類の例の語を「この文書」にする（下水道のノートに「この模試」）。"""
+    source = "\n".join(x for x in (title, description, text) if x)
+    for w in EXAMPLES["種類"]:
+        if w not in source:
+            summary = summary.replace(f"この{w}", "この文書")
+    return summary
 
 
 def _error_text(r: httpx.Response) -> str:
@@ -312,6 +347,7 @@ class LlmClient:
                 except LlmTimeout:
                     pass      # 1 回目の結果（日本語でない）を使う
         tags = drop_copied_examples(tags, title, description, text)
+        summary = fix_copied_kind(summary, title, description, text)
         return Summary(summary, tags, int((time.monotonic() - t) * 1000), attempts)
 
     def health(self) -> bool:
