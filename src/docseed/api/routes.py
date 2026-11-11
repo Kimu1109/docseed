@@ -546,7 +546,8 @@ def api_search(request: Request, q: str = "", mode: str = "hybrid", type: str | 
         "query": r.query, "mode": r.mode, "total": r.total, "took_ms": r.took_ms, "notices": r.notices,
         "results": [{"document": {**h.document, "path": folder_label(conn, h.document["folder_id"], labels)},
                      "score": h.score,
-                     "snippets": [{"chunk_id": s.chunk_id, "page_no": s.page_no, "text": s.html, "match": s.match}
+                     "snippets": [{"chunk_id": s.chunk_id, "page_no": s.page_no, "text": s.html, "match": s.match,
+                                   "summary": s.summary}
                                   for s in h.snippets]}
                     for h in r.hits],
     }

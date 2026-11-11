@@ -44,7 +44,7 @@
           {% if summaries.get(d.id) %}<p class="result-summary small">{{ icon("wand_stars") }} {{ summaries[d.id] }}</p>{% endif %}
           {% for s in h.snippets %}
           <a class="snippet" href="/d/{{ d.id }}?q={{ q | urlencode }}{% if s.page_no %}#p{{ s.page_no }}{% endif %}">
-            {% if s.page_no %}<span class="snip-page">{{ s.page_no }} ページ</span>{% endif %}
+            {% if s.summary %}<span class="snip-page">要約</span>{% elif s.page_no %}<span class="snip-page">{{ s.page_no }} ページ</span>{% endif %}
             <span class="snip-text">{{ s.html | safe }}</span>
             {% if "semantic" in s.match %}<span class="badge" title="同じ語は含まれていませんが、意味が近い部分です">意味が近い</span>{% endif %}
           </a>

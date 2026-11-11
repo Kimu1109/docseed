@@ -388,6 +388,27 @@ def save_summary(conn: sqlite3.Connection, blob_id: int, s: Summary, model: str)
                      " elapsed_ms = excluded.elapsed_ms, created_at = excluded.created_at",
                      (blob_id, s.summary, json.dumps(s.tags, ensure_ascii=False), model, SUMMARY_VERSION,
                       s.elapsed_ms, now()))
+    sync_summary_chunk(conn, blob_id)
+
+
+def sync_summary_chunk(conn: sqlite3.Connection, blob_id: int) -> bool:
+    """要約を検索の対象にする: blob の要約を、その blob のチャンク（source = 'summary'）にそろえる。
+
+    キーワード検索（chunks_fts）にはトリガーで載る。意味検索のベクトルは、呼び出し側が embed_chunks で作る
+    （ベクトルの無いチャンクだけを埋め込む）。変えたら True。
+    """
+    import unicodedata
+    r = conn.execute("SELECT summary FROM blob_summaries WHERE blob_id = ?", (blob_id,)).fetchone()
+    cur = conn.execute("SELECT id, text FROM chunks WHERE blob_id = ? AND source = 'summary'", (blob_id,)).fetchone()
+    text = unicodedata.normalize("NFKC", r[0]).strip() if r else ""
+    if (cur["text"] if cur else "") == text:
+        return False
+    with Tx(conn):
+        conn.execute("DELETE FROM chunks WHERE blob_id = ? AND source = 'summary'", (blob_id,))
+        if text:
+            conn.execute("INSERT INTO chunks(blob_id, page_no, seq, char_start, char_end, text, source)"
+                         " VALUES (?, NULL, -1, 0, ?, ?, 'summary')", (blob_id, len(text), text))
+    return True
 
 
 def get_summary(conn: sqlite3.Connection, blob_id: int) -> dict | None:
