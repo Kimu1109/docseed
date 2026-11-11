@@ -104,6 +104,7 @@ class Snippet:
     page_no: int | None
     html: str
     match: list[str]
+    summary: bool = False      # 要約（LLM）のチャンクでヒットした
 
 
 @dataclass
@@ -293,15 +294,17 @@ def search(conn: sqlite3.Connection, user: User, q: str, *, mode: str = "hybrid"
                 match.append("keyword")
             if c in sem_rank and c not in kw_final:
                 match.append("semantic")
-            snippets.append(Snippet(c, texts_page(conn, c), make_snippet(texts[c], marks), match))
+            page_no, source = chunk_place(conn, c)
+            snippets.append(Snippet(c, page_no, make_snippet(texts[c], marks), match, source == "summary"))
         hits.append(Hit(docs[d], round(s, 5), snippets))
     took = int((time.perf_counter() - t0) * 1000)
     return SearchResult(q, mode, total, took, hits, notices, pq)
 
 
-def texts_page(conn: sqlite3.Connection, chunk_id: int) -> int | None:
-    r = conn.execute("SELECT page_no FROM chunks WHERE id = ?", (chunk_id,)).fetchone()
-    return r[0] if r else None
+def chunk_place(conn: sqlite3.Connection, chunk_id: int) -> tuple[int | None, str]:
+    """(ページ番号, 本文か要約か)。"""
+    r = conn.execute("SELECT page_no, source FROM chunks WHERE id = ?", (chunk_id,)).fetchone()
+    return (r[0], r[1]) if r else (None, "body")
 
 
 def _resolve(conn, cand: set[int], allowed: set[int], after, before, pq: ParsedQuery, kind_of):

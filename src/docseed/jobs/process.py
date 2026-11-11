@@ -112,15 +112,18 @@ def process_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int, *, force_
     pages = [(r["page_no"], r["text"]) for r in conn.execute(
         "SELECT page_no, text FROM pages WHERE blob_id = ? ORDER BY page_no", (blob_id,))]
     chunks = chunk_pages([(n, t) for n, t in pages if t.strip()])
-    have = conn.execute("SELECT count(*) FROM chunks WHERE blob_id = ?", (blob_id,)).fetchone()[0]
+    have = conn.execute("SELECT count(*) FROM chunks WHERE blob_id = ? AND source = 'body'",
+                        (blob_id,)).fetchone()[0]
     if have != len(chunks) or force_ocr:
         with Tx(conn):
-            conn.execute("DELETE FROM chunks WHERE blob_id = ?", (blob_id,))
+            conn.execute("DELETE FROM chunks WHERE blob_id = ? AND source = 'body'", (blob_id,))
             conn.executemany(
                 "INSERT INTO chunks(blob_id, page_no, seq, char_start, char_end, text) VALUES (?,?,?,?,?,?)",
                 [(blob_id, c.page_no, c.seq, c.char_start, c.char_end, c.text) for c in chunks])
 
-    # ③ 埋め込み（ベクトルの無いチャンクだけ）
+    # ③ 埋め込み（ベクトルの無いチャンクだけ）。要約のチャンクも（処理し直しで消えていれば作り直して）埋め込む
+    from .. import llm
+    llm.sync_summary_chunk(conn, blob_id)
     embed_chunks(conn, ctx, blob_id)
 
     _set(conn, blob_id, status="ready", processed_at=now(), pipeline_version=PIPELINE_VERSION,
@@ -160,6 +163,7 @@ def summarize_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int) -> str:
         log.warning("summarize blob=%s: %s", blob_id, e)
         return "timeout"
     llm.save_summary(conn, blob_id, s, ctx.llm.model)
+    embed_chunks(conn, ctx, blob_id)     # 要約のチャンクを意味検索に載せる
     tags = llm.merge_tags(conn, s.tags, ctx.embedder) if s.tags else []
     for d in conn.execute("SELECT d.id, f.owner_id FROM documents d JOIN folders f ON f.id = d.folder_id"
                           " WHERE d.blob_id = ? AND d.deleted_at IS NULL", (blob_id,)).fetchall():

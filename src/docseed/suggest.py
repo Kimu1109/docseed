@@ -80,7 +80,7 @@ def doc_vector(conn: sqlite3.Connection, blob_id: int) -> np.ndarray | None:
     """先頭 20 チャンクのベクトルの平均を L2 正規化したもの。ベクトルが無ければ None。"""
     rows = conn.execute(
         "SELECT v.embedding FROM chunks c JOIN chunk_vectors v ON v.rowid = c.id WHERE c.blob_id = ?"
-        " ORDER BY c.seq LIMIT ?", (blob_id, DOC_CHUNKS)).fetchall()
+        " AND c.source = 'body' ORDER BY c.seq LIMIT ?", (blob_id, DOC_CHUNKS)).fetchall()
     if not rows:
         return None
     m = np.mean([_vec(r[0]) for r in rows], axis=0)
@@ -171,7 +171,8 @@ def similar_documents(conn: sqlite3.Connection, vec: np.ndarray, doc_id: int,
         part = ids[i:i + 500]
         for r in conn.execute(
                 f"SELECT c.id, d.id AS doc_id, d.folder_id FROM chunks c JOIN documents d ON d.blob_id = c.blob_id"
-                f" WHERE c.id IN ({','.join('?' * len(part))}) AND d.deleted_at IS NULL AND d.id != ?",
+                f" WHERE c.id IN ({','.join('?' * len(part))}) AND d.deleted_at IS NULL AND d.id != ?"
+                f" AND c.source = 'body'",
                 (*part, doc_id)):
             if r["folder_id"] not in allowed:
                 continue

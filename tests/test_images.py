@@ -263,7 +263,8 @@ def test_migration_0002_after_0003(tmp_path, monkeypatch):
     assert migrate(conn) == ["0001_initial.sql", "0003_login_methods.sql"]
     conn.execute("INSERT INTO jobs(type, status, run_after, created_at) VALUES ('purge_trash', 'pending', 'x', 'x')")
     monkeypatch.setattr(db, "_migrations", lambda: allm)
-    assert migrate(conn) == ["0002_derived_files.sql", "0004_web_clips.sql", "0005_suggestions.sql"]
+    assert migrate(conn) == ["0002_derived_files.sql", "0004_web_clips.sql", "0005_suggestions.sql",
+                             "0006_summary_search.sql"]
     assert conn.execute("SELECT type FROM jobs").fetchone()[0] == "purge_trash"
     conn.execute("INSERT INTO jobs(type, status, run_after, created_at) VALUES ('derive_blob', 'pending', 'x', 'x')")
     cols = {r[1] for r in conn.execute("PRAGMA table_info(blobs)")}

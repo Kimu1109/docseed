@@ -545,3 +545,61 @@ def test_known_tags_are_the_ones_near_the_document(library, worker, settings):
     # よく使う順なら「経理」（4 件）が先頭だが、旅行の文書には近い「旅行」を先に見せる
     assert llm.known_tags(conn, trip_blob, None, limit=2)[0] == "経理"     # 埋め込みが無ければよく使う順
     assert llm.known_tags(conn, trip_blob, TopicEmbedder(), limit=2)[0] == "旅行"
+
+
+def test_summary_is_searchable(library, worker, fake_llm, settings, llm_on, app):
+    """要約も検索の対象（キーワード・意味検索）。処理し直しても残り、フォルダ・タグの候補には使わない。"""
+    from docseed.reprocess import enqueue_reprocess
+    from tests.test_search import StubQueryEmbedder
+    app.state.query_embedder = StubQueryEmbedder(TopicEmbedder())
+    a = library["a"]
+    fake_llm.outputs = [{"種類": "メモ", "分野": "", "主題": "", "要約": "家族で作る料理のレシピをまとめた覚え書き。"}]
+    doc = put(a, library["inbox"], "note.txt", "鍋に水を入れて火にかける。塩をひとつまみ入れる。" * 8)
+    run_all(worker)
+    conn = connect(settings.db_path)
+    blob = conn.execute("SELECT blob_id FROM documents WHERE id = ?", (doc,)).fetchone()[0]
+    row = conn.execute("SELECT id, page_no, text FROM chunks WHERE blob_id = ? AND source = 'summary'",
+                       (blob,)).fetchone()
+    assert row["text"] == "家族で作る料理のレシピをまとめた覚え書き。" and row["page_no"] is None
+    assert conn.execute("SELECT 1 FROM chunk_vectors WHERE rowid = ?", (row["id"],)).fetchone()
+    # 本文に無い語（「レシピ」）でも、要約で見つかる。結果には「要約」と出す
+    r = a.get("/api/v1/search", params={"q": "レシピ", "mode": "keyword"}).json()
+    hit = next(h for h in r["results"] if h["document"]["id"] == doc)
+    assert hit["snippets"][0]["summary"] is True
+    r = a.get("/api/v1/search", params={"q": "料理", "mode": "semantic"}).json()
+    assert any(h["document"]["id"] == doc for h in r["results"])
+    assert "<span class=\"snip-page\">要約</span>" in a.get("/search", params={"q": "レシピ", "mode": "keyword"}).text
+    # 文書のベクトル（フォルダ・タグの候補）は本文だけから作る
+    body = conn.execute("SELECT count(*) FROM chunks WHERE blob_id = ? AND source = 'body'", (blob,)).fetchone()[0]
+    assert body >= 1 and suggest.doc_vector(conn, blob) is not None
+    # 処理し直しても要約のチャンクは 1 つだけ残る
+    enqueue_reprocess(conn, [blob])
+    run_all(worker)
+    rows = conn.execute("SELECT text FROM chunks WHERE blob_id = ? AND source = 'summary'", (blob,)).fetchall()
+    assert [r[0] for r in rows] == ["家族で作る料理のレシピをまとめた覚え書き。"]
+    r = a.get("/api/v1/search", params={"q": "レシピ", "mode": "keyword"}).json()
+    assert any(h["document"]["id"] == doc for h in r["results"])
+    # 要約を作り直すと、チャンクも入れ替わる
+    fake_llm.outputs = [{"種類": "メモ", "分野": "", "主題": "", "要約": "塩味の汁物の作り方。"}]
+    llm.enqueue_summary(conn, blob)
+    run_all(worker)
+    rows = conn.execute("SELECT text FROM chunks WHERE blob_id = ? AND source = 'summary'", (blob,)).fetchall()
+    assert [r[0] for r in rows] == ["塩味の汁物の作り方。"]
+
+
+def test_migration_adds_existing_summaries_to_search(tmp_path, monkeypatch):
+    """0006 は、今ある要約をキーワード検索に載せる。"""
+    from docseed import db
+    allm = db._migrations()
+    monkeypatch.setattr(db, "_migrations", lambda: [m for m in allm if m[0] <= 5])
+    conn = connect(tmp_path / "x.sqlite")
+    db.migrate(conn)
+    conn.execute("INSERT INTO blobs(id, sha256, size_bytes, mime_type, storage_path, status, created_at, updated_at)"
+                 " VALUES (1, 'x', 1, 'text/plain', 'p', 'ready', 'x', 'x')")
+    conn.execute("INSERT INTO blob_summaries(blob_id, summary, tags, model, summary_version, created_at)"
+                 " VALUES (1, '料理のレシピの覚え書き。', '[]', 'm', 1, 'x')")
+    conn.commit()
+    monkeypatch.setattr(db, "_migrations", lambda: allm)
+    assert db.migrate(conn) == ["0006_summary_search.sql"]
+    assert conn.execute("SELECT c.source FROM chunks_fts f JOIN chunks c ON c.id = f.rowid"
+                        " WHERE chunks_fts MATCH 'レシピ'").fetchone()[0] == "summary"
