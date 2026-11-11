@@ -64,7 +64,7 @@ class Settings:
     suggest_enabled: bool = True      # DOCSEED_SUGGEST_ENABLED（フォルダ・タグの候補）
     llm_enabled: bool = False         # DOCSEED_LLM_ENABLED（要約と新しいタグの提案）
     llm_url: str = "http://llm:8080"  # DOCSEED_LLM_URL（llama-server）
-    llm_model: str = "sarashina2.2-1b-instruct-v0.1-Q4_K_M.gguf"   # DOCSEED_LLM_MODEL（models/llm/ の GGUF）
+    llm_model: str = "LFM2.5-1.2B-JP-Q4_K_M.gguf"   # DOCSEED_LLM_MODEL（models/llm/ の GGUF）
     llm_timeout_s: int = 180          # DOCSEED_LLM_TIMEOUT_S
     llm_max_input_chars: int = 3000   # DOCSEED_LLM_MAX_INPUT_CHARS
     # 受け取り用の共有リンク（ログインなしでアップロードできる。docs/design/security.md 4.3）
@@ -161,7 +161,7 @@ class Settings:
             suggest_enabled=_bool(e.get("DOCSEED_SUGGEST_ENABLED"), True),
             llm_enabled=_bool(e.get("DOCSEED_LLM_ENABLED"), False),
             llm_url=(e.get("DOCSEED_LLM_URL") or "http://llm:8080").rstrip("/"),
-            llm_model=e.get("DOCSEED_LLM_MODEL") or "sarashina2.2-1b-instruct-v0.1-Q4_K_M.gguf",
+            llm_model=e.get("DOCSEED_LLM_MODEL") or "LFM2.5-1.2B-JP-Q4_K_M.gguf",
             llm_timeout_s=int(e.get("DOCSEED_LLM_TIMEOUT_S") or "180"),
             llm_max_input_chars=int(e.get("DOCSEED_LLM_MAX_INPUT_CHARS") or "3000"),
             share_upload_link_gb=float(e.get("DOCSEED_SHARE_UPLOAD_LINK_GB") or "10"),

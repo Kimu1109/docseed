@@ -255,7 +255,7 @@ docseed/
 | 6. 基盤の改善 | HTTPS 証明書の方式の切り替え（internal / file / tailscale / acme_dns）、アイコン（Material Symbols）、HEIC / AVIF、サムネイル・プレビュー | **実装済み**。iPhone の HEIC 写真が OCR・プレビューされる（[拡張機能](design/extensions.md) 2〜4 章）。Caddyfile は 4 方式とも CI で `caddy adapt` により展開を確かめる。Tailscale と DNS-01 での実際の証明書の取得は導入時に利用者の手元で確かめる |
 | 7. ログイン | パスキー、確認コード（TOTP）と復旧コード、OIDC（Google など）、再認証 | **実装済み**。パスキーだけでログインでき、2 段階認証を管理者が必須にできる（同 5 章）。パスキーは Chromium の仮想認証器で登録・ログインまで確認。実機の端末（iPhone・Android など）と Google での確認は導入時に利用者の手元で行う |
 | 8. Web クリップ | URL の取得（SSRF 対策つき）、OGP・Twitter カード・本文の取り出しと検索 | **実装済み**。URL を貼ると、タイトル・説明・本文で検索できる（同 6 章）。実際のインターネットのサイトからの取得は導入時に利用者の手元で確かめる |
-| 9. 整理の補助 | 埋め込みによるフォルダ・タグの候補、小型 LLM による要約 | **実装済み**。Inbox の文書におすすめのフォルダが出る（同 7 章）。LLM のモデルは sarashina2.2-1b（Q4_K_M）を仮の既定とし、Pi 5 での計測（`scripts/bench_llm.sh`）で決める。しきい値は `docseed eval-suggest` で実データから決める |
+| 9. 整理の補助 | 埋め込みによるフォルダ・タグの候補、小型 LLM による要約 | **実装済み**。Inbox の文書におすすめのフォルダが出る（同 7 章）。LLM のモデルは Pi 5 での比較（`scripts/bench_llm.sh`、12 件・3 モデル）で lfm2.5-1.2b-jp（Q4_K_M）に決めた。しきい値は `docseed eval-suggest` で実データから決める |
 
 ## 12. 未決事項・リスク
 

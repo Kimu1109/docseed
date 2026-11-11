@@ -103,7 +103,7 @@ def test_run_and_report(tmp_path, monkeypatch, capsys):
     assert recs[1]["title"] == "請求書 A" and recs[1]["summary"] == "請求書の内容をまとめた要約です。"
     assert "skipped" in recs[2]
     # 送ったのはタイトルと本文（1 行目の「# 」は本文に入れない）
-    assert "ファイル名・タイトル: 請求書 A" in fake.templates[0]["messages"][1]["content"]
+    assert "この文書の題名は「請求書 A」です。" in fake.templates[0]["messages"][1]["content"]
 
     capsys.readouterr()
     bench.main(["report", str(out), "--display-dir", "/srv/docseed/bench/x"])
