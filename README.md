@@ -329,13 +329,13 @@ docker compose exec api docseed eval-suggest --username <名前>
 Pi の中で小型の LLM（llama.cpp）を動かし、文書ごとに 2〜3 文の要約と、新しいタグの候補を作ります。要約は文書の画面と検索結果に出ます（検索の対象にはしません）。外部とは通信しません。**RAM 16GB を推奨**します（8GB なら小さいモデル `qwen3-0.6b` を使ってください）。
 
 ```bash
-docker compose exec api docseed fetch-models --llm sarashina2.2-1b    # models/llm/ に GGUF を置く（約 0.8GB）
+docker compose exec api docseed fetch-models --llm lfm2.5-1.2b-jp    # models/llm/ に GGUF を置く（約 0.7GB）
 ```
 
 ```bash
 # .env
 DOCSEED_LLM_ENABLED=true
-DOCSEED_LLM_MODEL=sarashina2.2-1b-instruct-v0.1-Q4_K_M.gguf   # fetch-models の最後に表示された名前
+DOCSEED_LLM_MODEL=LFM2.5-1.2B-JP-Q4_K_M.gguf   # fetch-models の最後に表示された名前
 COMPOSE_PROFILES=llm            # Web クリップも使うなら webclip,llm
 ```
 
@@ -345,11 +345,13 @@ docker compose up -d
 
 | 名前（`--llm`） | ライセンス | 備考 |
 |---|---|---|
-| `sarashina2.2-1b`（既定） | MIT | 日本語の学習が中心。Q4_K_M |
+| `lfm2.5-1.2b-jp`（既定） | LFM Open License v1.0 | CPU 向けの設計。Pi 5 で最も軽かった（中央値 約 20 秒、メモリ 1.4GB）。年間売上 1,000 万ドル未満なら商用も無料（ライセンスの条件を確認してください） |
+| `sarashina2.2-1b` | MIT | 日本語の学習が中心。速さは lfm とほぼ同じで、メモリは 1.9GB。ライセンスを MIT にしたいとき |
 | `sarashina2.2-1b-q8` | MIT | Q8_0（少し遅く、少し正確） |
-| `lfm2.5-1.2b-jp` | LFM Open License v1.0 | CPU 向けの設計。年間売上 1,000 万ドル未満なら商用も無料（ライセンスの条件を確認してください） |
-| `qwen3-1.7b` | Apache-2.0 | |
+| `qwen3-1.7b` | Apache-2.0 | Pi 5 では 1 件 90 秒を超えることがあった |
 | `qwen3-0.6b` | Apache-2.0 | RAM 8GB 向け |
+
+モデルには、文書の**種類**（模試・プリント・請求書など）・**分野**（地理・数学など。自由に書かせる）・**主題**（国・地域・ものなど）と、2 文の要約を書かせます。種類・分野・主題はタグの候補になり、すでに使っているタグに合うものがあれば、その表記にそろえます。
 
 要約は 1 件ずつ、ほかの処理（アップロード・再処理）が無いときだけ行います。1 件 180 秒（`DOCSEED_LLM_TIMEOUT_S`）を超えたら、その文書は要約なしにします。
 

@@ -284,7 +284,7 @@ def main(argv: list[str] | None = None) -> None:
 
     s = sub.add_parser("fetch-models", help="OCR と埋め込みのモデルを取得する（初回に 1 度）")
     s.add_argument("--force", action="store_true", help="取得済みでも取り直す")
-    s.add_argument("--llm", metavar="NAME", help="要約に使う LLM（GGUF）だけを取得する（例 sarashina2.2-1b）")
+    s.add_argument("--llm", metavar="NAME", help="要約に使う LLM（GGUF）だけを取得する（例 lfm2.5-1.2b-jp）")
     s.set_defaults(func=cmd_fetch_models)
 
     s = sub.add_parser("export-texts", help="LLM の比較に使う文書のテキストを書き出す（scripts/bench_llm.sh）")

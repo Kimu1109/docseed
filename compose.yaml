@@ -157,7 +157,7 @@ services:
     image: ${DOCSEED_LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}
     <<: *hardening
     pids_limit: 128
-    command: ["-m", "/models/llm/${DOCSEED_LLM_MODEL:-sarashina2.2-1b-instruct-v0.1-Q4_K_M.gguf}",
+    command: ["-m", "/models/llm/${DOCSEED_LLM_MODEL:-LFM2.5-1.2B-JP-Q4_K_M.gguf}",
               "--host", "0.0.0.0", "--port", "8080", "-t", "${DOCSEED_LLM_THREADS:-3}",
               "-c", "4096", "--parallel", "1"]
     volumes:
