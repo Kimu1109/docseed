@@ -52,6 +52,7 @@ class Browser:
     def __init__(self, app):
         self.http = TestClient(app, base_url=ORIGIN)
         self.csrf = ""
+        self.totp_used = ""
 
     def login(self, username="alice", password=PASSWORD, **kw):
         r = self.http.post("/api/v1/auth/login", json={"username": username, "password": password, **kw})
@@ -127,7 +128,8 @@ def enable_totp(b: Browser) -> tuple[str, list[str]]:
     assert r.json()["otpauth_uri"].startswith("otpauth://totp/docseed%3Aalice?")
     bad = b.post("/api/v1/me/totp/confirm", json={"enroll_id": r.json()["enroll_id"], "code": "000000"})
     assert bad.status_code == 422
-    r = b.post("/api/v1/me/totp/confirm", json={"enroll_id": r.json()["enroll_id"], "code": totp.code_at(secret)})
+    b.totp_used = totp.code_at(secret)       # 30 秒の境目をまたいでも、使ったコードそのものを後で試せるように
+    r = b.post("/api/v1/me/totp/confirm", json={"enroll_id": r.json()["enroll_id"], "code": b.totp_used})
     assert r.status_code == 200, r.text
     return secret, r.json()["recovery_codes"]
 
@@ -144,7 +146,7 @@ def test_login_with_totp_and_recovery(app, users, conn):
     assert c.get("/api/v1/me").status_code == 401                  # まだセッションは無い
     assert c.second_factor("000000").status_code == 422
     # 有効化のときに使ったコードはもう使えない（同じ時間の番号）
-    assert c.second_factor(totp.code_at(secret)).status_code == 422
+    assert c.second_factor(b.totp_used).status_code == 422
     r = c.second_factor(codes[0])
     assert r.status_code == 200 and r.json()["user"]["username"] == "alice"
     assert c.get("/api/v1/me").status_code == 200
