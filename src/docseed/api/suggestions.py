@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from .. import documents as dm
 from .. import llm, suggest
@@ -25,9 +25,18 @@ def api_suggestions(doc_id: int, request: Request, conn: sqlite3.Connection = De
                     settings: Settings = Depends(get_settings), auth: Auth = Depends(require_auth)):
     d = dm.get_document(conn, auth.user, doc_id)
     out = suggest.for_document(conn, d, embedder=embedder_of(request), enabled=settings.suggest_enabled,
-                               llm_enabled=settings.llm_enabled)
+                               llm_enabled=settings.llm_enabled, llm_model=settings.llm_model)
     out.pop("prefs")
     return out
+
+
+@router.post("/documents/{doc_id}/suggestions/redo", status_code=202)
+def api_redo(doc_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+             settings: Settings = Depends(get_settings), auth: Auth = Depends(require_auth)):
+    """要約とタグ（フォルダの候補も）をやり直す。要約は既にあっても上書きする。"""
+    d = dm.get_document(conn, auth.user, doc_id, "editor")
+    return suggest.redo(conn, auth.user, d, embedder=embedder_of(request), enabled=settings.suggest_enabled,
+                        llm_enabled=settings.llm_enabled)
 
 
 @router.post("/documents/{doc_id}/suggestions/{sid}/accept", status_code=204)
@@ -54,6 +63,8 @@ def api_prefs_patch(body: dict[str, bool], conn: sqlite3.Connection = Depends(ge
 
 
 @router.post("/admin/summaries/rebuild")
-def api_rebuild_summaries(conn: sqlite3.Connection = Depends(get_conn), settings: Settings = Depends(get_settings),
+def api_rebuild_summaries(scope: str = Query("outdated", pattern="^(outdated|version|model)$"),
+                          conn: sqlite3.Connection = Depends(get_conn), settings: Settings = Depends(get_settings),
                           auth: Auth = Depends(require_admin)):
-    return {"queued": llm.enqueue_rebuild(conn) if settings.llm_enabled else 0}
+    """古い要約を作り直す（上書きする）。scope: outdated（両方）/ version（古い方式）/ model（別のモデル）。"""
+    return {"queued": llm.enqueue_rebuild(conn, settings.llm_model, scope) if settings.llm_enabled else 0}

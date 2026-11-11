@@ -411,26 +411,57 @@ def sync_summary_chunk(conn: sqlite3.Connection, blob_id: int) -> bool:
     return True
 
 
-def get_summary(conn: sqlite3.Connection, blob_id: int) -> dict | None:
+def get_summary(conn: sqlite3.Connection, blob_id: int, model: str | None = None) -> dict | None:
+    """blob の要約。model（今のモデル）を渡すと、別のモデルで作った要約も outdated にする。"""
     r = conn.execute("SELECT * FROM blob_summaries WHERE blob_id = ?", (blob_id,)).fetchone()
     if r is None:
         return None
+    old_version = r["summary_version"] < SUMMARY_VERSION
+    old_model = model is not None and r["model"] != model
     return {"summary": r["summary"], "tags": json.loads(r["tags"]), "model": r["model"],
-            "outdated": r["summary_version"] < SUMMARY_VERSION, "created_at": r["created_at"],
-            "elapsed_ms": r["elapsed_ms"]}
+            "outdated": old_version or old_model, "old_version": old_version, "old_model": old_model,
+            "created_at": r["created_at"], "elapsed_ms": r["elapsed_ms"]}
 
 
-def enqueue_summary(conn: sqlite3.Connection, blob_id: int) -> bool:
+def enqueue_summary(conn: sqlite3.Connection, blob_id: int, priority: int = 30) -> bool:
+    """要約を作る（作り直す）ジョブを積む。既に待っているジョブがあれば、優先度だけを上げる。"""
     with Tx(conn):
         cur = conn.execute("INSERT OR IGNORE INTO jobs(type, blob_id, priority, status, run_after, created_at)"
-                           " VALUES ('summarize_blob', ?, 30, 'pending', ?, ?)", (blob_id, now(), now()))
-        return cur.rowcount == 1
+                           " VALUES ('summarize_blob', ?, ?, 'pending', ?, ?)", (blob_id, priority, now(), now()))
+        if cur.rowcount == 1:
+            return True
+        conn.execute("UPDATE jobs SET priority = min(priority, ?) WHERE type = 'summarize_blob' AND blob_id = ?"
+                     " AND status = 'pending'", (priority, blob_id))
+        return False
 
 
-def enqueue_rebuild(conn: sqlite3.Connection) -> int:
-    """古い要約（SUMMARY_VERSION が古い）を作り直すジョブを積む。"""
-    ids = [r[0] for r in conn.execute("SELECT blob_id FROM blob_summaries WHERE summary_version < ?",
-                                      (SUMMARY_VERSION,))]
+def summary_pending(conn: sqlite3.Connection, blob_id: int) -> bool:
+    return conn.execute("SELECT 1 FROM jobs WHERE type = 'summarize_blob' AND blob_id = ?"
+                        " AND status IN ('pending', 'running')", (blob_id,)).fetchone() is not None
+
+
+REBUILD_SCOPES = ("outdated", "version", "model")
+
+
+def enqueue_rebuild(conn: sqlite3.Connection, model: str | None = None, scope: str = "outdated") -> int:
+    """古い要約を作り直す（上書きする）ジョブを積む。
+
+    version: 古い方式（SUMMARY_VERSION が古い）で作ったもの / model: 今のモデル（model）と別のモデルで
+    作ったもの / outdated: その両方。model を渡さなければ、モデルの違いは見ない。
+    """
+    if scope not in REBUILD_SCOPES:
+        raise ValueError(scope)
+    conds, args = [], []
+    if scope in ("outdated", "version"):
+        conds.append("summary_version < ?")
+        args.append(SUMMARY_VERSION)
+    if scope in ("outdated", "model") and model is not None:
+        conds.append("model != ?")
+        args.append(model)
+    if not conds:
+        return 0
+    ids = [r[0] for r in conn.execute(
+        f"SELECT blob_id FROM blob_summaries WHERE {' OR '.join(conds)}", args)]
     return sum(enqueue_summary(conn, b) for b in ids)
 
 
@@ -533,9 +564,14 @@ def read_exported(path: Path) -> tuple[str, str | None, str]:
     return title, (meta[1] if len(meta) > 1 else None), "\n".join(lines)
 
 
-def llm_stats(conn: sqlite3.Connection) -> dict:
-    r = conn.execute("SELECT count(*), avg(elapsed_ms), sum(summary_version < ?) FROM blob_summaries",
-                     (SUMMARY_VERSION,)).fetchone()
+def llm_stats(conn: sqlite3.Connection, model: str | None = None) -> dict:
+    """要約の数・平均時間・古いもの（outdated: 古い方式、old_model: 別のモデル）・処理待ちの数。"""
+    r = conn.execute("SELECT count(*), avg(elapsed_ms), sum(summary_version < ?), sum(model != coalesce(?, model))"
+                     " FROM blob_summaries", (SUMMARY_VERSION, model)).fetchone()
     waiting = conn.execute("SELECT count(*) FROM jobs WHERE type = 'summarize_blob'"
                            " AND status IN ('pending', 'running')").fetchone()[0]
-    return {"summaries": r[0], "avg_ms": int(r[1]) if r[1] else None, "outdated": r[2] or 0, "waiting": waiting}
+    others = [{"model": m, "count": n} for m, n in conn.execute(
+        "SELECT model, count(*) FROM blob_summaries WHERE model != coalesce(?, model) GROUP BY model"
+        " ORDER BY count(*) DESC", (model,))]
+    return {"summaries": r[0], "avg_ms": int(r[1]) if r[1] else None, "outdated": r[2] or 0,
+            "old_model": r[3] or 0, "other_models": others, "waiting": waiting}

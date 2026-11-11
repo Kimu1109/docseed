@@ -200,7 +200,7 @@ def default_context(settings: Settings, between_pages) -> Context:
         embedder_factory=lambda: OnnxEmbedder(settings.models_dir, settings.embed_model,
                                               threads=settings.embed_threads),
         dpi=settings.ocr_dpi, min_score=settings.ocr_min_score, between_pages=between_pages,
-        data_dir=settings.data_dir, suggest_enabled=settings.suggest_enabled,
+        data_dir=settings.data_dir, suggest_enabled=settings.suggest_enabled, pdf_images=settings.ocr_pdf_images,
         llm=LlmClient(settings.llm_url, settings.llm_model, timeout_s=settings.llm_timeout_s,
                       max_input_chars=settings.llm_max_input_chars) if settings.llm_enabled else None,
     )

@@ -50,13 +50,15 @@
   </section>
 
   <aside class="doc-side">
-    {% if sugg and (sugg.folders or sugg.tags or sugg.summary) %}
+    {% set can_redo = sugg and can_edit and doc.status == "ready" and (suggest_enabled or llm_enabled) %}
+    {% if sugg and (sugg.folders or sugg.tags or sugg.summary or can_redo) %}
     <section class="form-panel suggest-panel" aria-label="整理の候補">
       <h2>{{ icon("wand_stars") }} 整理の候補</h2>
       {% if sugg.summary %}
         <p class="summary-text">{{ sugg.summary.summary }}</p>
-        <p class="muted small">自動で作った要約です（{{ sugg.summary.model }}）。誤りが含まれることがあります。{% if sugg.summary.outdated %}古い方法で作った要約です。{% endif %}</p>
+        <p class="muted small">自動で作った要約です（{{ sugg.summary.model }}）。誤りが含まれることがあります。{% if sugg.summary.old_model %}今のモデルとは別のモデルで作った要約です。{% elif sugg.summary.old_version %}古い方法で作った要約です。{% endif %}</p>
       {% endif %}
+      {% if sugg.summary_pending %}<p class="muted small">{{ icon("schedule") }} 要約とタグを作り直しています。しばらくしてから再読み込みしてください。</p>{% endif %}
       {% if sugg.folders %}
         <h3>フォルダ</h3>
         <ul class="suggest-list">
@@ -91,6 +93,13 @@
           </li>
         {% endfor %}
         </ul>
+      {% endif %}
+      {% if can_redo %}
+      <form method="post" action="/d/{{ doc.id }}/redo" class="redo-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn btn-sm" {% if sugg.summary_pending %}disabled{% endif %}
+                title="{% if llm_enabled %}要約と、タグ・フォルダの候補を作り直します（今の要約は上書きされます）{% else %}タグ・フォルダの候補を作り直します{% endif %}">{{ icon("refresh") }}{% if llm_enabled %}{% if sugg.summary %}要約とタグをやり直す{% else %}要約とタグを作る{% endif %}{% else %}候補をやり直す{% endif %}</button>
+      </form>
       {% endif %}
     </section>
     {% endif %}
@@ -173,7 +182,7 @@
   <details class="pagetext" id="p{{ pg.page_no }}" {% if loop.first %}open{% endif %}>
     <summary>
       <span class="pg-no">{% if pg.source == "office" and k == "sheet" %}{{ pg.page_no }} 枚目のシート{% elif pg.source == "office" and k == "slide" %}スライド {{ pg.page_no }}{% elif pg.source == "office" %}{{ pg.page_no }} 番目の区切り{% else %}{{ pg.page_no }} ページ{% endif %}</span>
-      <span class="muted small">{{ {"text": "テキスト", "text_layer": "PDF の埋め込みテキスト", "ocr": "画像から読み取り", "office": "Office 文書のテキスト"}[pg.source] }}{% if pg.ocr_confidence is not none %}（信頼度 {{ "%.2f" | format(pg.ocr_confidence) }}）{% endif %}</span>
+      <span class="muted small">{{ {"text": "テキスト", "text_layer": "PDF の埋め込みテキスト", "ocr": "画像から読み取り", "office": "Office 文書のテキスト"}[pg.source] }}{% if pg.source == "text_layer" and pg.ocr_confidence is not none %}＋ページ内の画像から読み取り{% endif %}{% if pg.ocr_confidence is not none %}（信頼度 {{ "%.2f" | format(pg.ocr_confidence) }}）{% endif %}</span>
     </summary>
     {% if pg.text %}<pre class="textview" data-highlight>{{ pg.text }}</pre>{% else %}<p class="muted small pad">文字は見つかりませんでした。</p>{% endif %}
   </details>

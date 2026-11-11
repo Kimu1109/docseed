@@ -67,7 +67,10 @@ DONE_MESSAGES = {
     "suggest_accept": "候補を採用しました",
     "suggest_reject": "候補を却下しました。この文書には二度と出しません",
     "prefs": "整理の補助の設定を保存しました",
-    "summaries": "古い要約の作り直しを受け付けました",
+    "summaries": "古い要約の作り直しを受け付けました。順番に上書きされます",
+    "redo": "要約とタグの候補の作り直しを受け付けました。しばらくしてから再読み込みしてください",
+    "redo_suggest": "タグとフォルダの候補を作り直しました",
+    "redo_short": "タグとフォルダの候補を作り直しました（本文が短いため、要約は作りません）",
     "summaries_none": "作り直す要約はありません",
     "reauthed": "本人確認ができました。10 分間はログイン方法を変更できます",
     "totp_disabled": "確認コードを無効にしました",
@@ -299,10 +302,12 @@ async def settings_prefs(request: Request, conn: sqlite3.Connection = Depends(ge
 
 
 @router.post("/admin/summaries/rebuild")
-def admin_summaries_rebuild(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_admin),
-                            settings: Settings = Depends(get_settings)):
-    from ..llm import enqueue_rebuild
-    n = enqueue_rebuild(conn) if settings.llm_enabled else 0
+def admin_summaries_rebuild(scope: str = Form("outdated"), conn: sqlite3.Connection = Depends(get_conn),
+                            auth: Auth = Depends(require_admin), settings: Settings = Depends(get_settings)):
+    from ..llm import REBUILD_SCOPES, enqueue_rebuild
+    if scope not in REBUILD_SCOPES:
+        raise AppError("不明な範囲です")
+    n = enqueue_rebuild(conn, settings.llm_model, scope) if settings.llm_enabled else 0
     return RedirectResponse(f"/admin?done={'summaries' if n else 'summaries_none'}", status_code=303)
 
 
@@ -648,6 +653,8 @@ def document_page(doc_id: int, request: Request, conn: sqlite3.Connection = Depe
         pages=pages, pages_shown=PAGES_SHOWN, error=h.problem_message(d["error"]),
         warnings=h.warning_messages(d["warnings"]), image_meta=json.loads(d["image_meta"] or "null"),
         clip=_clip_for(conn, d), webclip_enabled=request.app.state.settings.webclip_enabled,
+        suggest_enabled=request.app.state.settings.suggest_enabled,
+        llm_enabled=request.app.state.settings.llm_enabled,
         sugg=_suggestions_for(request, conn, d) if role in ("editor", "owner") else None,
         nav="files" if d["owner_id"] == auth.user.id else "shared"))
 
@@ -656,7 +663,8 @@ def _suggestions_for(request: Request, conn: sqlite3.Connection, d: sqlite3.Row)
     from ..api.suggestions import embedder_of
     from ..suggest import for_document
     s = request.app.state.settings
-    return for_document(conn, d, embedder=embedder_of(request), enabled=s.suggest_enabled, llm_enabled=s.llm_enabled)
+    return for_document(conn, d, embedder=embedder_of(request), enabled=s.suggest_enabled, llm_enabled=s.llm_enabled,
+                        llm_model=s.llm_model)
 
 
 def _clip_for(conn: sqlite3.Connection, d: sqlite3.Row) -> dict | None:
@@ -675,6 +683,19 @@ def document_reprocess(doc_id: int, request: Request, force_ocr: str | None = Fo
         audit(conn, "reprocess", user_id=auth.user.id, target_type="document", target_id=doc_id,
               ip=client_ip(request), force_ocr=bool(force_ocr))
     return RedirectResponse(f"/d/{doc_id}?done=reprocess", status_code=303)
+
+
+@router.post("/d/{doc_id}/redo")
+def document_redo(doc_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                  auth: Auth = Depends(require_auth)):
+    """要約とタグ（と、フォルダの候補）をやり直す。docs/design/extensions.md 7.4。"""
+    from ..api.suggestions import embedder_of
+    from ..suggest import redo
+    s = request.app.state.settings
+    d = dm.get_document(conn, auth.user, doc_id, "editor")
+    r = redo(conn, auth.user, d, embedder=embedder_of(request), enabled=s.suggest_enabled, llm_enabled=s.llm_enabled)
+    done = {"queued": "redo", "too_short": "redo_short"}.get(r["summary"], "redo_suggest")
+    return RedirectResponse(f"/d/{doc_id}?done={done}", status_code=303)
 
 
 @router.post("/d/{doc_id}")
@@ -874,7 +895,7 @@ def _llm_status(conn: sqlite3.Connection, settings: Settings) -> dict | None:
     if not settings.llm_enabled:
         return None
     from ..llm import llm_stats
-    return llm_stats(conn) | {"model": settings.llm_model}
+    return llm_stats(conn, settings.llm_model) | {"model": settings.llm_model}
 
 
 def admin_context(request: Request, conn: sqlite3.Connection, auth: Auth, settings: Settings, **extra) -> dict:

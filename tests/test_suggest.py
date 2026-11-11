@@ -264,7 +264,7 @@ def test_suggestions_off_by_pref(library, worker):
 @pytest.fixture()
 def llm_on(settings, app):
     from dataclasses import replace
-    app.state.settings = replace(settings, llm_enabled=True)
+    app.state.settings = replace(settings, llm_enabled=True, llm_model="test.gguf")   # worker と同じモデル
     yield
     app.state.settings = settings
 
@@ -603,3 +603,93 @@ def test_migration_adds_existing_summaries_to_search(tmp_path, monkeypatch):
     assert db.migrate(conn) == ["0006_summary_search.sql"]
     assert conn.execute("SELECT c.source FROM chunks_fts f JOIN chunks c ON c.id = f.rowid"
                         " WHERE chunks_fts MATCH 'レシピ'").fetchone()[0] == "summary"
+
+
+# ---------------------------------------------------------------------------
+# 文書の画面からのやり直し・旧モデルの要約の上書き
+# ---------------------------------------------------------------------------
+
+def _web_post(c, url):
+    """画面のフォーム送信（CSRF トークンはページから取る）。"""
+    import re
+    page = c.http.get("/settings").text
+    token = re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
+    return c.http.post(url, data={"csrf_token": token}, follow_redirects=False)
+
+
+def test_redo_summary_and_tags_from_document_page(library, worker, fake_llm, settings, llm_on):
+    a = library["a"]
+    doc = put(a, library["inbox"], "redo.txt", "請求書 第9号。今月の支払についてのご案内です。" * 8)
+    run_all(worker)
+    page = a.get(f"/d/{doc}").text
+    assert "要約とタグをやり直す" in page
+    fake_llm.outputs = [{"要約": "作り直した要約です。", "タグ": ["月次"]}]
+    r = _web_post(a, f"/d/{doc}/redo")
+    assert r.status_code == 303 and r.headers["location"].endswith("done=redo")
+    conn = connect(settings.db_path)
+    job = conn.execute("SELECT priority, status FROM jobs WHERE type = 'summarize_blob' ORDER BY id DESC").fetchone()
+    assert job["status"] == "pending" and job["priority"] == 5      # 手で頼んだものは先に処理する
+    page = a.get(f"/d/{doc}").text
+    assert "作り直しています" in page
+    run_all(worker)
+    s = a.get(f"/api/v1/documents/{doc}/suggestions").json()
+    assert s["summary"]["summary"] == "作り直した要約です。" and not s["summary_pending"]
+    # API からも同じことができる。閲覧しかできない人はできない
+    r = a.post(f"/api/v1/documents/{doc}/suggestions/redo")
+    assert r.status_code == 202 and r.json() == {"suggest": True, "summary": "queued"}
+    assert login_as_bob(library).post(f"/api/v1/documents/{doc}/suggestions/redo").status_code == 404
+
+
+def login_as_bob(library):
+    from tests.conftest import Client
+    return Client(library["a"].http.app, "bob")
+
+
+def test_redo_short_document_only_redoes_candidates(library, worker, settings, llm_on):
+    a = library["a"]
+    doc = put(a, library["inbox"], "short.txt", "請求書のメモ")
+    run_all(worker)
+    r = _web_post(a, f"/d/{doc}/redo")
+    assert r.headers["location"].endswith("done=redo_short")
+
+
+def test_redo_is_refused_while_processing(library, settings, llm_on):
+    a = library["a"]
+    doc = put(a, library["inbox"], "wait.txt", "請求書 第10号。" * 20)    # worker を動かさない（処理待ち）
+    assert a.post(f"/api/v1/documents/{doc}/suggestions/redo").status_code == 422
+    assert "要約とタグをやり直す" not in a.get(f"/d/{doc}").text
+
+
+def test_old_model_summaries_are_overwritten(library, worker, fake_llm, settings, llm_on, login):
+    a = library["a"]
+    doc = put(a, library["inbox"], "old.txt", "保険の書類。契約内容と更新の手続きのお知らせ。" * 8)
+    run_all(worker)
+    conn = connect(settings.db_path)
+    conn.execute("UPDATE blob_summaries SET model = 'old-model.gguf', summary = '旧モデルの要約。'")
+    s = a.get(f"/api/v1/documents/{doc}/suggestions").json()["summary"]
+    assert s["outdated"] and s["old_model"] and not s["old_version"]
+    assert "今のモデルとは別のモデルで作った要約です" in a.get(f"/d/{doc}").text
+    admin = login("admin")
+    page = admin.get("/admin").text
+    assert "旧モデル" in page and "old-model.gguf" in page and "旧モデルの要約を今のモデルで上書き" in page
+    # 古い方式だけを選ぶと、旧モデルのものは積まない
+    assert admin.post("/api/v1/admin/summaries/rebuild", params={"scope": "version"}).json()["queued"] == 0
+    assert admin.post("/api/v1/admin/summaries/rebuild", params={"scope": "model"}).json()["queued"] >= 1
+    run_all(worker)
+    s = a.get(f"/api/v1/documents/{doc}/suggestions").json()["summary"]
+    assert s["model"] == "test.gguf" and s["summary"] != "旧モデルの要約。" and not s["outdated"]
+    assert llm.llm_stats(conn, "test.gguf")["old_model"] == 0
+    assert admin.post("/api/v1/admin/summaries/rebuild", params={"scope": "nope"}).status_code == 422
+
+
+def test_reprocess_overwrites_old_model_summary(library, worker, fake_llm, settings, llm_on):
+    """処理し直したとき（after_ready）も、別のモデルで作った要約は作り直す。"""
+    a = library["a"]
+    doc = put(a, library["inbox"], "re.txt", "旅行の日程。ホテルと航空券の予約の確認。" * 8)
+    run_all(worker)
+    conn = connect(settings.db_path)
+    blob = conn.execute("SELECT blob_id FROM documents WHERE id = ?", (doc,)).fetchone()[0]
+    conn.execute("UPDATE blob_summaries SET model = 'old-model.gguf' WHERE blob_id = ?", (blob,))
+    assert a.post(f"/api/v1/documents/{doc}/reprocess", json={}).status_code == 202
+    run_all(worker)
+    assert conn.execute("SELECT model FROM blob_summaries WHERE blob_id = ?", (blob,)).fetchone()[0] == "test.gguf"

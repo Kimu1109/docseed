@@ -289,3 +289,112 @@ def test_heartbeat_and_daily(worker, settings):
     conn = connect(settings.db_path)
     keys = {r[0] for r in conn.execute("SELECT key FROM settings")}
     assert {"worker.heartbeat", "worker.daily"} <= keys
+
+
+# ---------------------------------------------------------------------------
+# テキスト層のある PDF に貼られた画像の OCR
+# ---------------------------------------------------------------------------
+
+def make_pdf_with_images(text: str, images: list[tuple[tuple[int, int], tuple[float, float, float, float]]]) -> bytes:
+    """テキスト層（1 行）と画像を持つ 1 ページの PDF。images は ((幅px, 高さpx), (x, y, 幅pt, 高さpt))。"""
+    objs: list[bytes] = [b"<< /Type /Catalog /Pages 2 0 R >>", b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>"]
+    xobj = " ".join(f"/Im{k} {6 + k} 0 R" for k in range(len(images)))
+    draw = "".join(f"q {w} 0 0 {h} {x} {y} cm /Im{k} Do Q " for k, (_px, (x, y, w, h)) in enumerate(images))
+    content = f"BT /F1 12 Tf 72 760 Td ({text}) Tj ET {draw}".encode()
+    objs.append(b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+                b" /Resources << /Font << /F1 5 0 R >> /XObject << " + xobj.encode() + b" >> >> >>")
+    objs.append(b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream")
+    objs.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    for (pw, ph), _rect in images:
+        raw = Image.new("RGB", (pw, ph), (200, 200, 200)).tobytes()
+        objs.append(b"<< /Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceRGB"
+                    b" /BitsPerComponent 8 /Length %d >>\nstream\n" % (pw, ph, len(raw)) + raw + b"\nendstream")
+    out = io.BytesIO()
+    out.write(b"%PDF-1.4\n")
+    offsets = []
+    for k, o in enumerate(objs, start=1):
+        offsets.append(out.tell())
+        out.write(b"%d 0 obj\n" % k + o + b"\nendobj\n")
+    xref = out.tell()
+    out.write(b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1))
+    for off in offsets:
+        out.write(b"%010d 00000 n \n" % off)
+    out.write(b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref))
+    return out.getvalue()
+
+
+TEXT_LINE = "This page has a text layer and a figure below it."
+
+
+def test_extract_embedded_images_filters_by_size(tmp_path):
+    p = tmp_path / "fig.pdf"
+    p.write_bytes(make_pdf_with_images(TEXT_LINE, [
+        ((300, 150), (72, 300, 300, 150)),     # 図: 読む
+        ((20, 20), (72, 100, 20, 20)),         # アイコン: 小さすぎる
+        ((600, 800), (0, 0, 612, 792)),        # ページ全体（スキャン）: 読まない
+    ]))
+    pages = list(extract.iter_pages(p, "application/pdf", dpi=50, pdf_images=True))
+    assert pages[0].source == "text_layer" and len(pages[0].images) == 1
+    assert pages[0].images[0].size == (300, 150)
+    # 既定（pdf_images=False）では画像を渡さない
+    assert list(extract.iter_pages(p, "application/pdf", dpi=50))[0].images == []
+
+
+def test_worker_reads_text_inside_pdf_images(login, worker, settings):
+    alice = login("alice")
+    d = alice.upload(alice.root, {"fig.pdf": make_pdf_with_images(TEXT_LINE, [((300, 150), (72, 300, 300, 150))])})
+    run_all(worker)
+    assert worker.ocr.calls == 1
+    conn = connect(settings.db_path)
+    page = conn.execute("SELECT * FROM pages WHERE source = 'text_layer'").fetchone()
+    assert page["text"].startswith("This page has a text layer")
+    assert "領収書の再発行には本人確認書類が必要です。" in page["text"] and "ノイズ" not in page["text"]
+    assert page["ocr_confidence"] == pytest.approx(0.98)
+    hit = conn.execute("SELECT count(*) FROM chunks_fts WHERE chunks_fts MATCH '\"本人確認書類\"'").fetchone()[0]
+    assert hit == 1
+    doc_id = d.json()["results"][0]["document"]["id"]
+    assert "＋ページ内の画像から読み取り" in alice.get(f"/d/{doc_id}").text
+
+
+def test_pdf_image_text_already_in_text_layer_is_not_doubled(login, settings, app):
+    class EchoOcr(FakeOcr):
+        def recognize(self, image):
+            self.calls += 1
+            return [OcrLine(TEXT_LINE, 0.99, [(10, 10), (190, 10), (190, 30), (10, 30)]),
+                    OcrLine("図 1 売上の推移", 0.95, [(10, 40), (190, 40), (190, 60), (10, 60)])]
+
+    ocr = EchoOcr()
+    w = Worker(settings, Context(settings.files_dir, ocr_factory=lambda: ocr, embedder_factory=FakeEmbedder, dpi=50))
+    alice = login("alice")
+    alice.upload(alice.root, {"fig.pdf": make_pdf_with_images(TEXT_LINE, [((300, 150), (72, 300, 300, 150))])})
+    run_all(w)
+    text = connect(settings.db_path).execute("SELECT text FROM pages").fetchone()[0]
+    assert text.count("text layer") == 1 and "図 1 売上の推移" in text
+
+
+def test_pdf_images_can_be_turned_off(login, settings, app):
+    ocr = FakeOcr()
+    w = Worker(settings, Context(settings.files_dir, ocr_factory=lambda: ocr, embedder_factory=FakeEmbedder, dpi=50,
+                                 pdf_images=False))
+    alice = login("alice")
+    alice.upload(alice.root, {"fig.pdf": make_pdf_with_images(TEXT_LINE, [((300, 150), (72, 300, 300, 150))])})
+    run_all(w)
+    assert ocr.calls == 0
+    page = connect(settings.db_path).execute("SELECT text, ocr_confidence FROM pages").fetchone()
+    assert "本人確認書類" not in page["text"] and page["ocr_confidence"] is None
+
+
+def test_reprocess_outdated_only_redoes_changed_kinds(login, worker, settings):
+    from docseed.jobs.process import PIPELINE_VERSION
+    from docseed.reprocess import reprocess
+    alice = login("alice")
+    alice.upload(alice.root, {"a.pdf": make_pdf(["This page has a text layer that is long enough."]),
+                              "b.txt": b"plain text file", "c.png": png()})
+    run_all(worker)
+    conn = connect(settings.db_path)
+    conn.execute("UPDATE blobs SET pipeline_version = 1")
+    assert reprocess(conn, "outdated") == 1          # PDF だけ（版 2 の変更は PDF だけに及ぶ）
+    rows = dict(conn.execute("SELECT mime_type, pipeline_version FROM blobs").fetchall())
+    assert rows["text/plain"] == rows["image/png"] == PIPELINE_VERSION
+    run_all(worker)
+    assert conn.execute("SELECT count(*) FROM blobs WHERE pipeline_version < ?", (PIPELINE_VERSION,)).fetchone()[0] == 0

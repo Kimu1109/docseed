@@ -105,9 +105,9 @@
     form.reset();
   });
 
-  // 通常の form 送信の確認
+  // 通常の form 送信の確認（押したボタンに data-confirm があれば、そちらを使う）
   document.addEventListener("submit", (e) => {
-    const msg = e.target.dataset?.confirm;
+    const msg = e.submitter?.dataset?.confirm || e.target.dataset?.confirm;
     if (msg && !confirm(msg)) e.preventDefault();
   });
 
