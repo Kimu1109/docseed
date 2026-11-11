@@ -151,7 +151,7 @@ def summarize_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int) -> str:
         return "too_short"   # 本文が短すぎるので要約しない
     ctx.between_pages()          # 温度による一時停止は呼ぶ前に確かめる
     try:
-        s = ctx.llm.summarize(*inp, known_tags=llm.known_tags(conn, blob_id))
+        s = ctx.llm.summarize(*inp, known_tags=llm.known_tags(conn, blob_id, ctx.embedder))
     except llm.LlmTimeout as e:
         row = conn.execute("SELECT warnings FROM blobs WHERE id = ?", (blob_id,)).fetchone()
         warns = [w for w in json.loads(row[0] or "[]") if w.get("code") != "summary_timeout"]
