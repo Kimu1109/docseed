@@ -466,17 +466,28 @@ def test_sampling_and_known_tags_sent(library, worker, fake_llm, settings, llm_o
 
 
 
-def test_prompt_examples_are_many_and_spread():
-    """例を 1 つ 2 つ書くと、関係の無い文書にもなぞった（何にでも「地理」）。例を消すと、関係の無い種類
-    （ログイン画面に「学術論文」）を作った。種類は多くの候補から選ばせ、分野は多くの分野の例を並べる。"""
-    p = llm.SYSTEM_PROMPT
-    assert len(llm.KIND_CHOICES) >= 20 and all(k in p for k in llm.KIND_CHOICES)
-    assert all(llm.clean_tag(k, llm.MAX_WORD_LEN) == k for k in llm.KIND_CHOICES + llm.FIELD_EXAMPLES)
-    assert len(llm.FIELD_EXAMPLES) >= 15 and all(f in p for f in llm.FIELD_EXAMPLES)
-    assert "自由に" in p and "当てはまらない欄は空" in p
-    assert llm.FIELD_EXAMPLES[0] != "地理"          # 先頭の例ほどなぞられやすい
-    for w in ("模試", "韓国", "国・地域"):           # 以前の例で、なぞられたもの
-        assert w not in p, w
+def test_prompt_has_the_few_examples_that_worked():
+    """4 回の比較で、少しの例を書いたプロンプト（v4）が一番良かった。例の語は EXAMPLES から作る。"""
+    for w in llm.EXAMPLE_WORDS:
+        assert w in llm.SYSTEM_PROMPT, w
+    assert len(llm.EXAMPLE_WORDS) <= 15
+
+
+def test_copied_examples_are_dropped():
+    """例の語を、関係の無い文書になぞったタグは捨てる（PDF ビューワーの説明に「地理」「模試」）。"""
+    pdf = "Firefox で開いた PDF のフォームに入力できる。Okular ではテキストフィールドの設定による。"
+    assert llm.drop_copied_examples(["模試", "地理", "PDF"], "pdfビューワー", None, pdf) == ["PDF"]
+    # 本文・題名・説明にある例の語は残す。例でない語はそのまま
+    tags = ["プリント", "数学", "英語"]
+    assert llm.drop_copied_examples(tags, "数学のプリント", None, pdf) == tags
+    assert llm.drop_copied_examples(["地理"], None, "地理の授業", pdf) == ["地理"]
+
+
+def test_summarize_drops_copied_examples():
+    client = _client(FakeLlm(outputs=[{"種類": "模試", "分野": "地理", "主題": "PDF、フォーム",
+                                       "要約": "PDF のフォームの説明。"}]))
+    s = client.summarize("pdfビューワー.png", None, "PDF のフォームに入力できる。" * 20)
+    assert s.tags == ["PDF", "フォーム"]
 
 
 def test_long_phrases_and_one_char_words_are_dropped():
