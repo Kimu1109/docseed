@@ -32,7 +32,7 @@ from .db import Tx, now
 log = logging.getLogger("docseed.llm")
 
 # プロンプトかモデルの扱いを変えたら上げる（古い要約は「古い要約」と表示し、管理画面から作り直せる）
-SUMMARY_VERSION = 5
+SUMMARY_VERSION = 6
 MAX_SUMMARY = 200          # 頼むのは 120 字以内。上限で切れたら最後の「。」までにする
 MIN_INPUT_CHARS = 100      # 本文がこれより短い文書は要約しない（要約するほどの内容が無く、指示をなぞってしまう）
 MAX_TAGS = 5               # 種類・分野・主題（2 語まで）から作るタグの数の上限
@@ -49,12 +49,32 @@ MAX_NEW_TOKENS = 400
 #   題名は意味のあるものだけを文で伝える。指示の言葉はタグから取り除く
 # - 同じ文を繰り返し続けることがあった（lfm2.5）。繰り返しに罰を与え、残った同じ文は 1 つにまとめる
 # - プロンプトに書いた例（「地理、数学…」「模試、範囲表、プリント…」）を、関係の無い文書にもなぞった
-#   （lfm2.5 が何にでも「地理」「模試」「プリント」を付けた）。具体例は書かず、当てはまらない欄は空でよいことにする
+#   （lfm2.5 が何にでも「地理」「模試」「プリント」を付けた）。当てはまらない欄は空でよいことにする
+# - 例を消すと、今度は関係の無い種類（ログイン画面に「学術論文」）や、途中で切れた句（「…への入場手」）、
+#   意味の無い語（「の」「章」）が出た。種類は多くの候補から選ばせ、分野は多くの例を見せ、長い句と 1 文字の語は捨てる
+# 種類は候補から選ばせる（何も見せないと、ログイン画面に「学術論文」と付けるなど、関係の無い語を作った）。
+# 分野は自由に書かせるが、書き方の手がかりとして、いろいろな分野の語を並べて見せる（1 つ 2 つだと、それを
+# 何にでも付けた。多く並べれば、どれか 1 つに偏りにくい）
+KIND_CHOICES = (
+    "お知らせ", "案内", "説明書", "手順書", "教科書", "問題集", "試験問題", "範囲表", "プリント", "ノート",
+    "メモ", "論文", "記事", "ウェブページ", "アプリの画面", "投稿", "メール", "手紙", "報告書", "議事録",
+    "一覧表", "スライド", "契約書", "請求書", "領収書", "申込書", "名簿", "予定表", "設定ファイル", "プログラム",
+    "レシピ", "地図", "写真",
+)
+FIELD_EXAMPLES = (
+    "数学", "英語", "国語", "物理", "化学", "生物", "歴史", "地理", "経済", "法律", "医療", "料理", "旅行",
+    "音楽", "スポーツ", "経理", "教育", "プログラミング", "ネットワーク", "セキュリティ", "環境",
+)
+MAX_WORD_LEN = 12          # これより長いタグは、語ではなく句・文なので使わない（途中で切ると意味が崩れる）
+
 SYSTEM_PROMPT = (
     "あなたは文書の整理を手伝います。与えられた文書について、次の 4 つを日本語で書いてください。"
-    "種類: この文書がどういう種類・形式の文書かを 1 語で。"
-    "分野: この文書の内容が属する分野・教科・学問・業種を 1〜2 語で。"
+    "種類: この文書の種類を、次の候補から 1 つ選んでください（どれにも当てはまらなければ、短い語で）。"
+    "候補: " + "、".join(KIND_CHOICES) + "。"
+    "分野: この文書の内容が属する分野を 1〜2 語で。たとえば " + "、".join(FIELD_EXAMPLES) + " などのような語です"
+    "（この中から選ぶ必要はありません。この文書に合う語を自由に書いてください）。"
     "主題: この文書が主に何についてのものか（対象）を 1〜2 語で、「、」で区切って。"
+    "どの語も 2〜8 文字の名詞にし、文や「〜と〜」「〜の〜」のような句にはしないでください。"
     "どの欄も、この文書の内容だけから考えて書いてください。本文に出てくる言葉をそのまま抜き出すより、"
     "文書全体が何についてのものかを表す言葉を選んでください。当てはまらない欄は空（\"\"）にしてください。"
     "要約: 文書の内容を 2 文（120 字以内）で。本文に書かれている事実だけを使い、推測や想像で補わないでください。"
@@ -72,9 +92,9 @@ RETRY_REQUEST = "英語ではなく、必ず日本語で書いてください。
 SCHEMA = {
     "type": "object",
     "properties": {
-        "種類": {"type": "string", "maxLength": MAX_TAG_LEN},
-        "分野": {"type": "string", "maxLength": MAX_TAG_LEN},
-        "主題": {"type": "string", "maxLength": MAX_TAG_LEN * 2},
+        "種類": {"type": "string", "maxLength": 40},     # 文法で途中を切らせない（長すぎる語は後で捨てる）
+        "分野": {"type": "string", "maxLength": 40},
+        "主題": {"type": "string", "maxLength": 60},
         "要約": {"type": "string", "maxLength": MAX_SUMMARY},
     },
     "required": ["種類", "分野", "主題", "要約"],
@@ -184,9 +204,12 @@ def trim_summary(s: str) -> str:
     return s
 
 
-def clean_tag(t: str) -> str | None:
-    t = re.sub(r"\s+", " ", _clean_text(str(t))).strip(" #・、,。:：「」\"'")[:MAX_TAG_LEN]
-    if not t or t.lower() in STOP_TAGS or t in STOP_TAGS:
+def clean_tag(t: str, max_len: int = MAX_TAG_LEN) -> str | None:
+    """タグにできる語に整える。長すぎる句は切らずに捨てる（切ると「…への入場手」のように崩れる）。"""
+    t = re.sub(r"\s+", " ", _clean_text(str(t))).strip(" #・、,。:：「」\"'")
+    if not t or len(t) > max_len or t.lower() in STOP_TAGS or t in STOP_TAGS:
+        return None
+    if len(t) == 1 and not t.isascii():      # 「の」「章」のような 1 文字は意味をなさない
         return None
     return t
 
@@ -202,7 +225,8 @@ def parse_output(content: str) -> tuple[str, list[str]]:
     summary = trim_summary(str(data.get("要約") or data.get("summary") or ""))
     raw: list[str] = []
     for key, n in FACET_LIMITS.items():
-        words = [w for w in re.split(r"[、,，/／・;；\s]+", str(data.get(key) or "")) if clean_tag(w)]
+        # 空白では区切らない（「Raspberry Pi」が 2 つに分かれた）
+        words = [w for w in re.split(r"[、,，/／・;；]+", str(data.get(key) or "")) if clean_tag(w, MAX_WORD_LEN)]
         raw += words[:n]
     raw += [str(x) for x in (data.get("タグ") or data.get("tags") or [])]   # 古い形の出力も読めるように
     tags: list[str] = []

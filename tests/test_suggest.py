@@ -466,11 +466,26 @@ def test_sampling_and_known_tags_sent(library, worker, fake_llm, settings, llm_o
 
 
 
-def test_prompt_has_no_examples_to_copy():
-    """プロンプトの例（地理・模試・プリントなど）を、関係の無い文書にもなぞったので、具体例は書かない。"""
-    for w in ("地理", "数学", "模試", "プリント", "範囲表", "家計", "韓国", "国・地域"):
-        assert w not in llm.SYSTEM_PROMPT, w
-    assert "当てはまらない欄は空" in llm.SYSTEM_PROMPT
+def test_prompt_examples_are_many_and_spread():
+    """例を 1 つ 2 つ書くと、関係の無い文書にもなぞった（何にでも「地理」）。例を消すと、関係の無い種類
+    （ログイン画面に「学術論文」）を作った。種類は多くの候補から選ばせ、分野は多くの分野の例を並べる。"""
+    p = llm.SYSTEM_PROMPT
+    assert len(llm.KIND_CHOICES) >= 20 and all(k in p for k in llm.KIND_CHOICES)
+    assert all(llm.clean_tag(k, llm.MAX_WORD_LEN) == k for k in llm.KIND_CHOICES + llm.FIELD_EXAMPLES)
+    assert len(llm.FIELD_EXAMPLES) >= 15 and all(f in p for f in llm.FIELD_EXAMPLES)
+    assert "自由に" in p and "当てはまらない欄は空" in p
+    assert llm.FIELD_EXAMPLES[0] != "地理"          # 先頭の例ほどなぞられやすい
+    for w in ("模試", "韓国", "国・地域"):           # 以前の例で、なぞられたもの
+        assert w not in p, w
+
+
+def test_long_phrases_and_one_char_words_are_dropped():
+    """途中で切れた句（「…への入場手」）や、「の」「章」はタグにしない。空白を含む名前は分けない。"""
+    out = {"種類": "章", "分野": "の、情報科学", "主題": "パスワード確認とプログラム会場への入場手続き、Raspberry Pi",
+           "要約": "x。"}
+    _, t = llm.parse_output(json.dumps(out, ensure_ascii=False))
+    assert t == ["情報科学", "Raspberry Pi"]
+    assert llm.clean_tag("C") == "C"                 # 英字 1 文字（言語名など）は残す
 
 
 def test_each_facet_is_split_and_limited():
