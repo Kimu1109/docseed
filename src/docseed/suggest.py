@@ -435,9 +435,11 @@ def auto_moved(conn: sqlite3.Connection, user_id: int, limit: int = 20) -> list[
 # ---------------------------------------------------------------------------
 
 def for_document(conn: sqlite3.Connection, doc: sqlite3.Row, *, embedder=None, enabled: bool = True,
-                 llm_enabled: bool = False) -> dict:
-    """文書の候補と要約。まだ一度も計算していなければ、その場で計算して保存する（100ms 程度）。"""
-    from .llm import get_summary
+                 llm_enabled: bool = False, llm_model: str | None = None) -> dict:
+    """文書の候補と要約。まだ一度も計算していなければ、その場で計算して保存する（100ms 程度）。
+
+    llm_model（今のモデル）を渡すと、別のモデルで作った要約を古いもの（old_model）として返す。
+    """
     owner_id = conn.execute("SELECT owner_id FROM folders WHERE id = ?", (doc["folder_id"],)).fetchone()[0]
     prefs = get_prefs(conn, owner_id)
     out = {"folders": [], "tags": [], "summary": None, "prefs": prefs}
@@ -452,7 +454,46 @@ def for_document(conn: sqlite3.Connection, doc: sqlite3.Row, *, embedder=None, e
         out["folders"] = s["folders"] if prefs["suggest_folders"] else []
         out["tags"] = s["tags"] if prefs["suggest_tags"] else []
     if llm_enabled and prefs["show_summary"]:
-        out["summary"] = get_summary(conn, doc["blob_id"])
+        from .llm import document_summary, manual_summary
+        out["summary"] = document_summary(conn, doc, llm_model)
+        m = manual_summary(conn, doc["id"])
+        out["summary_hidden"] = bool(m and m["hidden"])
+    if llm_enabled:
+        from .llm import summary_pending
+        out["summary_pending"] = summary_pending(conn, doc["blob_id"])
+    return out
+
+
+def redo(conn: sqlite3.Connection, user: User, doc: sqlite3.Row, *, embedder=None, enabled: bool = True,
+         llm_enabled: bool = False, priority: int = 5) -> dict:
+    """文書の画面の「要約とタグをやり直す」。
+
+    フォルダ・タグの候補（埋め込み）はその場で計算し直し、要約と LLM のタグは優先度を上げたジョブで
+    作り直す（既に要約があっても上書きする。手で直した・消した要約もやめて、自動の要約に戻す）。
+    却下した候補は、やり直しても出さない。
+    返り値: {"suggest": 候補を作り直したか, "summary": "queued" / "too_short" / None}
+    """
+    from .llm import clear_manual_summary, enqueue_summary, summary_input
+    out: dict = {"suggest": False, "summary": None}
+    status = conn.execute("SELECT status FROM blobs WHERE id = ?", (doc["blob_id"],)).fetchone()[0]
+    if status != "ready":
+        raise ValidationFailed("文字の読み取りが済んでから、やり直してください")
+    owner_id = conn.execute("SELECT owner_id FROM folders WHERE id = ?", (doc["folder_id"],)).fetchone()[0]
+    prefs = get_prefs(conn, owner_id)
+    if enabled and (prefs["suggest_folders"] or prefs["suggest_tags"]):
+        store(conn, doc["id"], compute(conn, doc, embedder), folders=prefs["suggest_folders"],
+              tags=prefs["suggest_tags"])
+        out["suggest"] = True
+    if llm_enabled:
+        clear_manual_summary(conn, doc, user.id)
+        if summary_input(conn, doc["blob_id"]) is None:
+            out["summary"] = "too_short"
+        else:
+            enqueue_summary(conn, doc["blob_id"], priority=priority)
+            out["summary"] = "queued"
+    with Tx(conn):
+        audit(conn, "suggest_redo", user_id=user.id, target_type="document", target_id=doc["id"],
+              summary=out["summary"])
     return out
 
 

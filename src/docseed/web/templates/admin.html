@@ -45,13 +45,19 @@
   <h2>{{ icon("wand_stars") }} 要約（LLM）</h2>
   <dl class="stats">
     <div><dt>モデル</dt><dd class="small">{{ llm.model }}</dd></div>
-    <div><dt>作った要約</dt><dd>{{ llm.summaries }}{% if llm.outdated %}<span class="unit">（古い {{ llm.outdated }} 件）</span>{% endif %}</dd></div>
+    <div><dt>作った要約</dt><dd>{{ llm.summaries }}{% if llm.outdated or llm.old_model %}<span class="unit">（{% if llm.outdated %}古い方式 {{ llm.outdated }} 件{% endif %}{% if llm.outdated and llm.old_model %}・{% endif %}{% if llm.old_model %}旧モデル {{ llm.old_model }} 件{% endif %}）</span>{% endif %}</dd></div>
     <div><dt>処理待ち・平均時間</dt><dd>{{ llm.waiting }}<span class="unit">件 / {{ (llm.avg_ms / 1000) | round(1) if llm.avg_ms else "—" }} 秒</span></dd></div>
   </dl>
-  <form method="post" action="/admin/summaries/rebuild">
+  {% if llm.other_models %}
+  <p class="muted small">旧モデルで作った要約: {% for m in llm.other_models %}{{ m.model }}（{{ m.count }} 件）{% if not loop.last %}、{% endif %}{% endfor %}</p>
+  {% endif %}
+  <form method="post" action="/admin/summaries/rebuild" class="row-actions-in">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button class="btn btn-sm" {% if not llm.outdated %}disabled{% endif %}>{{ icon("refresh") }}古い要約を作り直す</button>
+    <button name="scope" value="version" class="btn btn-sm" {% if not llm.outdated %}disabled{% endif %}>{{ icon("refresh") }}古い要約を作り直す</button>
+    <button name="scope" value="model" class="btn btn-sm" {% if not llm.old_model %}disabled{% endif %}
+            data-confirm="旧モデルで作った {{ llm.old_model }} 件の要約を、今のモデル（{{ llm.model }}）で上書きします。1 件あたり {{ (llm.avg_ms / 1000) | round | int if llm.avg_ms else "数十" }} 秒ほどかかります。よろしいですか？">{{ icon("refresh") }}旧モデルの要約を今のモデルで上書き</button>
   </form>
+  <p class="muted small">作り直しは、ほかの処理の合間に順番に行います。作り直すまでは今の要約が使われます。</p>
 </section>
 {% endif %}
 

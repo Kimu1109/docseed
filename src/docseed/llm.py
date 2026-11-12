@@ -399,38 +399,160 @@ def sync_summary_chunk(conn: sqlite3.Connection, blob_id: int) -> bool:
     """
     import unicodedata
     r = conn.execute("SELECT summary FROM blob_summaries WHERE blob_id = ?", (blob_id,)).fetchone()
-    cur = conn.execute("SELECT id, text FROM chunks WHERE blob_id = ? AND source = 'summary'", (blob_id,)).fetchone()
+    cur = conn.execute("SELECT id, text FROM chunks WHERE blob_id = ? AND source = 'summary'"
+                       " AND document_id IS NULL", (blob_id,)).fetchone()
     text = unicodedata.normalize("NFKC", r[0]).strip() if r else ""
     if (cur["text"] if cur else "") == text:
         return False
     with Tx(conn):
-        conn.execute("DELETE FROM chunks WHERE blob_id = ? AND source = 'summary'", (blob_id,))
+        conn.execute("DELETE FROM chunks WHERE blob_id = ? AND source = 'summary' AND document_id IS NULL",
+                     (blob_id,))
         if text:
             conn.execute("INSERT INTO chunks(blob_id, page_no, seq, char_start, char_end, text, source)"
                          " VALUES (?, NULL, -1, 0, ?, ?, 'summary')", (blob_id, len(text), text))
     return True
 
 
-def get_summary(conn: sqlite3.Connection, blob_id: int) -> dict | None:
+def get_summary(conn: sqlite3.Connection, blob_id: int, model: str | None = None) -> dict | None:
+    """blob の要約。model（今のモデル）を渡すと、別のモデルで作った要約も outdated にする。"""
     r = conn.execute("SELECT * FROM blob_summaries WHERE blob_id = ?", (blob_id,)).fetchone()
     if r is None:
         return None
+    old_version = r["summary_version"] < SUMMARY_VERSION
+    old_model = model is not None and r["model"] != model
     return {"summary": r["summary"], "tags": json.loads(r["tags"]), "model": r["model"],
-            "outdated": r["summary_version"] < SUMMARY_VERSION, "created_at": r["created_at"],
-            "elapsed_ms": r["elapsed_ms"]}
+            "outdated": old_version or old_model, "old_version": old_version, "old_model": old_model,
+            "created_at": r["created_at"], "elapsed_ms": r["elapsed_ms"]}
 
 
-def enqueue_summary(conn: sqlite3.Connection, blob_id: int) -> bool:
+MAX_MANUAL_SUMMARY = 1000   # 手で直した要約の長さの上限
+
+
+def manual_summary(conn: sqlite3.Connection, doc_id: int) -> dict | None:
+    """文書ごとに手で直した要約。hidden なら「この文書では要約を出さない」。無ければ None。"""
+    r = conn.execute("SELECT s.summary, s.edited_at, u.display_name FROM document_summaries s"
+                     " LEFT JOIN users u ON u.id = s.edited_by WHERE s.document_id = ?", (doc_id,)).fetchone()
+    if r is None:
+        return None
+    return {"summary": r["summary"], "hidden": r["summary"] == "", "edited_at": r["edited_at"],
+            "edited_by": r["display_name"]}
+
+
+def document_summary(conn: sqlite3.Connection, doc: sqlite3.Row, model: str | None = None) -> dict | None:
+    """文書の画面・検索結果に出す要約。手で直したものがあればそちら、消したなら None。
+
+    返す辞書は get_summary と同じ形に manual（手で直したか）と edited_*、hidden を足したもの。
+    """
+    m = manual_summary(conn, doc["id"])
+    auto = get_summary(conn, doc["blob_id"], model)
+    if m is None:
+        return auto | {"manual": False, "hidden": False} if auto else None
+    if m["hidden"]:
+        return None
+    return {"summary": m["summary"], "tags": [], "model": None, "outdated": False, "old_version": False,
+            "old_model": False, "created_at": m["edited_at"], "elapsed_ms": None, "manual": True,
+            "hidden": False, "edited_at": m["edited_at"], "edited_by": m["edited_by"]}
+
+
+def set_manual_summary(conn: sqlite3.Connection, doc: sqlite3.Row, user_id: int, text: str) -> None:
+    """この文書の要約を手で直す（text が '' なら、この文書では要約を出さない）。ほかの文書は変えない。"""
+    from .audit import audit
+    from .errors import ValidationFailed
+    text = (text or "").replace("\r\n", "\n").strip()
+    if len(text) > MAX_MANUAL_SUMMARY:
+        raise ValidationFailed(f"要約は {MAX_MANUAL_SUMMARY} 字以内にしてください")
+    with Tx(conn):
+        conn.execute("INSERT INTO document_summaries(document_id, summary, edited_by, edited_at) VALUES (?,?,?,?)"
+                     " ON CONFLICT(document_id) DO UPDATE SET summary = excluded.summary,"
+                     " edited_by = excluded.edited_by, edited_at = excluded.edited_at",
+                     (doc["id"], text, user_id, now()))
+        audit(conn, "summary_hide" if text == "" else "summary_edit", user_id=user_id, target_type="document",
+              target_id=doc["id"])
+    _after_manual_change(conn, doc["blob_id"])
+
+
+def clear_manual_summary(conn: sqlite3.Connection, doc: sqlite3.Row, user_id: int | None = None) -> bool:
+    """手で直した（消した）要約をやめ、自動の要約に戻す。戻したら True。"""
+    from .audit import audit
+    with Tx(conn):
+        cur = conn.execute("DELETE FROM document_summaries WHERE document_id = ?", (doc["id"],))
+        if cur.rowcount and user_id is not None:
+            audit(conn, "summary_restore", user_id=user_id, target_type="document", target_id=doc["id"])
+    if cur.rowcount:
+        _after_manual_change(conn, doc["blob_id"])
+    return cur.rowcount > 0
+
+
+def _after_manual_change(conn: sqlite3.Connection, blob_id: int) -> None:
+    """手で直した要約を検索に載せる（キーワード検索はすぐ、意味検索のベクトルは worker が作る）。"""
+    from .jobs.queue import enqueue
+    if sync_manual_chunks(conn, blob_id):
+        enqueue(conn, "reembed_blob", blob_id, payload=json.dumps({"missing_only": True}))
+
+
+def sync_manual_chunks(conn: sqlite3.Connection, blob_id: int) -> bool:
+    """手で直した要約を、その文書だけのチャンク（source = 'summary'、document_id あり）にそろえる。変えたら True。"""
+    import unicodedata
+    want = {r[0]: unicodedata.normalize("NFKC", r[1]).strip() for r in conn.execute(
+        "SELECT s.document_id, s.summary FROM document_summaries s JOIN documents d ON d.id = s.document_id"
+        " WHERE d.blob_id = ? AND s.summary != ''", (blob_id,))}
+    have = {r[0]: (r[1], r[2]) for r in conn.execute(
+        "SELECT document_id, id, text FROM chunks WHERE blob_id = ? AND document_id IS NOT NULL", (blob_id,))}
+    changed = False
+    with Tx(conn):
+        for doc_id, (cid, text) in have.items():
+            if want.get(doc_id) != text:
+                conn.execute("DELETE FROM chunks WHERE id = ?", (cid,))
+                changed = True
+        for doc_id, text in want.items():
+            if doc_id in have and have[doc_id][1] == text:
+                continue
+            # seq は blob の中で重ならないよう、自動の要約（-1）より前の -1 - 文書 ID にする
+            conn.execute("INSERT INTO chunks(blob_id, page_no, seq, char_start, char_end, text, source, document_id)"
+                         " VALUES (?, NULL, ?, 0, ?, ?, 'summary', ?)", (blob_id, -1 - doc_id, len(text), text, doc_id))
+            changed = True
+    return changed
+
+
+def enqueue_summary(conn: sqlite3.Connection, blob_id: int, priority: int = 30) -> bool:
+    """要約を作る（作り直す）ジョブを積む。既に待っているジョブがあれば、優先度だけを上げる。"""
     with Tx(conn):
         cur = conn.execute("INSERT OR IGNORE INTO jobs(type, blob_id, priority, status, run_after, created_at)"
-                           " VALUES ('summarize_blob', ?, 30, 'pending', ?, ?)", (blob_id, now(), now()))
-        return cur.rowcount == 1
+                           " VALUES ('summarize_blob', ?, ?, 'pending', ?, ?)", (blob_id, priority, now(), now()))
+        if cur.rowcount == 1:
+            return True
+        conn.execute("UPDATE jobs SET priority = min(priority, ?) WHERE type = 'summarize_blob' AND blob_id = ?"
+                     " AND status = 'pending'", (priority, blob_id))
+        return False
 
 
-def enqueue_rebuild(conn: sqlite3.Connection) -> int:
-    """古い要約（SUMMARY_VERSION が古い）を作り直すジョブを積む。"""
-    ids = [r[0] for r in conn.execute("SELECT blob_id FROM blob_summaries WHERE summary_version < ?",
-                                      (SUMMARY_VERSION,))]
+def summary_pending(conn: sqlite3.Connection, blob_id: int) -> bool:
+    return conn.execute("SELECT 1 FROM jobs WHERE type = 'summarize_blob' AND blob_id = ?"
+                        " AND status IN ('pending', 'running')", (blob_id,)).fetchone() is not None
+
+
+REBUILD_SCOPES = ("outdated", "version", "model")
+
+
+def enqueue_rebuild(conn: sqlite3.Connection, model: str | None = None, scope: str = "outdated") -> int:
+    """古い要約を作り直す（上書きする）ジョブを積む。
+
+    version: 古い方式（SUMMARY_VERSION が古い）で作ったもの / model: 今のモデル（model）と別のモデルで
+    作ったもの / outdated: その両方。model を渡さなければ、モデルの違いは見ない。
+    """
+    if scope not in REBUILD_SCOPES:
+        raise ValueError(scope)
+    conds, args = [], []
+    if scope in ("outdated", "version"):
+        conds.append("summary_version < ?")
+        args.append(SUMMARY_VERSION)
+    if scope in ("outdated", "model") and model is not None:
+        conds.append("model != ?")
+        args.append(model)
+    if not conds:
+        return 0
+    ids = [r[0] for r in conn.execute(
+        f"SELECT blob_id FROM blob_summaries WHERE {' OR '.join(conds)}", args)]
     return sum(enqueue_summary(conn, b) for b in ids)
 
 
@@ -533,9 +655,14 @@ def read_exported(path: Path) -> tuple[str, str | None, str]:
     return title, (meta[1] if len(meta) > 1 else None), "\n".join(lines)
 
 
-def llm_stats(conn: sqlite3.Connection) -> dict:
-    r = conn.execute("SELECT count(*), avg(elapsed_ms), sum(summary_version < ?) FROM blob_summaries",
-                     (SUMMARY_VERSION,)).fetchone()
+def llm_stats(conn: sqlite3.Connection, model: str | None = None) -> dict:
+    """要約の数・平均時間・古いもの（outdated: 古い方式、old_model: 別のモデル）・処理待ちの数。"""
+    r = conn.execute("SELECT count(*), avg(elapsed_ms), sum(summary_version < ?), sum(model != coalesce(?, model))"
+                     " FROM blob_summaries", (SUMMARY_VERSION, model)).fetchone()
     waiting = conn.execute("SELECT count(*) FROM jobs WHERE type = 'summarize_blob'"
                            " AND status IN ('pending', 'running')").fetchone()[0]
-    return {"summaries": r[0], "avg_ms": int(r[1]) if r[1] else None, "outdated": r[2] or 0, "waiting": waiting}
+    others = [{"model": m, "count": n} for m, n in conn.execute(
+        "SELECT model, count(*) FROM blob_summaries WHERE model != coalesce(?, model) GROUP BY model"
+        " ORDER BY count(*) DESC", (model,))]
+    return {"summaries": r[0], "avg_ms": int(r[1]) if r[1] else None, "outdated": r[2] or 0,
+            "old_model": r[3] or 0, "other_models": others, "waiting": waiting}

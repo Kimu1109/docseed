@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 import time
+import unicodedata
 from collections.abc import Callable
 from pathlib import Path
 
@@ -24,7 +26,12 @@ from ..pipeline.text import chunk_pages, normalize
 
 log = logging.getLogger("docseed.process")
 
-PIPELINE_VERSION = 1
+PIPELINE_VERSION = 2
+# 版ごとに、処理し直すと結果が変わる形式（extract.kind）。古い版で処理したものの再処理（reprocess outdated）で、
+# 変わらない形式は処理し直さず版だけを上げる（Pi で画像の OCR をやり直すと時間がかかるため）
+PIPELINE_CHANGES: dict[int, frozenset[str]] = {
+    2: frozenset({"pdf"}),   # テキスト層のある PDF のページに貼られた画像も OCR する
+}
 EMBED_COMMIT_EVERY = 64
 
 
@@ -34,11 +41,12 @@ class Context:
     def __init__(self, files_dir: Path, *, ocr_factory: Callable[[], OcrEngine],
                  embedder_factory: Callable[[], Embedder], dpi: int = 200, min_score: float = 0.5,
                  between_pages: Callable[[], None] | None = None, data_dir: Path | None = None,
-                 suggest_enabled: bool = True, llm=None):
+                 suggest_enabled: bool = True, llm=None, pdf_images: bool = True):
         self.files_dir = files_dir
         self.data_dir = data_dir or files_dir.parent   # 派生ファイルは <data_dir>/derived/
         self.suggest_enabled = suggest_enabled         # フォルダ・タグの候補（Phase 9）
         self.llm = llm                                 # 要約（LlmClient。無効なら None）
+        self.pdf_images = pdf_images                   # テキスト層のある PDF のページの画像も OCR する
         self._ocr_factory = ocr_factory
         self._embedder_factory = embedder_factory
         self._ocr: OcrEngine | None = None
@@ -100,7 +108,7 @@ def process_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int, *, force_
     clip = webclip_info(conn, blob_id) if extract.kind(mime) == "html" else None
     try:
         for page in extract.iter_pages(path, mime, dpi=ctx.dpi, skip=done_pages, force_ocr=force_ocr,
-                                       webclip=clip):
+                                       webclip=clip, pdf_images=ctx.pdf_images):
             _store_page(conn, ctx, blob_id, page, warnings)
             done_pages.add(page.page_no)
             _set(conn, blob_id, progress_done=len(done_pages), warnings=json.dumps(warnings, ensure_ascii=False))
@@ -124,6 +132,7 @@ def process_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int, *, force_
     # ③ 埋め込み（ベクトルの無いチャンクだけ）。要約のチャンクも（処理し直しで消えていれば作り直して）埋め込む
     from .. import llm
     llm.sync_summary_chunk(conn, blob_id)
+    llm.sync_manual_chunks(conn, blob_id)    # 処理し直しで消えた、手で直した要約のチャンク
     embed_chunks(conn, ctx, blob_id)
 
     _set(conn, blob_id, status="ready", processed_at=now(), pipeline_version=PIPELINE_VERSION,
@@ -139,7 +148,7 @@ def after_ready(conn: sqlite3.Connection, ctx: Context, blob_id: int) -> None:
     if ctx.suggest_enabled:
         suggest.enqueue_for_blob(conn, blob_id)
     if ctx.llm is not None:
-        s = llm.get_summary(conn, blob_id)
+        s = llm.get_summary(conn, blob_id, ctx.llm.model)
         if s is None or s["outdated"]:
             llm.enqueue_summary(conn, blob_id)
 
@@ -223,9 +232,17 @@ def _store_page(conn: sqlite3.Connection, ctx: Context, blob_id: int, page: extr
                 warnings: list[dict]) -> None:
     warnings.extend(page.warnings)
     if page.source != "ocr":
+        text, conf = page.text or "", None
+        if page.images:
+            extra, conf = _image_text(ctx, page)
+            if extra:
+                text = f"{text}\n\n{extra}" if text.strip() else extra
+                log.info("ocr blob=%s page=%s images=%s chars=%s", blob_id, page.page_no, len(page.images),
+                         len(extra))
         with Tx(conn):
-            conn.execute("INSERT OR REPLACE INTO pages(blob_id, page_no, source, text) VALUES (?,?,?,?)",
-                         (blob_id, page.page_no, page.source, page.text or ""))
+            # 画像の文字を足したページは ocr_confidence を持つ（画面で「＋画像から読み取り」と出す）
+            conn.execute("INSERT OR REPLACE INTO pages(blob_id, page_no, source, text, ocr_confidence)"
+                         " VALUES (?,?,?,?,?)", (blob_id, page.page_no, page.source, text, conf))
         return
     img = prepare_image(page.image)
     t = time.monotonic()
@@ -250,6 +267,35 @@ def _store_page(conn: sqlite3.Connection, ctx: Context, blob_id: int, page: extr
     if secs > 120:
         _warn(warnings, "ocr_slow", page=page.page_no, seconds=round(secs))
     log.info("ocr blob=%s page=%s lines=%s %.1fs", blob_id, page.page_no, len(lines), secs)
+
+
+def _squash(s: str) -> str:
+    return re.sub(r"\s+", "", unicodedata.normalize("NFKC", s))
+
+
+def _image_text(ctx: Context, page: extract.Page) -> tuple[str, float | None]:
+    """ページに貼られた画像を OCR し、テキスト層に無い文字だけを返す（と、使った行の信頼度の平均）。
+
+    画像の上に文字を重ねた PDF（図の見出しなど）では、同じ文字がテキスト層と画像の両方にある。
+    テキスト層に既にある行は二重に入れない。
+    """
+    known = _squash(page.text or "")
+    blocks: list[str] = []
+    confs: list[float] = []
+    for im in page.images:
+        lines = ctx.ocr.recognize(prepare_image(im))
+        fresh = []
+        for ln in lines:
+            key = _squash(ln.text)
+            if key and key not in known:
+                fresh.append(ln)
+                known += key
+        ordered, text, _vertical = order_lines(fresh, ctx.min_score)
+        if text.strip():
+            blocks.append(normalize(text))
+            confs.extend(x.confidence for x in ordered)
+        ctx.between_pages()
+    return "\n\n".join(blocks), (float(np.mean(confs)) if confs else None)
 
 
 def embed_chunks(conn: sqlite3.Connection, ctx: Context, blob_id: int) -> int:

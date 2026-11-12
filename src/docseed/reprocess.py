@@ -6,7 +6,7 @@ import json
 import sqlite3
 
 from .db import Tx, now
-from .jobs.process import PIPELINE_VERSION
+from .jobs.process import PIPELINE_CHANGES, PIPELINE_VERSION
 from .jobs.queue import PRIORITY
 
 
@@ -40,8 +40,34 @@ def reprocess(conn: sqlite3.Connection, scope: str, *, force_ocr: bool = False) 
     else:
         raise ValueError(scope)
     ids = [r[0] for r in conn.execute(q)]
+    if scope == "outdated":
+        ids = _skip_unchanged(conn, ids)
     return enqueue_reprocess(conn, ids, force_ocr=force_ocr, priority=PRIORITY["reembed_blob"] if scope != "failed"
                              else None)
+
+
+def _skip_unchanged(conn: sqlite3.Connection, blob_ids: list[int]) -> list[int]:
+    """古い版で処理した blob のうち、その後の版の変更が及ぶ形式のものだけを返す。
+
+    及ばないもの（PDF の変更のときの画像・テキストなど）は処理し直しても結果が同じなので、版だけを上げる。
+    """
+    from .pipeline.extract import kind
+    todo, bump = [], []
+    for bid in blob_ids:
+        r = conn.execute("SELECT mime_type, coalesce(pipeline_version, 0) FROM blobs WHERE id = ?", (bid,)).fetchone()
+        if r is None:
+            continue
+        changed = range(r[1] + 1, PIPELINE_VERSION + 1)
+        # 変更の記録が無い版（1 以前）は、すべての形式に及ぶものとして扱う
+        if any(v not in PIPELINE_CHANGES or kind(r[0]) in PIPELINE_CHANGES[v] for v in changed):
+            todo.append(bid)
+        else:
+            bump.append(bid)
+    if bump:
+        with Tx(conn):
+            conn.executemany("UPDATE blobs SET pipeline_version = ? WHERE id = ?",
+                             [(PIPELINE_VERSION, b) for b in bump])
+    return todo
 
 
 def enqueue_derive(conn: sqlite3.Connection, scope: str = "missing") -> int:

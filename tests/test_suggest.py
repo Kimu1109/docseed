@@ -264,7 +264,7 @@ def test_suggestions_off_by_pref(library, worker):
 @pytest.fixture()
 def llm_on(settings, app):
     from dataclasses import replace
-    app.state.settings = replace(settings, llm_enabled=True)
+    app.state.settings = replace(settings, llm_enabled=True, llm_model="test.gguf")   # worker と同じモデル
     yield
     app.state.settings = settings
 
@@ -600,6 +600,223 @@ def test_migration_adds_existing_summaries_to_search(tmp_path, monkeypatch):
                  " VALUES (1, '料理のレシピの覚え書き。', '[]', 'm', 1, 'x')")
     conn.commit()
     monkeypatch.setattr(db, "_migrations", lambda: allm)
-    assert db.migrate(conn) == ["0006_summary_search.sql"]
+    assert db.migrate(conn) == ["0006_summary_search.sql", "0007_manual_summaries.sql"]
     assert conn.execute("SELECT c.source FROM chunks_fts f JOIN chunks c ON c.id = f.rowid"
                         " WHERE chunks_fts MATCH 'レシピ'").fetchone()[0] == "summary"
+
+
+# ---------------------------------------------------------------------------
+# 文書の画面からのやり直し・旧モデルの要約の上書き
+# ---------------------------------------------------------------------------
+
+def _web_post(c, url):
+    """画面のフォーム送信（CSRF トークンはページから取る）。"""
+    import re
+    page = c.http.get("/settings").text
+    token = re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
+    return c.http.post(url, data={"csrf_token": token}, follow_redirects=False)
+
+
+def test_redo_summary_and_tags_from_document_page(library, worker, fake_llm, settings, llm_on):
+    a = library["a"]
+    doc = put(a, library["inbox"], "redo.txt", "請求書 第9号。今月の支払についてのご案内です。" * 8)
+    run_all(worker)
+    page = a.get(f"/d/{doc}").text
+    assert "要約とタグをやり直す" in page
+    fake_llm.outputs = [{"要約": "作り直した要約です。", "タグ": ["月次"]}]
+    r = _web_post(a, f"/d/{doc}/redo")
+    assert r.status_code == 303 and r.headers["location"].endswith("done=redo")
+    conn = connect(settings.db_path)
+    job = conn.execute("SELECT priority, status FROM jobs WHERE type = 'summarize_blob' ORDER BY id DESC").fetchone()
+    assert job["status"] == "pending" and job["priority"] == 5      # 手で頼んだものは先に処理する
+    page = a.get(f"/d/{doc}").text
+    assert "作り直しています" in page
+    run_all(worker)
+    s = a.get(f"/api/v1/documents/{doc}/suggestions").json()
+    assert s["summary"]["summary"] == "作り直した要約です。" and not s["summary_pending"]
+    # API からも同じことができる。閲覧しかできない人はできない
+    r = a.post(f"/api/v1/documents/{doc}/suggestions/redo")
+    assert r.status_code == 202 and r.json() == {"suggest": True, "summary": "queued"}
+    assert login_as_bob(library).post(f"/api/v1/documents/{doc}/suggestions/redo").status_code == 404
+
+
+def login_as_bob(library):
+    from tests.conftest import Client
+    return Client(library["a"].http.app, "bob")
+
+
+def test_redo_short_document_only_redoes_candidates(library, worker, settings, llm_on):
+    a = library["a"]
+    doc = put(a, library["inbox"], "short.txt", "請求書のメモ")
+    run_all(worker)
+    r = _web_post(a, f"/d/{doc}/redo")
+    assert r.headers["location"].endswith("done=redo_short")
+
+
+def test_redo_is_refused_while_processing(library, settings, llm_on):
+    a = library["a"]
+    doc = put(a, library["inbox"], "wait.txt", "請求書 第10号。" * 20)    # worker を動かさない（処理待ち）
+    assert a.post(f"/api/v1/documents/{doc}/suggestions/redo").status_code == 422
+    assert "要約とタグをやり直す" not in a.get(f"/d/{doc}").text
+
+
+def test_old_model_summaries_are_overwritten(library, worker, fake_llm, settings, llm_on, login):
+    a = library["a"]
+    doc = put(a, library["inbox"], "old.txt", "保険の書類。契約内容と更新の手続きのお知らせ。" * 8)
+    run_all(worker)
+    conn = connect(settings.db_path)
+    conn.execute("UPDATE blob_summaries SET model = 'old-model.gguf', summary = '旧モデルの要約。'")
+    s = a.get(f"/api/v1/documents/{doc}/suggestions").json()["summary"]
+    assert s["outdated"] and s["old_model"] and not s["old_version"]
+    assert "今のモデルとは別のモデルで作った要約です" in a.get(f"/d/{doc}").text
+    admin = login("admin")
+    page = admin.get("/admin").text
+    assert "旧モデル" in page and "old-model.gguf" in page and "旧モデルの要約を今のモデルで上書き" in page
+    # 古い方式だけを選ぶと、旧モデルのものは積まない
+    assert admin.post("/api/v1/admin/summaries/rebuild", params={"scope": "version"}).json()["queued"] == 0
+    assert admin.post("/api/v1/admin/summaries/rebuild", params={"scope": "model"}).json()["queued"] >= 1
+    run_all(worker)
+    s = a.get(f"/api/v1/documents/{doc}/suggestions").json()["summary"]
+    assert s["model"] == "test.gguf" and s["summary"] != "旧モデルの要約。" and not s["outdated"]
+    assert llm.llm_stats(conn, "test.gguf")["old_model"] == 0
+    assert admin.post("/api/v1/admin/summaries/rebuild", params={"scope": "nope"}).status_code == 422
+
+
+def test_reprocess_overwrites_old_model_summary(library, worker, fake_llm, settings, llm_on):
+    """処理し直したとき（after_ready）も、別のモデルで作った要約は作り直す。"""
+    a = library["a"]
+    doc = put(a, library["inbox"], "re.txt", "旅行の日程。ホテルと航空券の予約の確認。" * 8)
+    run_all(worker)
+    conn = connect(settings.db_path)
+    blob = conn.execute("SELECT blob_id FROM documents WHERE id = ?", (doc,)).fetchone()[0]
+    conn.execute("UPDATE blob_summaries SET model = 'old-model.gguf' WHERE blob_id = ?", (blob,))
+    assert a.post(f"/api/v1/documents/{doc}/reprocess", json={}).status_code == 202
+    run_all(worker)
+    assert conn.execute("SELECT model FROM blob_summaries WHERE blob_id = ?", (blob,)).fetchone()[0] == "test.gguf"
+
+
+# ---------------------------------------------------------------------------
+# 要約を手で直す・消す、文書の画面の自動更新
+# ---------------------------------------------------------------------------
+
+SAME_TEXT = "請求書 第11号。今月の支払についてのご案内です。" * 8
+
+
+def _summary_post(c, doc, action, summary=""):
+    import re
+    page = c.http.get(f"/d/{doc}").text
+    token = re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
+    return c.http.post(f"/d/{doc}/summary", data={"csrf_token": token, "action": action, "summary": summary},
+                       follow_redirects=False)
+
+
+def _search_ids(c, q):
+    r = c.get("/api/v1/search", params={"q": q, "mode": "keyword"})
+    assert r.status_code == 200, r.text
+    return {h["document"]["id"] for h in r.json()["results"]}
+
+
+def test_manual_summary_edit_hide_restore(library, worker, fake_llm, settings, llm_on, login):
+    a = library["a"]
+    doc = put(a, library["inbox"], "m.txt", SAME_TEXT)
+    other = put(a, library["travel"], "m-copy.txt", SAME_TEXT)      # 同じ内容（要約は blob で共有）
+    run_all(worker)
+    assert doc in _search_ids(a, "まとめた要約")
+    # 手で直す
+    r = _summary_post(a, doc, "save", "支払期日の案内。振込先の変更に注意。")
+    assert r.status_code == 303 and r.headers["location"].endswith("done=summary_saved")
+    page = a.get(f"/d/{doc}").text
+    assert "支払期日の案内。振込先の変更に注意。" in page and "手で直した要約です" in page
+    assert "自動の要約に戻す" in page
+    # 同じ内容のほかの文書の要約は変わらない
+    s = a.get(f"/api/v1/documents/{other}/suggestions").json()["summary"]
+    assert s["summary"] == "請求書の内容をまとめた要約です。" and not s["manual"]
+    # 検索: 直した要約でこの文書だけが当たり、自動の要約ではこの文書は当たらない
+    assert _search_ids(a, "振込先の変更") == {doc}
+    hits = _search_ids(a, "まとめた要約")
+    assert other in hits and doc not in hits
+    # 検索結果の画面にも直した要約が出る
+    assert "振込先の変更に注意" in a.get("/search", params={"q": "振込先の変更", "mode": "keyword"}).text
+    # 意味検索のベクトルも worker が作る
+    run_all(worker)
+    conn = connect(settings.db_path)
+    cid = conn.execute("SELECT id FROM chunks WHERE document_id = ?", (doc,)).fetchone()[0]
+    assert conn.execute("SELECT 1 FROM chunk_vectors WHERE rowid = ?", (cid,)).fetchone()
+    # 処理し直しても、直した要約は残る
+    assert a.post(f"/api/v1/documents/{doc}/reprocess", json={}).status_code == 202
+    run_all(worker)
+    assert _search_ids(a, "振込先の変更") == {doc}
+    # 消す
+    r = _summary_post(a, doc, "hide")
+    assert r.headers["location"].endswith("done=summary_hidden")
+    page = a.get(f"/d/{doc}").text
+    assert "この文書では要約を出さないようにしています" in page and "振込先の変更に注意" not in page
+    assert a.get(f"/api/v1/documents/{doc}/suggestions").json()["summary"] is None
+    assert doc not in _search_ids(a, "振込先の変更") | _search_ids(a, "まとめた要約")
+    # 自動の要約に戻す
+    r = _summary_post(a, doc, "restore")
+    assert r.headers["location"].endswith("done=summary_restored")
+    s = a.get(f"/api/v1/documents/{doc}/suggestions").json()["summary"]
+    assert s["summary"] == "請求書の内容をまとめた要約です。" and not s["manual"]
+    assert doc in _search_ids(a, "まとめた要約")
+    assert conn.execute("SELECT count(*) FROM chunks WHERE document_id IS NOT NULL").fetchone()[0] == 0
+
+
+def test_manual_summary_api_and_permissions(library, worker, settings, llm_on, login):
+    a = library["a"]
+    doc = put(a, library["inbox"], "api.txt", SAME_TEXT)
+    run_all(worker)
+    r = a.put(f"/api/v1/documents/{doc}/summary", json={"summary": "  手で書いた要約。 "})
+    assert r.status_code == 200 and r.json()["summary"]["summary"] == "手で書いた要約。"
+    assert r.json()["summary"]["manual"] is True
+    assert a.put(f"/api/v1/documents/{doc}/summary", json={"summary": "x" * 1001}).status_code == 422
+    assert a.put(f"/api/v1/documents/{doc}/summary", json={"summary": "  "}).status_code == 422
+    assert a.delete(f"/api/v1/documents/{doc}/summary").status_code == 204
+    assert a.get(f"/api/v1/documents/{doc}/suggestions").json()["summary"] is None
+    r = a.post(f"/api/v1/documents/{doc}/summary/restore")
+    assert r.status_code == 200 and r.json()["summary"]["manual"] is False
+    # 見られない人は直せない
+    bob = login("bob")
+    assert bob.put(f"/api/v1/documents/{doc}/summary", json={"summary": "いたずら"}).status_code == 404
+
+
+def test_manual_summary_needs_llm(library, worker):
+    a = library["a"]
+    doc = put(a, library["inbox"], "off.txt", SAME_TEXT)
+    run_all(worker)
+    assert a.put(f"/api/v1/documents/{doc}/summary", json={"summary": "要約"}).status_code == 422
+    assert "要約を直す" not in a.get(f"/d/{doc}").text
+
+
+def test_redo_replaces_manual_summary(library, worker, fake_llm, settings, llm_on):
+    a = library["a"]
+    doc = put(a, library["inbox"], "redo2.txt", SAME_TEXT)
+    run_all(worker)
+    a.put(f"/api/v1/documents/{doc}/summary", json={"summary": "手で書いた要約。"})
+    assert a.post(f"/api/v1/documents/{doc}/suggestions/redo").status_code == 202
+    run_all(worker)
+    s = a.get(f"/api/v1/documents/{doc}/suggestions").json()["summary"]
+    assert not s["manual"] and s["summary"] == "請求書の内容をまとめた要約です。"
+
+
+def test_document_page_live_state(library, worker, fake_llm, settings, llm_on):
+    a = library["a"]
+    doc = put(a, library["inbox"], "live.txt", SAME_TEXT)          # まだ処理していない
+    page = a.get(f"/d/{doc}").text
+    assert f'data-live-url="/x/d/{doc}/state"' in page
+    st = a.get(f"/x/d/{doc}/state").json()
+    assert st["busy"] and st["status"] == "pending"
+    run_all(worker)
+    st2 = a.get(f"/x/d/{doc}/state").json()
+    assert not st2["busy"] and st2["status"] == "ready" and st2["key"] != st["key"]
+    assert "data-live-url" not in a.get(f"/d/{doc}").text
+    # やり直しを頼むと、要約ができるまで問い合わせる。できたら key が変わる
+    a.post(f"/api/v1/documents/{doc}/suggestions/redo")
+    st3 = a.get(f"/x/d/{doc}/state").json()
+    assert st3["busy"] and "data-live-url" in a.get(f"/d/{doc}").text
+    run_all(worker)
+    st4 = a.get(f"/x/d/{doc}/state").json()
+    assert not st4["busy"] and st4["key"] != st3["key"]      # 開いている画面の key（作り直し中）と違う
+    # 見られない人には状態を返さない
+    from tests.conftest import Client
+    assert Client(a.http.app, "bob").get(f"/x/d/{doc}/state").status_code == 404
