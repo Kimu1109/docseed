@@ -433,3 +433,63 @@ def test_page_image_and_ocr_overlay(login, worker, settings):
     assert f'data-ocr-toggle data-doc="{img_id}" data-page="1"' in page
     page = alice.get(f"/d/{pdf_id}").text
     assert f'data-doc="{pdf_id}" data-page="2"' in page and f'data-doc="{pdf_id}" data-page="1"' not in page
+
+
+# ---------------------------------------------------------------------------
+# ページ単位の読み直し
+# ---------------------------------------------------------------------------
+
+def _web(c, url, **form):
+    import re
+    token = re.search(r'name="csrf_token" value="([^"]+)"', c.http.get("/settings").text).group(1)
+    return c.http.post(url, data={"csrf_token": token, **form}, follow_redirects=False)
+
+
+def test_reprocess_single_page(login, worker, settings):
+    alice = login("alice")
+    pdf = make_pdf(["Page one has a text layer that is long enough.", "Page two has a text layer that is long too.",
+                    "Page three has a text layer, also long enough."])
+    doc = alice.upload(alice.root, {"three.pdf": pdf}).json()["results"][0]["document"]["id"]
+    run_all(worker)
+    conn = connect(settings.db_path)
+    blob = conn.execute("SELECT blob_id FROM documents WHERE id = ?", (doc,)).fetchone()[0]
+    conn.execute("UPDATE blobs SET warnings = ? WHERE id = ?",
+                 (json.dumps([{"code": "ocr_slow", "page": 1, "seconds": 200},
+                              {"code": "ocr_slow", "page": 2, "seconds": 200}]), blob))
+    conn.commit()
+    before = {r[0]: r[1] for r in conn.execute("SELECT page_no, id FROM pages WHERE blob_id = ?", (blob,))}
+    calls = worker.ocr.calls
+    # 2 ページ目だけを、埋め込みテキストを使わず画像として読み直す
+    page = alice.get(f"/d/{doc}").text
+    assert f'action="/d/{doc}/pages/2/reprocess"' in page and "埋め込みテキストを使わず画像として読む" in page
+    r = _web(alice, f"/d/{doc}/pages/2/reprocess", force_ocr="1")
+    assert r.status_code == 303 and r.headers["location"].endswith("done=reprocess_page#p2")
+    assert alice.get(f"/api/v1/documents/{doc}").json()["processing"]["status"] == "pending"
+    # 処理待ちの間は、もう一度は頼めない
+    assert alice.post(f"/api/v1/documents/{doc}/pages/1/reprocess", json={}).status_code == 422
+    run_all(worker)
+    assert worker.ocr.calls == calls + 1                         # OCR したのは 2 ページ目だけ
+    rows = {r["page_no"]: r for r in conn.execute("SELECT * FROM pages WHERE blob_id = ?", (blob,))}
+    assert rows[2]["source"] == "ocr" and "本人確認書類" in rows[2]["text"]
+    assert rows[1]["id"] == before[1] and rows[3]["id"] == before[3]   # ほかのページはそのまま
+    assert rows[1]["source"] == rows[3]["source"] == "text_layer"
+    # 2 ページ目の文字で検索できる（チャンクを作り直した）。ほかのページの警告は残る
+    hit = conn.execute("SELECT count(*) FROM chunks_fts WHERE chunks_fts MATCH '\"本人確認書類\"'").fetchone()[0]
+    assert hit == 1
+    warns = alice.get(f"/api/v1/documents/{doc}").json()["processing"]["warnings"]
+    assert {"code": "ocr_slow", "page": 1, "seconds": 200} in warns and all(w.get("page") != 2 for w in warns)
+    assert conn.execute("SELECT count(*) FROM chunks c LEFT JOIN chunk_vectors v ON v.rowid = c.id"
+                        " WHERE c.blob_id = ? AND v.rowid IS NULL", (blob,)).fetchone()[0] == 0
+
+
+def test_reprocess_single_page_validation(login, worker):
+    alice = login("alice")
+    pdf = alice.upload(alice.root, {"one.pdf": make_pdf(["Only page with a text layer that is long enough."])})
+    txt = alice.upload(alice.root, {"t.txt": b"plain text"})
+    run_all(worker)
+    pdf_id, txt_id = (r.json()["results"][0]["document"]["id"] for r in (pdf, txt))
+    assert alice.post(f"/api/v1/documents/{pdf_id}/pages/2/reprocess", json={}).status_code == 404
+    assert alice.post(f"/api/v1/documents/{txt_id}/pages/1/reprocess", json={}).status_code == 422
+    assert login("bob").post(f"/api/v1/documents/{pdf_id}/pages/1/reprocess", json={}).status_code == 404
+    assert "このページを読み直す" not in alice.get(f"/d/{txt_id}").text
+    assert alice.post(f"/api/v1/documents/{pdf_id}/pages/1/reprocess", json={"force_ocr": True}).status_code == 202

@@ -535,3 +535,14 @@ body.has-selection .main { padding-bottom: 96px; }
 .ocr-box.hit { background: color-mix(in srgb, #ffd54a 45%, transparent); border-color: #e0a800; }
 .ocr-box:hover, .ocr-box:focus-visible, .ocr-box.active { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ocr-caption { margin: var(--s2) 0 0; line-height: 1.6; }
+.ocr-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); }
+.page-reprocess { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin: 0; }
+
+/* タグの管理・却下した候補 */
+.sr-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.plain .num { text-align: right; font-variant-numeric: tabular-nums; }
+.tag-table td { vertical-align: middle; }
+.tag-rename { display: flex; gap: var(--s2); align-items: center; margin: 0; }
+.tag-rename input { max-width: 16rem; }
+.tag-docs { list-style: none; margin: 0 0 var(--s3); padding: 0; display: grid; gap: 6px; }
+.tag-docs a { display: inline-flex; align-items: center; gap: 6px; }

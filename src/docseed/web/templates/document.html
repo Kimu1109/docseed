@@ -53,7 +53,7 @@
   <aside class="doc-side">
     {% set can_redo = sugg and can_edit and doc.status == "ready" and (suggest_enabled or llm_enabled) %}
     {% set can_edit_summary = sugg and can_edit and llm_enabled and sugg.prefs.show_summary %}
-    {% if sugg and (sugg.folders or sugg.tags or sugg.summary or can_redo or sugg.summary_hidden) %}
+    {% if sugg and (sugg.folders or sugg.tags or sugg.summary or can_redo or sugg.summary_hidden or sugg.rejected) %}
     <section class="form-panel suggest-panel" aria-label="整理の候補">
       <h2>{{ icon("wand_stars") }} 整理の候補</h2>
       {% if sugg.summary %}
@@ -118,6 +118,7 @@
         {% endfor %}
         </ul>
       {% endif %}
+      {% if sugg.rejected %}<p class="small"><a href="/suggestions/rejected?doc={{ doc.id }}">却下した候補 {{ sugg.rejected }} 件</a></p>{% endif %}
       {% if can_redo %}
       <form method="post" action="/d/{{ doc.id }}/redo" class="redo-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -208,12 +209,22 @@
       <span class="pg-no">{% if pg.source == "office" and k == "sheet" %}{{ pg.page_no }} 枚目のシート{% elif pg.source == "office" and k == "slide" %}スライド {{ pg.page_no }}{% elif pg.source == "office" %}{{ pg.page_no }} 番目の区切り{% else %}{{ pg.page_no }} ページ{% endif %}</span>
       <span class="muted small">{{ {"text": "テキスト", "text_layer": "PDF の埋め込みテキスト", "ocr": "画像から読み取り", "office": "Office 文書のテキスト"}[pg.source] }}{% if pg.source == "text_layer" and pg.ocr_confidence is not none %}＋ページ内の画像から読み取り{% endif %}{% if pg.ocr_confidence is not none %}（信頼度 {{ "%.2f" | format(pg.ocr_confidence) }}）{% endif %}</span>
     </summary>
-    {% if pg.source == "ocr" and k in ["pdf", "image"] %}
+    {% set can_page = can_edit and k in ["pdf", "image"] and doc.status in ["ready", "failed"] %}
+    {% if (pg.source == "ocr" and k in ["pdf", "image"]) or can_page %}
     <div class="ocr-tools">
+      {% if pg.source == "ocr" and k in ["pdf", "image"] %}
       <button type="button" class="btn btn-sm" data-ocr-toggle data-doc="{{ doc.id }}" data-page="{{ pg.page_no }}"
               aria-expanded="false">{{ icon("image") }}読み取った位置を画像に重ねて表示</button>
+      {% endif %}
+      {% if can_page %}
+      <form method="post" action="/d/{{ doc.id }}/pages/{{ pg.page_no }}/reprocess" class="page-reprocess">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        {% if k == "pdf" and pg.source == "text_layer" %}<label class="check small"><input type="checkbox" name="force_ocr" value="1"> 埋め込みテキストを使わず画像として読む</label>{% endif %}
+        <button class="btn btn-sm" title="このページだけを読み直します（ほかのページはそのまま）">{{ icon("refresh") }}このページを読み直す</button>
+      </form>
+      {% endif %}
     </div>
-    <div class="ocr-overlay" hidden></div>
+    {% if pg.source == "ocr" and k in ["pdf", "image"] %}<div class="ocr-overlay" hidden></div>{% endif %}
     {% endif %}
     {% if pg.text %}<pre class="textview" data-highlight>{{ pg.text }}</pre>{% else %}<p class="muted small pad">文字は見つかりませんでした。</p>{% endif %}
   </details>

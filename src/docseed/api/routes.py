@@ -522,6 +522,15 @@ class ReprocessIn(BaseModel):
     force_ocr: bool = False
 
 
+@router.post("/documents/{doc_id}/pages/{page_no}/reprocess", status_code=202)
+def api_page_reprocess(doc_id: int, page_no: int, body: ReprocessIn, request: Request,
+                       conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    """このページだけを読み直す（PDF・画像。ほかのページの結果はそのまま）。force_ocr はそのページだけに効く。"""
+    from ..web.routes import reprocess_one_page
+    reprocess_one_page(request, conn, auth, doc_id, page_no, body.force_ocr)
+    return {"queued": True}
+
+
 @router.post("/documents/{doc_id}/reprocess", status_code=202)
 def api_doc_reprocess(doc_id: int, body: ReprocessIn, request: Request, conn: sqlite3.Connection = Depends(get_conn),
                       auth: Auth = Depends(require_auth)):

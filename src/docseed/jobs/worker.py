@@ -17,7 +17,7 @@ from ..documents import purge_expired
 from ..monitor import cpu_temp
 from ..storage import BlobStore
 from . import queue
-from .process import Context, derive_blob, process_blob, reembed_blob, reset_blob, summarize_blob
+from .process import Context, derive_blob, process_blob, reembed_blob, reset_blob, reset_pages, summarize_blob
 
 log = logging.getLogger("docseed.worker")
 
@@ -114,9 +114,13 @@ class Worker:
         try:
             if job["type"] == "process_blob":
                 payload = json.loads(job["payload"]) if job["payload"] else {}
+                pages = [int(n) for n in payload.get("pages") or []]
                 if payload.get("reset"):
                     reset_blob(self.conn, job["blob_id"])
-                result = process_blob(self.conn, self.ctx, job["blob_id"], force_ocr=bool(payload.get("force_ocr")))
+                elif pages and job["attempts"] == 1:   # やり直しのときは、途中まで読んだページを活かす
+                    reset_pages(self.conn, job["blob_id"], pages)
+                result = process_blob(self.conn, self.ctx, job["blob_id"], force_ocr=bool(payload.get("force_ocr")),
+                                      pages=pages or None)
             elif job["type"] == "reembed_blob":
                 payload = json.loads(job["payload"]) if job["payload"] else {}
                 if payload.get("missing_only"):   # 手で直した要約など、ベクトルの無いチャンクだけ

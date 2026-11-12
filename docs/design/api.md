@@ -129,6 +129,7 @@ RFC 9457（`application/problem+json`）形式。
 | GET | `/documents/{id}/content` | 原本ダウンロード。`Range` 対応。`?inline=1` で許可形式のみプレビュー表示 |
 | GET | `/documents/{id}/thumbnail` | WebP サムネイル（未生成なら種類別のアイコン） |
 | GET | `/documents/{id}/pages/{page_no}/image` | ページ画像（PDF のプレビュー・OCR 結果の確認用。WebP、`?width=` で長辺を指定（200〜2000、既定 1600）。OCR に渡したのと同じ向き（PDF の /Rotate・画像の EXIF の回転を適用）。保存せず開いたときに描く。PDF と画像だけ） |
+| POST | `/documents/{id}/pages/{page_no}/reprocess` | そのページだけを読み直す（PDF・画像、editor 以上。`{force_ocr?}` はそのページだけに効く。202。処理待ち・処理中は 422） |
 | GET | `/documents/{id}/text` | 抽出テキスト。`?page=` でページ指定。応答 `{pages: [{page_no, source, text, ocr_confidence}]}` |
 | GET | `/documents/{id}/ocr` | OCR の行と座標。`?page=`（ページ画像上に枠を重ねて表示するため）。応答に `width`・`height`（座標の基準の画像の大きさ）と `min_score`（これ未満の行は本文に使っていない） |
 | PATCH | `/documents/{id}` | `{filename?, folder_id?, tags?}` |

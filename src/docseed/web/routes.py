@@ -35,7 +35,7 @@ from ..deps import (
     require_auth,
     require_session,
 )
-from ..errors import AppError, ValidationFailed
+from ..errors import AppError, NotFound, ValidationFailed
 from ..files import can_preview, image_src
 from ..storage import BlobStore
 from . import helpers as h
@@ -59,6 +59,11 @@ DONE_MESSAGES = {
     "user_updated": "ユーザーを更新しました",
     "token_revoked": "トークンを無効にしました",
     "reprocess": "再処理を受け付けました。順番に処理されます",
+    "reprocess_page": "このページの読み直しを受け付けました。終わると画面が新しくなります",
+    "tag_renamed": "タグの名前を変えました",
+    "tag_deleted": "タグを外しました",
+    "unrejected": "却下を取り消しました。また候補に出ます",
+    "unrejected_cleared": "却下の記録を消しました（今の状態では候補に出ません）",
     "retried": "ジョブをやり直します",
     "share_revoked": "共有リンクを無効にしました",
     "clip": "URL を受け付けました。取得が済むと一覧に表示されます",
@@ -853,6 +858,32 @@ def document_state(doc_id: int, request: Request, conn: sqlite3.Connection = Dep
     return _live_state(conn, request.app.state.settings, dm.get_document(conn, auth.user, doc_id))
 
 
+@router.post("/d/{doc_id}/pages/{page_no}/reprocess")
+def document_page_reprocess(doc_id: int, page_no: int, request: Request, force_ocr: str | None = Form(None),
+                            conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    """このページだけを読み直す（PDF・画像）。"""
+    reprocess_one_page(request, conn, auth, doc_id, page_no, bool(force_ocr))
+    return RedirectResponse(f"/d/{doc_id}?done=reprocess_page#p{page_no}", status_code=303)
+
+
+def reprocess_one_page(request: Request, conn: sqlite3.Connection, auth: Auth, doc_id: int, page_no: int,
+                       force_ocr: bool) -> None:
+    from ..pipeline.extract import kind
+    from ..reprocess import enqueue_pages
+    d = dm.get_document(conn, auth.user, doc_id, "editor")
+    if kind(d["mime_type"]) not in ("pdf", "image"):
+        raise ValidationFailed("ページごとの読み直しは PDF と画像だけです")
+    if d["status"] in ("pending", "processing"):
+        raise ValidationFailed("処理が終わってから読み直してください")
+    if not 1 <= page_no <= (d["page_count"] or 0):
+        raise NotFound("そのページはありません")
+    if not enqueue_pages(conn, d["blob_id"], [page_no], force_ocr=force_ocr):
+        raise ValidationFailed("処理が終わってから読み直してください")
+    with Tx(conn):
+        audit(conn, "reprocess", user_id=auth.user.id, target_type="document", target_id=doc_id,
+              ip=client_ip(request), page=page_no, force_ocr=force_ocr)
+
+
 @router.post("/d/{doc_id}")
 def document_save(doc_id: int, filename: str = Form(...), folder_id: int = Form(...), tags: str = Form(""),
                   conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
@@ -867,6 +898,54 @@ def document_delete(doc_id: int, request: Request, conn: sqlite3.Connection = De
     folder_id = dm.get_document(conn, auth.user, doc_id)["folder_id"]
     dm.delete_document(conn, auth.user, doc_id, ip=client_ip(request))
     return RedirectResponse(f"/f/{folder_id}?done=deleted", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# タグの管理・却下した候補
+# ---------------------------------------------------------------------------
+
+@router.get("/tags", response_class=HTMLResponse)
+def tags_page(request: Request, tag: str = "", conn: sqlite3.Connection = Depends(get_conn),
+              auth: Auth = Depends(require_auth)):
+    from .. import tags as tg
+    docs = tg.documents_with(conn, auth.user.id, tag) if tag else []
+    return templates.TemplateResponse(request, "tags.html", base_context(
+        request, conn, auth, nav="tags", tags=tg.list_tags(conn, auth.user.id), current=tag or None, docs=docs))
+
+
+@router.post("/tags/rename")
+def tags_rename(old: str = Form(...), new: str = Form(...), conn: sqlite3.Connection = Depends(get_conn),
+                auth: Auth = Depends(require_auth)):
+    from .. import tags as tg
+    tg.rename(conn, auth.user, old, new)
+    return RedirectResponse("/tags?done=tag_renamed", status_code=303)
+
+
+@router.post("/tags/delete")
+def tags_delete(name: str = Form(...), conn: sqlite3.Connection = Depends(get_conn),
+                auth: Auth = Depends(require_auth)):
+    from .. import tags as tg
+    tg.delete(conn, auth.user, name)
+    return RedirectResponse("/tags?done=tag_deleted", status_code=303)
+
+
+@router.get("/suggestions/rejected", response_class=HTMLResponse)
+def rejected_page(request: Request, doc: int | None = None, conn: sqlite3.Connection = Depends(get_conn),
+                  auth: Auth = Depends(require_auth)):
+    from ..suggest import rejected_list
+    doc_filter = dm.get_document(conn, auth.user, doc) if doc else None
+    return templates.TemplateResponse(request, "rejected.html", base_context(
+        request, conn, auth, nav="settings", items=rejected_list(conn, auth.user.id, doc), doc_filter=doc_filter))
+
+
+@router.post("/suggestions/{sid}/unreject")
+def suggestion_unreject(sid: int, doc: int | None = Form(None), conn: sqlite3.Connection = Depends(get_conn),
+                        auth: Auth = Depends(require_auth)):
+    from ..suggest import unreject
+    r = unreject(conn, auth.user, sid)
+    back = f"/suggestions/rejected?doc={doc}&" if doc else "/suggestions/rejected?"
+    return RedirectResponse(back + ("done=unrejected" if r == "restored" else "done=unrejected_cleared"),
+                            status_code=303)
 
 
 # ---------------------------------------------------------------------------
