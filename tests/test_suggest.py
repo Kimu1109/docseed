@@ -820,3 +820,159 @@ def test_document_page_live_state(library, worker, fake_llm, settings, llm_on):
     # 見られない人には状態を返さない
     from tests.conftest import Client
     assert Client(a.http.app, "bob").get(f"/x/d/{doc}/state").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# 一覧でまとめて操作（タグ・再処理・要約とタグのやり直し）
+# ---------------------------------------------------------------------------
+
+def _batch(c, url, items, current, **form):
+    return c.post(url, data={"item": items, "current": str(current), **form})
+
+
+def test_batch_tags(library, worker, settings):
+    a = library["a"]
+    d1 = put(a, library["inbox"], "b1.txt", "請求書 A。" * 5, tags=["古い", "残す"])
+    d2 = put(a, library["inbox"], "b2.txt", "請求書 B。" * 5)
+    items = [f"document:{d1}", f"document:{d2}", f"folder:{library['hoken']}"]
+    r = _batch(a, "/x/items/tags", items, library["inbox"], add="経理, 2026", remove="古い")
+    assert r.status_code == 200 and "2 件のタグを変更しました（フォルダ 1 件は対象外です）" in r.text
+    tags = lambda d: sorted(a.get(f"/api/v1/documents/{d}").json()["tags"])  # noqa: E731
+    assert tags(d1) == ["2026", "残す", "経理"] and tags(d2) == ["2026", "経理"]
+    # 入力が無い・フォルダだけ
+    assert "付けるタグか外すタグを入力してください" in _batch(a, "/x/items/tags", items, library["inbox"]).text
+    r = _batch(a, "/x/items/tags", [f"folder:{library['hoken']}"], library["inbox"], add="x")
+    assert "ファイルを選んでください" in r.text
+
+
+def test_batch_tags_respects_permissions(library, worker, login):
+    a = library["a"]
+    bob = login("bob")
+    theirs = bob.upload(bob.root, {"bob.txt": b"bob's file"}).json()["results"][0]["document"]["id"]
+    mine = put(a, library["inbox"], "mine.txt", "請求書 C。" * 5)
+    r = _batch(a, "/x/items/tags", [f"document:{mine}", f"document:{theirs}"], library["inbox"], add="経理")
+    assert "1 件のタグを変更しました（1 件はできませんでした" in r.text
+    assert bob.get(f"/api/v1/documents/{theirs}").json()["tags"] == []
+
+
+def test_batch_reprocess(library, worker, settings):
+    a = library["a"]
+    d1 = put(a, library["inbox"], "r1.txt", "請求書 D。" * 5)
+    d2 = put(a, library["inbox"], "r2.txt", "請求書 E。" * 5)
+    run_all(worker)
+    d3 = put(a, library["inbox"], "r3.txt", "請求書 F。" * 5)          # まだ処理待ち
+    r = _batch(a, "/x/items/reprocess", [f"document:{d}" for d in (d1, d2, d3)], library["inbox"])
+    assert "2 件を再処理に登録しました（1 件はできませんでした: 「r3.txt」は処理中です）" in r.text
+    conn = connect(settings.db_path)
+    n = conn.execute("SELECT count(*) FROM jobs WHERE type = 'process_blob' AND status = 'pending'"
+                     " AND json_extract(payload, '$.reset')").fetchone()[0]
+    assert n == 2
+    run_all(worker)
+    assert all(a.get(f"/api/v1/documents/{d}").json()["processing"]["status"] == "ready" for d in (d1, d2, d3))
+
+
+def test_batch_redo(library, worker, fake_llm, settings, llm_on):
+    a = library["a"]
+    d1 = put(a, library["inbox"], "s1.txt", SAME_TEXT)
+    d2 = put(a, library["inbox"], "s2.txt", "旅行の日程。ホテルと航空券の予約の確認。" * 8)
+    run_all(worker)
+    a.put(f"/api/v1/documents/{d1}/summary", json={"summary": "手で書いた要約。"})
+    fake_llm.outputs = [{"要約": "まとめて作り直した要約です。", "タグ": ["月次"]}]
+    r = _batch(a, "/x/items/redo", [f"document:{d1}", f"document:{d2}"], library["inbox"])
+    assert "2 件をやり直しに登録しました" in r.text
+    conn = connect(settings.db_path)
+    assert {r[0] for r in conn.execute("SELECT priority FROM jobs WHERE type = 'summarize_blob'"
+                                       " AND status = 'pending'")} == {15}
+    run_all(worker)
+    for d in (d1, d2):
+        s = a.get(f"/api/v1/documents/{d}/suggestions").json()["summary"]
+        assert s["summary"] == "まとめて作り直した要約です。" and not s["manual"]
+
+
+def test_selection_bar_has_batch_buttons(library, llm_on):
+    page = library["a"].get(f"/f/{library['inbox']}").text
+    for attr in ("data-sel-tags", "data-sel-reprocess", "data-sel-redo", 'id="dlg-tags"'):
+        assert attr in page
+    assert "要約とタグをやり直す" in page
+
+
+# ---------------------------------------------------------------------------
+# タグの管理・却下した候補の取り消し
+# ---------------------------------------------------------------------------
+
+def _form(c, url, **form):
+    import re
+    token = re.search(r'name="csrf_token" value="([^"]+)"', c.http.get("/settings").text).group(1)
+    return c.http.post(url, data={"csrf_token": token, **form}, follow_redirects=False)
+
+
+def test_tags_page_rename_merge_delete(library, worker, login, settings):
+    a = library["a"]
+    bob = login("bob")
+    d1 = put(a, library["inbox"], "t1.txt", "メモ 1", tags=["会計", "2026"])
+    d2 = put(a, library["inbox"], "t2.txt", "メモ 2", tags=["経理"])
+    theirs = bob.upload(bob.root, {"b.txt": b"bob"}).json()["results"][0]["document"]["id"]
+    bob.patch(f"/api/v1/documents/{theirs}", json={"tags": ["会計"]})
+    page = a.get("/tags").text
+    assert "請求" in page and "会計" in page and 'href="/tags?tag=' in page
+    # 一覧: 件数（library の 2 件の「請求」）
+    from docseed import tags as tg
+    conn = connect(settings.db_path)
+    counts = {t["name"]: t["count"] for t in tg.list_tags(conn, a.user["id"])}
+    assert counts == {"請求": 2, "会計": 1, "2026": 1, "経理": 1}
+    # タグの付いたファイル
+    assert "t1.txt" in a.get("/tags", params={"tag": "会計"}).text
+    # 名前の変更で「会計」を「経理」にまとめる。bob のファイルの「会計」は変わらない
+    r = _form(a, "/tags/rename", old="会計", new="経理")
+    assert r.headers["location"].endswith("done=tag_renamed")
+    tags = lambda c, d: sorted(c.get(f"/api/v1/documents/{d}").json()["tags"])  # noqa: E731
+    assert tags(a, d1) == ["2026", "経理"] and tags(a, d2) == ["経理"] and tags(bob, theirs) == ["会計"]
+    # 外す: alice のファイルからだけ。使われなくなった名前は片付ける
+    r = _form(a, "/tags/delete", name="2026")
+    assert r.headers["location"].endswith("done=tag_deleted") and tags(a, d1) == ["経理"]
+    assert conn.execute("SELECT count(*) FROM tags WHERE name = '2026'").fetchone()[0] == 0
+    # 大文字・小文字だけの変更: ほかの人が使っていなければ名前を書き換える
+    put(a, library["inbox"], "t3.txt", "メモ 3", tags=["abc"])
+    _form(a, "/tags/rename", old="abc", new="ABC")
+    assert "ABC" in {t["name"] for t in tg.list_tags(conn, a.user["id"])}
+    # ほかの人も使っているタグは、大文字・小文字だけは変えられない
+    bob.patch(f"/api/v1/documents/{theirs}", json={"tags": ["会計", "ABC"]})
+    assert _form(a, "/tags/rename", old="ABC", new="abc").status_code == 422
+    # 無いタグ・空の名前
+    assert _form(a, "/tags/rename", old="無いタグ", new="x").status_code == 404
+    assert _form(a, "/tags/rename", old="経理", new="  ").status_code == 422
+    assert _form(bob, "/tags/delete", name="経理").status_code == 404     # bob のファイルには付いていない
+
+
+def test_rejected_suggestions_list_and_undo(library, worker, settings):
+    a = library["a"]
+    doc = put(a, library["inbox"], "inv.txt", "請求書 第5号。今月の支払についてのご案内です。" * 3)
+    run_all(worker)
+    s = a.get(f"/api/v1/documents/{doc}/suggestions").json()
+    folder = next(f for f in s["folders"] if f["folder_id"] == library["seikyu"])
+    tag = next(t for t in s["tags"] if t["name"] == "請求")
+    for sid in (folder["id"], tag["id"]):
+        assert a.post(f"/api/v1/documents/{doc}/suggestions/{sid}/reject").status_code == 204
+    assert "却下した候補 2 件" in a.get(f"/d/{doc}").text
+    page = a.get("/suggestions/rejected").text
+    assert "inv.txt" in page and "タグ「請求」" in page and "経理 / 請求書" in page
+    assert "却下した候補の一覧" in a.get("/settings").text
+    # タグの却下を取り消すと、また候補に出る
+    r = _form(a, f"/suggestions/{tag['id']}/unreject", doc=str(doc))
+    assert r.headers["location"] == f"/suggestions/rejected?doc={doc}&done=unrejected"
+    s = a.get(f"/api/v1/documents/{doc}/suggestions").json()
+    assert "請求" in {t["name"] for t in s["tags"]} and s["rejected"] == 1
+    # もうそのフォルダにあるなら、候補には戻さず記録だけを消す
+    a.patch(f"/api/v1/documents/{doc}", json={"folder_id": library["seikyu"]})
+    r = _form(a, f"/suggestions/{folder['id']}/unreject")
+    assert r.headers["location"].endswith("done=unrejected_cleared")
+    conn = connect(settings.db_path)
+    assert conn.execute("SELECT count(*) FROM document_suggestions WHERE id = ?", (folder["id"],)).fetchone()[0] == 0
+    assert "却下した候補はありません" in a.get("/suggestions/rejected").text
+    # ほかの人は取り消せない
+    from tests.conftest import Client
+    bob = Client(a.http.app, "bob")
+    sid = a.get(f"/api/v1/documents/{doc}/suggestions").json()["tags"][0]["id"]
+    a.post(f"/api/v1/documents/{doc}/suggestions/{sid}/reject")
+    assert _form(bob, f"/suggestions/{sid}/unreject").status_code == 404
+    assert "inv.txt" not in bob.get("/suggestions/rejected").text

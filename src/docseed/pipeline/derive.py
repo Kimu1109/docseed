@@ -198,3 +198,49 @@ def remove(data_dir: Path, *rel_paths: str | None) -> None:
     for rel in rel_paths:
         if rel:
             (data_dir / rel).unlink(missing_ok=True)
+
+
+PAGE_SIDE = 1600       # OCR の結果を重ねて表示するページの画像の長辺
+PAGE_QUALITY = 80
+
+
+def page_image(path: Path, mime: str, page_no: int, max_side: int = PAGE_SIDE) -> bytes:
+    """ページの画像（WebP）。OCR の行の位置（ページの幅・高さに対する割合）を重ねて表示するのに使う。
+
+    OCR に渡した画像と同じ向き（PDF はページの /Rotate、画像は EXIF の回転を適用）にする。保存はしない
+    （開いたときだけ描く。ブラウザがキャッシュする）。
+    """
+    import io
+    k = extract.kind(mime)
+    if k == "pdf":
+        import pypdfium2 as pdfium
+        doc = pdfium.PdfDocument(str(path))
+        try:
+            if not 1 <= page_no <= len(doc):
+                raise ValueError("page out of range")
+            page = doc[page_no - 1]
+            w, h = page.get_size()
+            if page.get_rotation() in (90, 270):
+                w, h = h, w
+            im = page.render(scale=max_side / max(w, h, 1)).to_pil()
+            page.close()
+        finally:
+            doc.close()
+    elif k == "image":
+        extract.register_image_plugins()
+        with Image.open(path) as src:
+            if not 1 <= page_no <= extract._frames(src, mime):
+                raise ValueError("page out of range")
+            src.seek(page_no - 1)
+            im = ImageOps.exif_transpose(src.copy())
+    else:
+        raise ValueError("no page image for this type")
+    if im.mode not in ("RGB", "L"):
+        im = im.convert("RGBA")
+        bg = Image.new("RGB", im.size, "white")
+        bg.paste(im, mask=im.split()[-1])
+        im = bg
+    im.thumbnail((max_side, max_side))
+    buf = io.BytesIO()
+    im.save(buf, "WEBP", quality=PAGE_QUALITY)
+    return buf.getvalue()

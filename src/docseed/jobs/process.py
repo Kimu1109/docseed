@@ -79,14 +79,22 @@ def _warn(warnings: list[dict], code: str, **kw) -> None:
     warnings.append({"code": code, **kw})
 
 
-def process_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int, *, force_ocr: bool = False) -> str:
-    """blob を処理して最終状態（ready / unsupported）を返す。リトライすべき失敗は例外を投げる。"""
+def process_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int, *, force_ocr: bool = False,
+                 pages: list[int] | None = None) -> str:
+    """blob を処理して最終状態（ready / unsupported）を返す。リトライすべき失敗は例外を投げる。
+
+    pages を渡すと、そのページだけを読み直す（呼び出し側が reset_pages で消しておく）。ほかのページの
+    警告は残し、チャンクは作り直す（ページの文字が変わるため）。
+    """
     blob = conn.execute("SELECT * FROM blobs WHERE id = ?", (blob_id,)).fetchone()
     if blob is None:
         return "gone"  # 処理待ちの間に完全削除された
     path = ctx.files_dir / blob["storage_path"]
     mime = blob["mime_type"]
-    warnings: list[dict] = json.loads(blob["warnings"]) if blob["warnings"] and blob["status"] == "processing" else []
+    if pages:
+        warnings = [w for w in json.loads(blob["warnings"] or "[]") if w.get("page") not in pages]
+    else:
+        warnings = json.loads(blob["warnings"]) if blob["warnings"] and blob["status"] == "processing" else []
 
     try:
         total = extract.page_count(path, mime)
@@ -122,7 +130,7 @@ def process_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int, *, force_
     chunks = chunk_pages([(n, t) for n, t in pages if t.strip()])
     have = conn.execute("SELECT count(*) FROM chunks WHERE blob_id = ? AND source = 'body'",
                         (blob_id,)).fetchone()[0]
-    if have != len(chunks) or force_ocr:
+    if have != len(chunks) or force_ocr or pages:
         with Tx(conn):
             conn.execute("DELETE FROM chunks WHERE blob_id = ? AND source = 'body'", (blob_id,))
             conn.executemany(
@@ -339,6 +347,12 @@ def reset_blob(conn: sqlite3.Connection, blob_id: int) -> None:
         conn.execute("DELETE FROM pages WHERE blob_id = ?", (blob_id,))
         conn.execute("UPDATE blobs SET status = 'pending', progress_done = 0, warnings = NULL, error = NULL,"
                      " updated_at = ? WHERE id = ?", (now(), blob_id))
+
+
+def reset_pages(conn: sqlite3.Connection, blob_id: int, pages: list[int]) -> None:
+    """指定したページの抽出結果（と OCR の行）を消す。process_blob がそのページだけを処理し直す。"""
+    with Tx(conn):
+        conn.executemany("DELETE FROM pages WHERE blob_id = ? AND page_no = ?", [(blob_id, n) for n in pages])
 
 
 def reembed_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int) -> str:

@@ -41,6 +41,7 @@
     <a href="/f/{{ root_id }}" data-drop="{{ root_id }}" {% if nav == 'files' %}aria-current="page"{% endif %}>{{ icon("folder") }}マイファイル</a>
     <a href="/search" {% if nav == 'search' %}aria-current="page"{% endif %}>{{ icon("search") }}検索</a>
     <a href="/shared" {% if nav == 'shared' %}aria-current="page"{% endif %}>{{ icon("folder_shared") }}共有されたフォルダ</a>
+    <a href="/tags" {% if nav == 'tags' %}aria-current="page"{% endif %}>{{ icon("label") }}タグ</a>
     <a href="/trash" {% if nav == 'trash' %}aria-current="page"{% endif %}>{{ icon("delete") }}ゴミ箱</a>
     {% if user.is_admin %}<a href="/admin" {% if nav == 'admin' %}aria-current="page"{% endif %}>{{ icon("admin_panel_settings") }}管理{% if alert_count %} <span class="alert-badge" title="確認が必要な項目が {{ alert_count }} 件あります" aria-label="警告 {{ alert_count }} 件">!{{ alert_count }}</span>{% endif %}</a>{% endif %}
     <div class="side-foot">

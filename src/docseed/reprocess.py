@@ -27,6 +27,22 @@ def enqueue_reprocess(conn: sqlite3.Connection, blob_ids: list[int], *, force_oc
     return n
 
 
+def enqueue_pages(conn: sqlite3.Connection, blob_id: int, pages: list[int], *, force_ocr: bool = False) -> bool:
+    """指定したページだけを読み直すジョブを積む（ほかのページの結果はそのまま）。処理待ち・処理中なら積まない。
+
+    force_ocr: PDF の埋め込みテキストを使わず、ページを画像として読み取る（そのページだけ）。
+    """
+    payload = json.dumps({"pages": sorted(set(pages)), "force_ocr": force_ocr})
+    with Tx(conn):
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO jobs(type, blob_id, payload, priority, status, run_after, created_at)"
+            " VALUES ('process_blob', ?, ?, ?, 'pending', ?, ?)",
+            (blob_id, payload, PRIORITY["reprocess"], now(), now()))
+        if cur.rowcount:
+            conn.execute("UPDATE blobs SET status = 'pending', updated_at = ? WHERE id = ?", (now(), blob_id))
+    return cur.rowcount == 1
+
+
 def reprocess(conn: sqlite3.Connection, scope: str, *, force_ocr: bool = False) -> int:
     if scope == "failed":
         q = "SELECT id FROM blobs WHERE status = 'failed'"

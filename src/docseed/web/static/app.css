@@ -523,3 +523,26 @@ body.has-selection .main { padding-bottom: 96px; }
   .selbar { left: var(--s4); right: var(--s4); }
   .selbar-hint { display: none; }
 }
+
+/* OCR の行の位置を画像に重ねて表示 */
+.ocr-tools { padding: var(--s2) var(--s3) 0; }
+.ocr-overlay { padding: var(--s2) var(--s3); }
+.ocr-stage { position: relative; display: inline-block; max-width: 100%; line-height: 0; border: 1px solid var(--line); }
+.ocr-stage img { display: block; max-width: 100%; height: auto; }
+.ocr-box { position: absolute; padding: 0; margin: 0; background: transparent; cursor: pointer;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 70%, transparent); border-radius: 2px; }
+.ocr-box.low { border-style: dashed; border-color: color-mix(in srgb, var(--muted) 70%, transparent); }
+.ocr-box.hit { background: color-mix(in srgb, #ffd54a 45%, transparent); border-color: #e0a800; }
+.ocr-box:hover, .ocr-box:focus-visible, .ocr-box.active { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ocr-caption { margin: var(--s2) 0 0; line-height: 1.6; }
+.ocr-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); }
+.page-reprocess { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin: 0; }
+
+/* タグの管理・却下した候補 */
+.sr-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.plain .num { text-align: right; font-variant-numeric: tabular-nums; }
+.tag-table td { vertical-align: middle; }
+.tag-rename { display: flex; gap: var(--s2); align-items: center; margin: 0; }
+.tag-rename input { max-width: 16rem; }
+.tag-docs { list-style: none; margin: 0 0 var(--s3); padding: 0; display: grid; gap: 6px; }
+.tag-docs a { display: inline-flex; align-items: center; gap: 6px; }

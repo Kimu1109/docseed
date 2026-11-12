@@ -173,7 +173,80 @@
       target.open = true;
       const first = $("mark", target);
       (first || target).scrollIntoView({ block: first ? "center" : "start" });
+      // 検索から来たら、そのページの画像に読み取った位置を重ね、当たった行を光らせる
+      const btn = terms.length && $("[data-ocr-toggle]", target);
+      if (btn) showOcrOverlay(btn, terms, true);
     }
+  });
+
+  // OCR の行の位置を、ページの画像に重ねて表示する（位置は画像の幅・高さに対する割合で置く）
+  async function showOcrOverlay(btn, terms, scrollToHit = false) {
+    const box = btn.closest("details").querySelector(".ocr-overlay");
+    if (!box) return;
+    if (!box.hidden) { box.hidden = true; btn.setAttribute("aria-expanded", "false"); return; }
+    box.hidden = false;
+    btn.setAttribute("aria-expanded", "true");
+    if (box.dataset.loaded) return;
+    box.textContent = "読み込んでいます…";
+    const base = `/api/v1/documents/${btn.dataset.doc}`;
+    let data;
+    try {
+      const r = await fetch(`${base}/ocr?page=${btn.dataset.page}`, { headers: { Accept: "application/json" } });
+      if (!r.ok) throw new Error(String(r.status));
+      data = await r.json();
+    } catch {
+      box.textContent = "読み取った位置を読み込めませんでした";
+      return;
+    }
+    const stage = document.createElement("div");
+    stage.className = "ocr-stage";
+    const img = document.createElement("img");
+    img.alt = `${btn.dataset.page} ページの画像`;
+    img.src = `${base}/pages/${btn.dataset.page}/image`;
+    stage.append(img);
+    const caption = document.createElement("p");
+    caption.className = "ocr-caption small muted";
+    caption.textContent = "枠を押すと、その行の読み取り結果を表示します。点線の枠は信頼度が低く、本文に使っていない行です。";
+    const lowered = terms.map((t) => t.toLowerCase());
+    let firstHit = null, hits = 0;
+    const W = data.width || 1, H = data.height || 1;
+    for (const ln of data.lines) {
+      const xs = ln.bbox.map((p) => p[0]), ys = ln.bbox.map((p) => p[1]);
+      const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+      const el = document.createElement("button");
+      el.type = "button";
+      el.className = "ocr-box";
+      if (ln.confidence < data.min_score) el.classList.add("low");
+      const text = ln.text.normalize("NFKC").toLowerCase();
+      if (lowered.some((t) => text.includes(t))) {
+        el.classList.add("hit");
+        hits += 1;
+        firstHit ??= el;
+      }
+      el.style.left = `${(x0 / W) * 100}%`;
+      el.style.top = `${(y0 / H) * 100}%`;
+      el.style.width = `${((x1 - x0) / W) * 100}%`;
+      el.style.height = `${((y1 - y0) / H) * 100}%`;
+      el.title = ln.text;
+      el.setAttribute("aria-label", `${ln.text}（信頼度 ${ln.confidence.toFixed(2)}）`);
+      el.addEventListener("click", () => {
+        $$(".ocr-box.active", stage).forEach((b) => b.classList.remove("active"));
+        el.classList.add("active");
+        caption.textContent = `${ln.text}（信頼度 ${ln.confidence.toFixed(2)}）`;
+      });
+      stage.append(el);
+    }
+    const note = document.createElement("p");
+    note.className = "small muted";
+    note.textContent = `${data.lines.length} 行` + (lowered.length ? `・検索語を含む行 ${hits} 行（色の付いた枠）` : "");
+    box.replaceChildren(note, stage, caption);
+    box.dataset.loaded = "1";
+    img.addEventListener("error", () => { box.replaceChildren("ページの画像を読み込めませんでした"); delete box.dataset.loaded; });
+    if (scrollToHit && firstHit) img.addEventListener("load", () => firstHit.scrollIntoView({ block: "center" }));
+  }
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-ocr-toggle]");
+    if (btn) showOcrOverlay(btn, searchTerms());
   });
 
   // ---- 処理状況の自動更新 -----------------------------------------------
@@ -419,6 +492,9 @@
     if (bar) {
       bar.hidden = !show;
       $("[data-sel-count]", bar).textContent = selected.size;
+      // ファイルだけが対象の操作（タグ・再処理・やり直し）は、ファイルを選んでいなければ押せなくする
+      const hasDoc = [...selected].some((k) => k.startsWith("document:"));
+      $$("[data-sel-docs]", bar).forEach((b) => (b.disabled = !hasDoc));
     }
     document.body.classList.toggle("has-selection", show);
   }
@@ -492,6 +568,31 @@
   document.addEventListener("click", (e) => {
     if (e.target.closest("[data-sel-clear]")) { clearSelection(); return; }
     if (e.target.closest("[data-sel-delete]")) { deleteSelected(); return; }
+    const docRows = () => selectedRows().filter((r) => r.dataset.item.startsWith("document:"));
+    if (e.target.closest("[data-sel-tags]")) {
+      const rows = docRows();
+      if (rows.length) openItemDialog("dlg-tags", "/x/items/tags", "", (form) => {
+        form.reset();
+        setItemInputs(form, rows.map((r) => r.dataset.item));
+        $("[data-tags-name]", form).textContent = describe(rows) + "のタグを変更します";
+        $("input[name=add]", form).focus();
+      });
+      return;
+    }
+    if (e.target.closest("[data-sel-reprocess]")) {
+      const rows = docRows();
+      if (rows.length && confirm(describe(rows) + "の文字の読み取りをやり直しますか？（順番に処理します）")) {
+        submitBatch("/x/items/reprocess", rows.map((r) => r.dataset.item));
+      }
+      return;
+    }
+    if (e.target.closest("[data-sel-redo]")) {
+      const rows = docRows();
+      if (rows.length && confirm(describe(rows) + "の要約とタグの候補を作り直しますか？（今の要約は上書きされます）")) {
+        submitBatch("/x/items/redo", rows.map((r) => r.dataset.item));
+      }
+      return;
+    }
     if (e.target.closest("[data-sel-move]")) {
       const rows = selectedRows();
       if (rows.length) openItemDialog("dlg-move", "/x/items/move", "", (form) => {

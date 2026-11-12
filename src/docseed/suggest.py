@@ -359,6 +359,48 @@ def reject(conn: sqlite3.Connection, user: User, doc_id: int, sid: int) -> None:
         conn.execute("UPDATE document_suggestions SET status = 'rejected', decided_at = ? WHERE id = ?", (now(), sid))
 
 
+def rejected_list(conn: sqlite3.Connection, user_id: int, doc_id: int | None = None,
+                  limit: int = 500) -> list[dict]:
+    """自分のファイル（持ち主のフォルダにある文書）で却下した候補。新しく却下した順。doc_id で 1 文書に絞る。"""
+    sql = ("SELECT s.id, s.document_id, s.kind, s.folder_id, s.tag_name, s.source, s.decided_at, d.filename"
+           " FROM document_suggestions s JOIN documents d ON d.id = s.document_id"
+           " JOIN folders f ON f.id = d.folder_id"
+           " WHERE s.status = 'rejected' AND f.owner_id = ? AND d.deleted_at IS NULL")
+    args: list = [user_id]
+    if doc_id is not None:
+        sql += " AND d.id = ?"
+        args.append(doc_id)
+    out = []
+    for r in conn.execute(sql + " ORDER BY s.decided_at DESC, s.id DESC LIMIT ?", (*args, limit)):
+        out.append({"id": r["id"], "document_id": r["document_id"], "filename": r["filename"], "kind": r["kind"],
+                    "label": folder_label(conn, r["folder_id"]) if r["kind"] == "folder" else r["tag_name"],
+                    "source": r["source"], "decided_at": r["decided_at"]})
+    return out
+
+
+def unreject(conn: sqlite3.Connection, user: User, sid: int) -> str:
+    """却下を取り消して、候補に戻す。今の状態に合わない候補（もうそのフォルダにある・もうそのタグが付いている）は
+    候補に戻さず、記録だけを消す（今後、また候補に出せるようになる）。"restored" か "cleared" を返す。
+    """
+    from . import documents as dm
+    r = conn.execute("SELECT * FROM document_suggestions WHERE id = ? AND status = 'rejected'", (sid,)).fetchone()
+    if r is None:
+        raise NotFound("却下した候補が見つかりません")
+    d = dm.get_document(conn, user, r["document_id"], "editor")
+    if r["kind"] == "folder":
+        stale = r["folder_id"] == d["folder_id"]
+    else:
+        stale = (r["tag_name"] or "").lower() in {t.lower() for t in dm.document_tags(conn, d["id"])}
+    with Tx(conn):
+        if stale:
+            conn.execute("DELETE FROM document_suggestions WHERE id = ?", (sid,))
+        else:
+            conn.execute("UPDATE document_suggestions SET status = 'open', decided_at = NULL WHERE id = ?", (sid,))
+        audit(conn, "suggest_unreject", user_id=user.id, target_type="document", target_id=d["id"],
+              kind=r["kind"], value=r["tag_name"] if r["kind"] == "tag" else r["folder_id"])
+    return "cleared" if stale else "restored"
+
+
 # ---------------------------------------------------------------------------
 # worker: suggest_document ジョブ
 # ---------------------------------------------------------------------------
@@ -453,6 +495,8 @@ def for_document(conn: sqlite3.Connection, doc: sqlite3.Row, *, embedder=None, e
         s = open_suggestions(conn, doc["id"])
         out["folders"] = s["folders"] if prefs["suggest_folders"] else []
         out["tags"] = s["tags"] if prefs["suggest_tags"] else []
+        out["rejected"] = conn.execute("SELECT count(*) FROM document_suggestions WHERE document_id = ?"
+                                       " AND status = 'rejected'", (doc["id"],)).fetchone()[0]
     if llm_enabled and prefs["show_summary"]:
         from .llm import document_summary, manual_summary
         out["summary"] = document_summary(conn, doc, llm_model)
