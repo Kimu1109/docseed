@@ -440,13 +440,13 @@ def _parse_items(form) -> list[tuple[str, int]]:
     return out
 
 
-def _batch_message(done: int, verb: str, errors: list[str]) -> str:
+def _batch_message(done: int, verb: str, errors: list[str], particle: str = "を") -> str:
     if not errors:
-        return f"{done} 件を{verb}しました"
+        return f"{done} 件{particle}{verb}しました"
     first = errors[0] + (f" ほか {len(errors) - 1} 件" if len(errors) > 1 else "")
     if not done:
         return first
-    return f"{done} 件を{verb}しました（{len(errors)} 件はできませんでした: {first}）"
+    return f"{done} 件{particle}{verb}しました（{len(errors)} 件はできませんでした: {first}）"
 
 
 @router.post("/x/items/move", response_class=HTMLResponse)
@@ -507,6 +507,116 @@ async def items_delete(request: Request, conn: sqlite3.Connection = Depends(get_
     if not deleted:
         return render_error(request, 400, _batch_message(0, "ゴミ箱に移動", errors))
     return render_listing(request, conn, auth, current, _batch_message(deleted, "ゴミ箱に移動", errors))
+
+
+def _batch_docs(form) -> tuple[int, list[int], int]:
+    """一括の操作の対象: (今のフォルダ, 文書の ID, 選んだフォルダの数)。文書だけが対象（フォルダは中身に及ばない）。"""
+    try:
+        current = int(form.get("current", ""))
+    except ValueError:
+        raise ValidationFailed("現在のフォルダを指定してください") from None
+    items = _parse_items(form)
+    docs = [i for k, i in items if k == "document"]
+    if not docs:
+        raise ValidationFailed("ファイルを選んでください（フォルダにはこの操作はできません）")
+    if len(docs) > BATCH_MAX:
+        raise ValidationFailed(f"一度に操作できるのは {BATCH_MAX} 件までです")
+    return current, docs, len(items) - len(docs)
+
+
+BATCH_MAX = 500
+
+
+def _skipped_folders(msg: str, folders: int) -> str:
+    return msg + (f"（フォルダ {folders} 件は対象外です）" if folders else "")
+
+
+def _split_tags(v) -> list[str]:
+    return [t.strip() for t in str(v or "").replace("、", ",").split(",") if t.strip()]
+
+
+@router.post("/x/items/tags", response_class=HTMLResponse)
+async def items_tags(request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                     auth: Auth = Depends(require_auth)):
+    """選んだファイルにまとめてタグを付ける・外す（ほかのタグはそのまま）。"""
+    form = await request.form()
+    current, docs, folders = _batch_docs(form)
+    add, remove = _split_tags(form.get("add")), _split_tags(form.get("remove"))
+    if not add and not remove:
+        raise ValidationFailed("付けるタグか外すタグを入力してください")
+    rm = {t.lower() for t in remove}
+    done, errors = 0, []
+    for doc_id in docs:
+        try:
+            dm.get_document(conn, auth.user, doc_id, "editor")
+            have = dm.document_tags(conn, doc_id)
+            new = [t for t in have if t.lower() not in rm]
+            new += [t for t in add if t.lower() not in {x.lower() for x in new}]
+            if [t.lower() for t in new] != [t.lower() for t in have]:
+                dm.update_document(conn, auth.user, doc_id, tags=new)
+            done += 1
+        except AppError as e:
+            errors.append(e.detail)
+    if not done:
+        return render_error(request, 400, _batch_message(0, "タグを変更", errors))
+    return render_listing(request, conn, auth, current,
+                          _skipped_folders(_batch_message(done, "タグを変更", errors, particle="の"), folders))
+
+
+@router.post("/x/items/reprocess", response_class=HTMLResponse)
+async def items_reprocess(request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                          auth: Auth = Depends(require_auth)):
+    """選んだファイルの文字の読み取りをまとめてやり直す（処理待ち・処理中のものは飛ばす）。"""
+    from ..reprocess import enqueue_reprocess
+    form = await request.form()
+    current, docs, folders = _batch_docs(form)
+    force_ocr = form.get("force_ocr") == "1"
+    blobs, errors = [], []
+    for doc_id in docs:
+        try:
+            d = dm.get_document(conn, auth.user, doc_id, "editor")
+            if d["status"] in ("pending", "processing"):
+                errors.append(f"「{d['filename']}」は処理中です")
+                continue
+            blobs.append(d["blob_id"])
+            with Tx(conn):
+                audit(conn, "reprocess", user_id=auth.user.id, target_type="document", target_id=doc_id,
+                      ip=client_ip(request), force_ocr=force_ocr, batch=True)
+        except AppError as e:
+            errors.append(e.detail)
+    enqueue_reprocess(conn, list(dict.fromkeys(blobs)), force_ocr=force_ocr)
+    if not blobs:
+        return render_error(request, 400, _batch_message(0, "再処理", errors))
+    return render_listing(request, conn, auth, current,
+                          _skipped_folders(_batch_message(len(blobs), "再処理に登録", errors), folders))
+
+
+@router.post("/x/items/redo", response_class=HTMLResponse)
+async def items_redo(request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                     auth: Auth = Depends(require_auth)):
+    """選んだファイルの要約とタグ（フォルダの候補も）をまとめてやり直す。"""
+    from ..api.suggestions import embedder_of
+    from ..suggest import redo
+    form = await request.form()
+    current, docs, folders = _batch_docs(form)
+    s = request.app.state.settings
+    if not (s.suggest_enabled or s.llm_enabled):
+        raise ValidationFailed("整理の補助は有効になっていません")
+    done, errors = 0, []
+    emb = embedder_of(request)
+    for doc_id in docs:
+        d = None
+        try:
+            d = dm.get_document(conn, auth.user, doc_id, "editor")
+            redo(conn, auth.user, d, embedder=emb, enabled=s.suggest_enabled, llm_enabled=s.llm_enabled,
+                 priority=15)   # まとめて頼んだものは、1 件ずつ頼んだもの（5）より後にする
+            done += 1
+        except AppError as e:
+            errors.append(f"「{d['filename']}」: {e.detail}" if d is not None else e.detail)
+    if not done:
+        return render_error(request, 400, _batch_message(0, "やり直し", errors))
+    return render_listing(request, conn, auth, current,
+                          _skipped_folders(_batch_message(done, "やり直しに登録", errors), folders))
 
 
 @router.get("/x/folders/{folder_id}/targets", response_class=HTMLResponse)

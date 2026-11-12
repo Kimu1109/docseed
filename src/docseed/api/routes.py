@@ -485,7 +485,7 @@ def api_doc_text(doc_id: int, page: int | None = None, conn: sqlite3.Connection 
 
 
 @router.get("/documents/{doc_id}/ocr")
-def api_doc_ocr(doc_id: int, page: int = 1, conn: sqlite3.Connection = Depends(get_conn),
+def api_doc_ocr(doc_id: int, request: Request, page: int = 1, conn: sqlite3.Connection = Depends(get_conn),
                 auth: Auth = Depends(require_auth)):
     d = dm.get_document(conn, auth.user, doc_id)
     pg = conn.execute("SELECT * FROM pages WHERE blob_id = ? AND page_no = ?", (d["blob_id"], page)).fetchone()
@@ -493,9 +493,29 @@ def api_doc_ocr(doc_id: int, page: int = 1, conn: sqlite3.Connection = Depends(g
         raise NotFound("このページの OCR 結果はありません")
     lines = conn.execute("SELECT line_no, text, confidence, bbox, vertical FROM ocr_lines WHERE page_id = ?"
                          " ORDER BY line_no", (pg["id"],)).fetchall()
+    # min_score: これ未満の行は本文に使っていない（画面では点線で出す）
     return {"page_no": page, "width": pg["width"], "height": pg["height"],
+            "min_score": request.app.state.settings.ocr_min_score,
             "lines": [{"line_no": r["line_no"], "text": r["text"], "confidence": r["confidence"],
                        "bbox": json.loads(r["bbox"]), "vertical": bool(r["vertical"])} for r in lines]}
+
+
+@router.get("/documents/{doc_id}/pages/{page_no}/image")
+def api_page_image(doc_id: int, page_no: int, width: int = 1600, conn: sqlite3.Connection = Depends(get_conn),
+                   auth: Auth = Depends(require_auth), store: BlobStore = Depends(get_store)):
+    """ページの画像（WebP。長辺を width px（200〜2000、既定 1600）以内）。
+
+    OCR の行の位置（/ocr）を重ねて表示するのに使う。PDF と画像だけ。
+    """
+    from ..pipeline.derive import page_image
+    d = dm.get_document(conn, auth.user, doc_id)
+    try:
+        data = page_image(store.path(d["storage_path"]), d["mime_type"], page_no, max(200, min(width, 2000)))
+    except (ValueError, OSError, RuntimeError) as e:   # 範囲外のページ・未対応の形式・壊れたファイル
+        raise NotFound("このページの画像はありません") from e
+    return Response(data, media_type="image/webp", headers={
+        "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff",
+        "Cross-Origin-Resource-Policy": "same-origin"})
 
 
 class ReprocessIn(BaseModel):

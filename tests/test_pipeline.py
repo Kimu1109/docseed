@@ -398,3 +398,38 @@ def test_reprocess_outdated_only_redoes_changed_kinds(login, worker, settings):
     assert rows["text/plain"] == rows["image/png"] == PIPELINE_VERSION
     run_all(worker)
     assert conn.execute("SELECT count(*) FROM blobs WHERE pipeline_version < ?", (PIPELINE_VERSION,)).fetchone()[0] == 0
+
+
+# ---------------------------------------------------------------------------
+# OCR の行の位置を画像に重ねて表示（ページの画像）
+# ---------------------------------------------------------------------------
+
+def test_page_image_and_ocr_overlay(login, worker, settings):
+    alice = login("alice")
+    pdf = alice.upload(alice.root, {"p.pdf": make_pdf(["This page has a text layer that is long enough.", "x"])})
+    img = alice.upload(alice.root, {"scan.png": png((800, 400))})
+    txt = alice.upload(alice.root, {"t.txt": b"plain text"})
+    run_all(worker)
+    pdf_id, img_id, txt_id = (r.json()["results"][0]["document"]["id"] for r in (pdf, img, txt))
+    for doc_id, page in ((pdf_id, 1), (pdf_id, 2), (img_id, 1)):
+        r = alice.get(f"/api/v1/documents/{doc_id}/pages/{page}/image")
+        assert r.status_code == 200 and r.headers["content-type"] == "image/webp"
+        assert r.headers["x-content-type-options"] == "nosniff"
+        im = Image.open(io.BytesIO(r.content))
+        assert max(im.size) == 1600 or doc_id == img_id      # PDF は長辺 1600px に描く
+    assert Image.open(io.BytesIO(alice.get(f"/api/v1/documents/{img_id}/pages/1/image").content)).size == (800, 400)
+    small = alice.get(f"/api/v1/documents/{pdf_id}/pages/1/image", params={"width": 400}).content
+    assert max(Image.open(io.BytesIO(small)).size) == 400
+    huge = alice.get(f"/api/v1/documents/{pdf_id}/pages/1/image", params={"width": 99999}).content
+    assert max(Image.open(io.BytesIO(huge)).size) == 2000
+    assert alice.get(f"/api/v1/documents/{pdf_id}/pages/3/image").status_code == 404
+    assert alice.get(f"/api/v1/documents/{txt_id}/pages/1/image").status_code == 404
+    assert login("bob").get(f"/api/v1/documents/{img_id}/pages/1/image").status_code == 404
+    # OCR の行と、本文に使う信頼度の下限
+    ocr = alice.get(f"/api/v1/documents/{img_id}/ocr", params={"page": 1}).json()
+    assert ocr["min_score"] == 0.5 and ocr["width"] == 800 and len(ocr["lines"]) == 2
+    # 画面: OCR したページにだけ「重ねて表示」がある（PDF の 2 ページ目は文字が少ないので OCR している）
+    page = alice.get(f"/d/{img_id}").text
+    assert f'data-ocr-toggle data-doc="{img_id}" data-page="1"' in page
+    page = alice.get(f"/d/{pdf_id}").text
+    assert f'data-doc="{pdf_id}" data-page="2"' in page and f'data-doc="{pdf_id}" data-page="1"' not in page

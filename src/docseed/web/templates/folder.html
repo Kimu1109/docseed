@@ -29,6 +29,12 @@
 <div class="selbar" id="selbar" hidden role="toolbar" aria-label="選択した項目の操作">
   <span class="selbar-count" aria-live="polite"><b data-sel-count>0</b> 件を選択中</span>
   <button type="button" class="btn btn-sm" data-sel-move>{{ icon("drive_file_move") }}移動</button>
+  <button type="button" class="btn btn-sm" data-sel-tags data-sel-docs title="選んだファイルにタグを付ける・外す">{{ icon("label") }}タグ</button>
+  <button type="button" class="btn btn-sm" data-sel-reprocess data-sel-docs title="選んだファイルの文字の読み取りをやり直す">{{ icon("refresh") }}再処理</button>
+  {% set st = request.app.state.settings %}
+  {% if st.llm_enabled or st.suggest_enabled %}
+  <button type="button" class="btn btn-sm" data-sel-redo data-sel-docs title="選んだファイルの{% if st.llm_enabled %}要約と{% endif %}タグ・フォルダの候補を作り直す">{{ icon("wand_stars") }}{% if st.llm_enabled %}要約とタグをやり直す{% else %}候補をやり直す{% endif %}</button>
+  {% endif %}
   <button type="button" class="btn btn-sm btn-danger-ghost" data-sel-delete>{{ icon("delete") }}ゴミ箱に移動</button>
   <button type="button" class="linkish" data-sel-clear>選択を解除</button>
   <span class="selbar-hint muted small">ドラッグしてフォルダやパンくずへ移動できます</span>
@@ -76,6 +82,24 @@
     <h2>名前を変更</h2>
     <input type="hidden" name="current" value="{{ folder.id }}">
     <label>新しい名前 <input name="name" required maxlength="255" autocomplete="off"></label>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-close-dialog>キャンセル</button>
+      <button type="submit" class="btn btn-primary">変更</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="dlg-tags" class="dialog">
+  <form hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
+    <h2>タグ</h2>
+    <p class="muted" data-tags-name></p>
+    <input type="hidden" name="current" value="{{ folder.id }}">
+    <label>付けるタグ <span class="muted small">（カンマ区切り）</span>
+      <input name="add" placeholder="例: 経理, 2026" autocomplete="off">
+    </label>
+    <label>外すタグ <span class="muted small">（カンマ区切り）</span>
+      <input name="remove" placeholder="例: 未整理" autocomplete="off">
+    </label>
+    <p class="muted small">選んだファイルのほかのタグはそのままです。フォルダは対象外です。</p>
     <div class="dialog-actions">
       <button type="button" class="btn" data-close-dialog>キャンセル</button>
       <button type="submit" class="btn btn-primary">変更</button>

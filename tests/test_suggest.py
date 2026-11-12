@@ -820,3 +820,77 @@ def test_document_page_live_state(library, worker, fake_llm, settings, llm_on):
     # 見られない人には状態を返さない
     from tests.conftest import Client
     assert Client(a.http.app, "bob").get(f"/x/d/{doc}/state").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# 一覧でまとめて操作（タグ・再処理・要約とタグのやり直し）
+# ---------------------------------------------------------------------------
+
+def _batch(c, url, items, current, **form):
+    return c.post(url, data={"item": items, "current": str(current), **form})
+
+
+def test_batch_tags(library, worker, settings):
+    a = library["a"]
+    d1 = put(a, library["inbox"], "b1.txt", "請求書 A。" * 5, tags=["古い", "残す"])
+    d2 = put(a, library["inbox"], "b2.txt", "請求書 B。" * 5)
+    items = [f"document:{d1}", f"document:{d2}", f"folder:{library['hoken']}"]
+    r = _batch(a, "/x/items/tags", items, library["inbox"], add="経理, 2026", remove="古い")
+    assert r.status_code == 200 and "2 件のタグを変更しました（フォルダ 1 件は対象外です）" in r.text
+    tags = lambda d: sorted(a.get(f"/api/v1/documents/{d}").json()["tags"])  # noqa: E731
+    assert tags(d1) == ["2026", "残す", "経理"] and tags(d2) == ["2026", "経理"]
+    # 入力が無い・フォルダだけ
+    assert "付けるタグか外すタグを入力してください" in _batch(a, "/x/items/tags", items, library["inbox"]).text
+    r = _batch(a, "/x/items/tags", [f"folder:{library['hoken']}"], library["inbox"], add="x")
+    assert "ファイルを選んでください" in r.text
+
+
+def test_batch_tags_respects_permissions(library, worker, login):
+    a = library["a"]
+    bob = login("bob")
+    theirs = bob.upload(bob.root, {"bob.txt": b"bob's file"}).json()["results"][0]["document"]["id"]
+    mine = put(a, library["inbox"], "mine.txt", "請求書 C。" * 5)
+    r = _batch(a, "/x/items/tags", [f"document:{mine}", f"document:{theirs}"], library["inbox"], add="経理")
+    assert "1 件のタグを変更しました（1 件はできませんでした" in r.text
+    assert bob.get(f"/api/v1/documents/{theirs}").json()["tags"] == []
+
+
+def test_batch_reprocess(library, worker, settings):
+    a = library["a"]
+    d1 = put(a, library["inbox"], "r1.txt", "請求書 D。" * 5)
+    d2 = put(a, library["inbox"], "r2.txt", "請求書 E。" * 5)
+    run_all(worker)
+    d3 = put(a, library["inbox"], "r3.txt", "請求書 F。" * 5)          # まだ処理待ち
+    r = _batch(a, "/x/items/reprocess", [f"document:{d}" for d in (d1, d2, d3)], library["inbox"])
+    assert "2 件を再処理に登録しました（1 件はできませんでした: 「r3.txt」は処理中です）" in r.text
+    conn = connect(settings.db_path)
+    n = conn.execute("SELECT count(*) FROM jobs WHERE type = 'process_blob' AND status = 'pending'"
+                     " AND json_extract(payload, '$.reset')").fetchone()[0]
+    assert n == 2
+    run_all(worker)
+    assert all(a.get(f"/api/v1/documents/{d}").json()["processing"]["status"] == "ready" for d in (d1, d2, d3))
+
+
+def test_batch_redo(library, worker, fake_llm, settings, llm_on):
+    a = library["a"]
+    d1 = put(a, library["inbox"], "s1.txt", SAME_TEXT)
+    d2 = put(a, library["inbox"], "s2.txt", "旅行の日程。ホテルと航空券の予約の確認。" * 8)
+    run_all(worker)
+    a.put(f"/api/v1/documents/{d1}/summary", json={"summary": "手で書いた要約。"})
+    fake_llm.outputs = [{"要約": "まとめて作り直した要約です。", "タグ": ["月次"]}]
+    r = _batch(a, "/x/items/redo", [f"document:{d1}", f"document:{d2}"], library["inbox"])
+    assert "2 件をやり直しに登録しました" in r.text
+    conn = connect(settings.db_path)
+    assert {r[0] for r in conn.execute("SELECT priority FROM jobs WHERE type = 'summarize_blob'"
+                                       " AND status = 'pending'")} == {15}
+    run_all(worker)
+    for d in (d1, d2):
+        s = a.get(f"/api/v1/documents/{d}/suggestions").json()["summary"]
+        assert s["summary"] == "まとめて作り直した要約です。" and not s["manual"]
+
+
+def test_selection_bar_has_batch_buttons(library, llm_on):
+    page = library["a"].get(f"/f/{library['inbox']}").text
+    for attr in ("data-sel-tags", "data-sel-reprocess", "data-sel-redo", 'id="dlg-tags"'):
+        assert attr in page
+    assert "要約とタグをやり直す" in page
