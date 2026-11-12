@@ -319,6 +319,10 @@ def _resolve(conn, cand: set[int], allowed: set[int], after, before, pq: ParsedQ
             f"SELECT c.id AS chunk_id, c.text, d.id, d.filename, d.kind, d.folder_id, d.updated_at, d.created_at,"
             f" b.mime_type, b.size_bytes, b.status"
             f" FROM chunks c JOIN documents d ON d.blob_id = c.blob_id AND d.deleted_at IS NULL"
+            # 手で直した要約のチャンクはその文書だけ。手で直した（消した）文書は、自動の要約では当てない
+            f" AND (c.document_id IS NULL OR c.document_id = d.id)"
+            f" AND NOT (c.source = 'summary' AND c.document_id IS NULL"
+            f"          AND d.id IN (SELECT document_id FROM document_summaries))"
             f" JOIN blobs b ON b.id = c.blob_id WHERE c.id IN ({','.join('?' * len(part))})", part).fetchall()
     tag = pq.filters.get("tag")
     tagged: set[int] | None = None

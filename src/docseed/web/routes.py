@@ -68,7 +68,10 @@ DONE_MESSAGES = {
     "suggest_reject": "候補を却下しました。この文書には二度と出しません",
     "prefs": "整理の補助の設定を保存しました",
     "summaries": "古い要約の作り直しを受け付けました。順番に上書きされます",
-    "redo": "要約とタグの候補の作り直しを受け付けました。しばらくしてから再読み込みしてください",
+    "redo": "要約とタグの候補の作り直しを受け付けました。終わると画面が新しくなります",
+    "summary_saved": "要約を保存しました（この文書だけに使います）",
+    "summary_hidden": "この文書では要約を出さないようにしました",
+    "summary_restored": "自動で作った要約に戻しました",
     "redo_suggest": "タグとフォルダの候補を作り直しました",
     "redo_short": "タグとフォルダの候補を作り直しました（本文が短いため、要約は作りません）",
     "summaries_none": "作り直す要約はありません",
@@ -654,6 +657,7 @@ def document_page(doc_id: int, request: Request, conn: sqlite3.Connection = Depe
         warnings=h.warning_messages(d["warnings"]), image_meta=json.loads(d["image_meta"] or "null"),
         clip=_clip_for(conn, d), webclip_enabled=request.app.state.settings.webclip_enabled,
         suggest_enabled=request.app.state.settings.suggest_enabled,
+        live=_live_state(conn, request.app.state.settings, d),
         llm_enabled=request.app.state.settings.llm_enabled,
         sugg=_suggestions_for(request, conn, d) if role in ("editor", "owner") else None,
         nav="files" if d["owner_id"] == auth.user.id else "shared"))
@@ -696,6 +700,47 @@ def document_redo(doc_id: int, request: Request, conn: sqlite3.Connection = Depe
     r = redo(conn, auth.user, d, embedder=embedder_of(request), enabled=s.suggest_enabled, llm_enabled=s.llm_enabled)
     done = {"queued": "redo", "too_short": "redo_short"}.get(r["summary"], "redo_suggest")
     return RedirectResponse(f"/d/{doc_id}?done={done}", status_code=303)
+
+
+@router.post("/d/{doc_id}/summary")
+def document_summary_edit(doc_id: int, request: Request, action: str = Form(...), summary: str = Form(""),
+                          conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    """要約を手で直す（save）・消す（hide）・自動の要約に戻す（restore）。この文書だけに効く。"""
+    from .. import llm
+    if not request.app.state.settings.llm_enabled:
+        raise AppError("要約は有効になっていません")
+    d = dm.get_document(conn, auth.user, doc_id, "editor")
+    if action == "save":
+        if not summary.strip():
+            raise AppError("要約を入力してください（消すときは「要約を消す」を押してください）")
+        llm.set_manual_summary(conn, d, auth.user.id, summary)
+        done = "summary_saved"
+    elif action == "hide":
+        llm.set_manual_summary(conn, d, auth.user.id, "")
+        done = "summary_hidden"
+    elif action == "restore":
+        llm.clear_manual_summary(conn, d, auth.user.id)
+        done = "summary_restored"
+    else:
+        raise AppError("不明な操作です")
+    return RedirectResponse(f"/d/{doc_id}?done={done}", status_code=303)
+
+
+def _live_state(conn: sqlite3.Connection, settings: Settings, d: sqlite3.Row) -> dict:
+    """文書の画面の自動更新に使う状態。key（状態・要約の作り直し中か・要約の日時）が変われば画面を読み直す。"""
+    from ..llm import summary_pending
+    pending = settings.llm_enabled and summary_pending(conn, d["blob_id"])
+    summ = conn.execute("SELECT created_at FROM blob_summaries WHERE blob_id = ?", (d["blob_id"],)).fetchone()
+    return {"key": f"{d['status']}|{int(pending)}|{summ[0] if summ else ''}",
+            "busy": d["status"] in ("pending", "processing") or pending,
+            "status": d["status"], "done": d["progress_done"], "total": d["progress_total"]}
+
+
+@router.get("/x/d/{doc_id}/state")
+def document_state(doc_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                   auth: Auth = Depends(require_auth)):
+    """文書の画面の自動更新（app.js）。進み具合（done/total）は書き換えるだけ。"""
+    return _live_state(conn, request.app.state.settings, dm.get_document(conn, auth.user, doc_id))
 
 
 @router.post("/d/{doc_id}")
@@ -757,9 +802,12 @@ def search_page(request: Request, q: str = "", mode: str = "hybrid", type: str =
         from ..suggest import get_prefs
         if get_prefs(conn, auth.user.id)["show_summary"]:
             ids = [h.document["id"] for h in result.hits]
+            # 手で直した要約があればそちら（'' は消したので出さない）
             summaries = {r[0]: r[1] for r in conn.execute(
-                f"SELECT d.id, s.summary FROM documents d JOIN blob_summaries s ON s.blob_id = d.blob_id"
-                f" WHERE d.id IN ({','.join('?' * len(ids))})", ids)}
+                f"SELECT d.id, coalesce(m.summary, s.summary) FROM documents d"
+                f" LEFT JOIN blob_summaries s ON s.blob_id = d.blob_id"
+                f" LEFT JOIN document_summaries m ON m.document_id = d.id"
+                f" WHERE d.id IN ({','.join('?' * len(ids))})", ids) if r[1]}
     folder_name = None
     if folder.isdigit() and fo.effective_role(conn, auth.user, int(folder)):
         folder_name = folder_label(conn, int(folder), labels)

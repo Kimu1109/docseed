@@ -477,6 +477,10 @@ mark { background: #ffe58a; color: inherit; padding: 0 1px; }
 .suggest-panel h3 { font-size: 13px; color: var(--muted); margin: var(--s3) 0 var(--s2); }
 .summary-text { margin: 0 0 4px; line-height: 1.7; }
 .suggest-panel .redo-form { margin-top: var(--s3); }
+.summary-edit { margin: var(--s2) 0; }
+.summary-edit > summary { cursor: pointer; color: var(--muted); }
+.summary-edit form { margin-top: var(--s2); gap: var(--s2); }
+.summary-edit textarea { height: auto; min-height: 7.5em; padding: 8px 10px; resize: vertical; line-height: 1.6; }
 .suggest-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .suggest-list li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .suggest-list .btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; justify-content: flex-start; }

@@ -118,7 +118,12 @@ class Worker:
                     reset_blob(self.conn, job["blob_id"])
                 result = process_blob(self.conn, self.ctx, job["blob_id"], force_ocr=bool(payload.get("force_ocr")))
             elif job["type"] == "reembed_blob":
-                result = reembed_blob(self.conn, self.ctx, job["blob_id"])
+                payload = json.loads(job["payload"]) if job["payload"] else {}
+                if payload.get("missing_only"):   # 手で直した要約など、ベクトルの無いチャンクだけ
+                    from .process import embed_chunks
+                    result = f"embedded {embed_chunks(self.conn, self.ctx, job['blob_id'])}"
+                else:
+                    result = reembed_blob(self.conn, self.ctx, job["blob_id"])
             elif job["type"] == "suggest_document":
                 from ..suggest import run_job
                 doc_id = json.loads(job["payload"] or "{}").get("document_id")

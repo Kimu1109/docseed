@@ -21,6 +21,7 @@
   </div>
 </dialog>
 
+{% if live.busy %}<div hidden data-live-url="/x/d/{{ doc.id }}/state" data-live-key="{{ live.key }}"></div>{% endif %}
 <div class="doc-layout">
   <section class="preview" aria-label="プレビュー">
     {% if doc.mime_type == "application/pdf" %}
@@ -51,14 +52,37 @@
 
   <aside class="doc-side">
     {% set can_redo = sugg and can_edit and doc.status == "ready" and (suggest_enabled or llm_enabled) %}
-    {% if sugg and (sugg.folders or sugg.tags or sugg.summary or can_redo) %}
+    {% set can_edit_summary = sugg and can_edit and llm_enabled and sugg.prefs.show_summary %}
+    {% if sugg and (sugg.folders or sugg.tags or sugg.summary or can_redo or sugg.summary_hidden) %}
     <section class="form-panel suggest-panel" aria-label="整理の候補">
       <h2>{{ icon("wand_stars") }} 整理の候補</h2>
       {% if sugg.summary %}
         <p class="summary-text">{{ sugg.summary.summary }}</p>
+        {% if sugg.summary.manual %}
+        <p class="muted small">{{ sugg.summary.edited_by or "" }} さんが手で直した要約です（{{ sugg.summary.edited_at | localtime }}）。この文書だけに使います。</p>
+        {% else %}
         <p class="muted small">自動で作った要約です（{{ sugg.summary.model }}）。誤りが含まれることがあります。{% if sugg.summary.old_model %}今のモデルとは別のモデルで作った要約です。{% elif sugg.summary.old_version %}古い方法で作った要約です。{% endif %}</p>
+        {% endif %}
+      {% elif sugg.summary_hidden %}
+        <p class="muted small">この文書では要約を出さないようにしています。</p>
       {% endif %}
-      {% if sugg.summary_pending %}<p class="muted small">{{ icon("schedule") }} 要約とタグを作り直しています。しばらくしてから再読み込みしてください。</p>{% endif %}
+      {% if can_edit_summary %}
+      <details class="summary-edit" {% if sugg.summary_hidden %}open{% endif %}>
+        <summary class="small">{{ icon("edit") }}{% if sugg.summary %}要約を直す・消す{% else %}要約を書く{% endif %}</summary>
+        <form method="post" action="/d/{{ doc.id }}/summary" class="form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <textarea name="summary" aria-label="要約" rows="4" maxlength="1000">{{ sugg.summary.summary if sugg.summary else "" }}</textarea>
+          <p class="muted small">直した要約はこの文書だけに使い、検索にも使います（同じ内容のほかのファイルの要約は変わりません）。</p>
+          <div class="row-actions-in">
+            <button name="action" value="save" class="btn btn-sm btn-primary">保存</button>
+            {% if sugg.summary %}<button name="action" value="hide" class="btn btn-sm" formnovalidate
+                    data-confirm="この文書では要約を出さないようにします。よろしいですか？">{{ icon("delete") }}要約を消す</button>{% endif %}
+            {% if sugg.summary and sugg.summary.manual or sugg.summary_hidden %}<button name="action" value="restore" class="btn btn-sm" formnovalidate>{{ icon("restore_from_trash") }}自動の要約に戻す</button>{% endif %}
+          </div>
+        </form>
+      </details>
+      {% endif %}
+      {% if sugg.summary_pending %}<p class="muted small">{{ icon("schedule") }} 要約とタグを作り直しています。終わると画面が新しくなります。</p>{% endif %}
       {% if sugg.folders %}
         <h3>フォルダ</h3>
         <ul class="suggest-list">
@@ -98,13 +122,13 @@
       <form method="post" action="/d/{{ doc.id }}/redo" class="redo-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="btn btn-sm" {% if sugg.summary_pending %}disabled{% endif %}
-                title="{% if llm_enabled %}要約と、タグ・フォルダの候補を作り直します（今の要約は上書きされます）{% else %}タグ・フォルダの候補を作り直します{% endif %}">{{ icon("refresh") }}{% if llm_enabled %}{% if sugg.summary %}要約とタグをやり直す{% else %}要約とタグを作る{% endif %}{% else %}候補をやり直す{% endif %}</button>
+                title="{% if llm_enabled %}要約と、タグ・フォルダの候補を作り直します（今の要約は上書きされ、手で直した要約も自動の要約に戻ります）{% else %}タグ・フォルダの候補を作り直します{% endif %}">{{ icon("refresh") }}{% if llm_enabled %}{% if sugg.summary %}要約とタグをやり直す{% else %}要約とタグを作る{% endif %}{% else %}候補をやり直す{% endif %}</button>
       </form>
       {% endif %}
     </section>
     {% endif %}
     <dl class="facts">
-      <dt>状態</dt><dd><span class="status status-{{ doc.status }}">{{ icon(status_icon[doc.status]) }}{{ status_label[doc.status] }}{% if doc.status == "processing" and doc.progress_total %} {{ doc.progress_done }}/{{ doc.progress_total }}{% endif %}</span>
+      <dt>状態</dt><dd><span class="status status-{{ doc.status }}">{{ icon(status_icon[doc.status]) }}{{ status_label[doc.status] }}{% if doc.status == "processing" and doc.progress_total %} <span data-live-progress>{{ doc.progress_done }}/{{ doc.progress_total }}</span>{% endif %}</span>
         {% if doc.status == "pending" %}<div class="muted small">文字の読み取りと検索の準備を待っています。</div>{% endif %}
         {% if doc.status == "processing" %}<div class="muted small">文字を読み取っています。数字は処理済みのページ数です。</div>{% endif %}
         {% if error and doc.status in ["failed", "unsupported"] %}<div class="small">{{ error }}</div>{% endif %}

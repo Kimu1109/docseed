@@ -440,7 +440,6 @@ def for_document(conn: sqlite3.Connection, doc: sqlite3.Row, *, embedder=None, e
 
     llm_model（今のモデル）を渡すと、別のモデルで作った要約を古いもの（old_model）として返す。
     """
-    from .llm import get_summary
     owner_id = conn.execute("SELECT owner_id FROM folders WHERE id = ?", (doc["folder_id"],)).fetchone()[0]
     prefs = get_prefs(conn, owner_id)
     out = {"folders": [], "tags": [], "summary": None, "prefs": prefs}
@@ -455,7 +454,10 @@ def for_document(conn: sqlite3.Connection, doc: sqlite3.Row, *, embedder=None, e
         out["folders"] = s["folders"] if prefs["suggest_folders"] else []
         out["tags"] = s["tags"] if prefs["suggest_tags"] else []
     if llm_enabled and prefs["show_summary"]:
-        out["summary"] = get_summary(conn, doc["blob_id"], llm_model)
+        from .llm import document_summary, manual_summary
+        out["summary"] = document_summary(conn, doc, llm_model)
+        m = manual_summary(conn, doc["id"])
+        out["summary_hidden"] = bool(m and m["hidden"])
     if llm_enabled:
         from .llm import summary_pending
         out["summary_pending"] = summary_pending(conn, doc["blob_id"])
@@ -467,10 +469,11 @@ def redo(conn: sqlite3.Connection, user: User, doc: sqlite3.Row, *, embedder=Non
     """文書の画面の「要約とタグをやり直す」。
 
     フォルダ・タグの候補（埋め込み）はその場で計算し直し、要約と LLM のタグは優先度を上げたジョブで
-    作り直す（既に要約があっても上書きする）。却下した候補は、やり直しても出さない。
+    作り直す（既に要約があっても上書きする。手で直した・消した要約もやめて、自動の要約に戻す）。
+    却下した候補は、やり直しても出さない。
     返り値: {"suggest": 候補を作り直したか, "summary": "queued" / "too_short" / None}
     """
-    from .llm import enqueue_summary, summary_input
+    from .llm import clear_manual_summary, enqueue_summary, summary_input
     out: dict = {"suggest": False, "summary": None}
     status = conn.execute("SELECT status FROM blobs WHERE id = ?", (doc["blob_id"],)).fetchone()[0]
     if status != "ready":
@@ -482,6 +485,7 @@ def redo(conn: sqlite3.Connection, user: User, doc: sqlite3.Row, *, embedder=Non
               tags=prefs["suggest_tags"])
         out["suggest"] = True
     if llm_enabled:
+        clear_manual_summary(conn, doc, user.id)
         if summary_input(conn, doc["blob_id"]) is None:
             out["summary"] = "too_short"
         else:

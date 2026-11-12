@@ -5,11 +5,13 @@ from __future__ import annotations
 import sqlite3
 
 from fastapi import APIRouter, Depends, Query, Request
+from pydantic import BaseModel
 
 from .. import documents as dm
 from .. import llm, suggest
 from ..config import Settings
 from ..deps import Auth, get_conn, get_settings, require_admin, require_auth
+from ..errors import ValidationFailed
 
 router = APIRouter(prefix="/api/v1")
 
@@ -37,6 +39,45 @@ def api_redo(doc_id: int, request: Request, conn: sqlite3.Connection = Depends(g
     d = dm.get_document(conn, auth.user, doc_id, "editor")
     return suggest.redo(conn, auth.user, d, embedder=embedder_of(request), enabled=settings.suggest_enabled,
                         llm_enabled=settings.llm_enabled)
+
+
+class SummaryIn(BaseModel):
+    summary: str
+
+
+def _llm_on(settings: Settings) -> None:
+    if not settings.llm_enabled:
+        raise ValidationFailed("要約は有効になっていません")
+
+
+@router.put("/documents/{doc_id}/summary")
+def api_summary_put(doc_id: int, body: SummaryIn, conn: sqlite3.Connection = Depends(get_conn),
+                    settings: Settings = Depends(get_settings), auth: Auth = Depends(require_auth)):
+    """この文書の要約を手で直す（ほかの文書の要約は変えない）。"""
+    _llm_on(settings)
+    d = dm.get_document(conn, auth.user, doc_id, "editor")
+    if not body.summary.strip():
+        raise ValidationFailed("要約を入力してください（消すときは DELETE を使ってください）")
+    llm.set_manual_summary(conn, d, auth.user.id, body.summary)
+    return {"summary": llm.document_summary(conn, d, settings.llm_model)}
+
+
+@router.delete("/documents/{doc_id}/summary", status_code=204)
+def api_summary_delete(doc_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                       settings: Settings = Depends(get_settings), auth: Auth = Depends(require_auth)):
+    """この文書では要約を出さない（自動の要約は残し、restore で戻せる）。"""
+    _llm_on(settings)
+    llm.set_manual_summary(conn, dm.get_document(conn, auth.user, doc_id, "editor"), auth.user.id, "")
+
+
+@router.post("/documents/{doc_id}/summary/restore")
+def api_summary_restore(doc_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                        settings: Settings = Depends(get_settings), auth: Auth = Depends(require_auth)):
+    """手で直した（消した）要約をやめ、自動で作った要約に戻す。"""
+    _llm_on(settings)
+    d = dm.get_document(conn, auth.user, doc_id, "editor")
+    llm.clear_manual_summary(conn, d, auth.user.id)
+    return {"summary": llm.document_summary(conn, d, settings.llm_model)}
 
 
 @router.post("/documents/{doc_id}/suggestions/{sid}/accept", status_code=204)

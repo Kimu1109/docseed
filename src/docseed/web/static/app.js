@@ -184,6 +184,36 @@
     htmx.trigger(listing, "refresh");
   }, 15000);
 
+  // 文書の画面: 文字の読み取り・要約の作り直しの間だけ状態を問い合わせる。進み具合は書き換え、
+  // 終わったら（key が変わったら）読み直す。入力中・ダイアログを開いている間は読み直さない
+  const live = $("[data-live-url]");
+  if (live) {
+    let busyEditing = false;
+    document.addEventListener("input", (e) => { if (e.target.closest("form")) busyEditing = true; });
+    const tick = async () => {
+      if (document.hidden) return;
+      let st;
+      try {
+        const r = await fetch(live.dataset.liveUrl, { headers: { Accept: "application/json" } });
+        if (!r.ok) return;
+        st = await r.json();
+      } catch { return; }
+      const prog = $("[data-live-progress]");
+      if (prog && st.total) prog.textContent = `${st.done}/${st.total}`;
+      if (st.key === live.dataset.liveKey) return;
+      if (busyEditing || $("dialog[open]") || document.activeElement?.matches("input, textarea, select")) {
+        live.dataset.liveKey = st.key;   // 読み直さず、次の変化を待つ
+        showToast("処理が終わりました。再読み込みすると反映されます");
+        return;
+      }
+      location.reload();
+    };
+    const timer = setInterval(async () => {
+      await tick();
+      if (!document.body.contains(live)) clearInterval(timer);
+    }, 5000);
+  }
+
   // ---- アップロード ------------------------------------------------------
   let uploading = 0;
   window.addEventListener("beforeunload", (e) => { if (uploading > 0) { e.preventDefault(); e.returnValue = ""; } });

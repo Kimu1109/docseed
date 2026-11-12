@@ -132,6 +132,7 @@ def process_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int, *, force_
     # ③ 埋め込み（ベクトルの無いチャンクだけ）。要約のチャンクも（処理し直しで消えていれば作り直して）埋め込む
     from .. import llm
     llm.sync_summary_chunk(conn, blob_id)
+    llm.sync_manual_chunks(conn, blob_id)    # 処理し直しで消えた、手で直した要約のチャンク
     embed_chunks(conn, ctx, blob_id)
 
     _set(conn, blob_id, status="ready", processed_at=now(), pipeline_version=PIPELINE_VERSION,
