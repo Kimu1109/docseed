@@ -1,0 +1,4 @@
+<button type="button" class="btn{% if small %} btn-sm{% endif %} fav-btn{% if fav %} is-fav{% endif %}" hx-post="/x/favorite"
+        hx-vals='{"type": "{{ fav_type }}", "id": {{ fav_id }}, "on": "{{ '0' if fav else '1' }}"{% if small %}, "small": "1"{% endif %}}'
+        hx-swap="outerHTML" aria-pressed="{{ 'true' if fav else 'false' }}"
+        title="{{ 'お気に入りから外す' if fav else 'お気に入りに入れる' }}">{{ icon("star") }}{{ "お気に入り" }}</button>

@@ -20,6 +20,8 @@
     {% endif %}
     <label>更新日（から）<input type="date" name="after" value="{{ after }}"></label>
     <label>更新日（まで）<input type="date" name="before" value="{{ before }}"></label>
+    <label>撮影日（から）<input type="date" name="taken_from" value="{{ taken_from }}"></label>
+    <label>撮影日（まで）<input type="date" name="taken_to" value="{{ taken_to }}"></label>
     {% if folder %}
     <label class="check folder-filter"><input type="checkbox" name="folder" value="{{ folder }}" checked> {{ folder_name or "指定したフォルダ" }} の中だけ</label>
     {% endif %}
@@ -28,6 +30,12 @@
 
 {% if result %}
   {% for n in result.notices %}<p class="note">{{ n }}</p>{% endfor %}
+  <form class="search-save" method="post" action="/search/saved">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for k, v in current.items() %}<input type="hidden" name="p_{{ k }}" value="{{ v }}">{% endfor %}
+    <input name="name" maxlength="100" placeholder="{{ q or '名前' }}" aria-label="保存する名前" autocomplete="off">
+    <button class="btn btn-sm">{{ icon("bookmark") }}この検索を保存</button>
+  </form>
   {% if result.total %}
     <p class="result-count"><b>{{ result.total }}</b> 件<span class="muted">（{{ result.took_ms }} ミリ秒）</span></p>
     <ol class="results">
@@ -40,6 +48,7 @@
             <a class="result-name" href="/d/{{ d.id }}?q={{ q | urlencode }}">{{ d.filename }}</a>
             <span class="muted small">{{ icon("folder") }}{{ paths[d.folder_id] }}</span>
             <span class="muted small">{{ icon("schedule") }}{{ d.updated_at | shortdate }}</span>
+            {% if d.taken_at %}<span class="muted small" title="撮影日時">{{ icon("image") }}{{ d.taken_at | taken_at }}</span>{% endif %}
           </div>
           {% if summaries.get(d.id) %}<p class="result-summary small">{{ icon("wand_stars") }} {{ summaries[d.id] }}</p>{% endif %}
           {% for s in h.snippets %}
@@ -64,10 +73,63 @@
   {% else %}
     <div class="empty">
       {{ icon("search_off") }}
-      <p>「{{ q }}」に一致するファイルは見つかりませんでした。</p>
+      <p>{% if q %}「{{ q }}」に一致するファイルは見つかりませんでした。{% else %}条件に合うファイルは見つかりませんでした。{% endif %}</p>
       <p class="muted">別の言い方で検索するか、種類や期間の絞り込みを外してみてください。処理待ちのファイルはまだ検索できません。</p>
     </div>
   {% endif %}
+{% endif %}
+
+{% if not result and (saved or history) %}
+<div class="search-lists">
+  {% if saved %}
+  <section class="panel" aria-label="保存した検索">
+    <h2>{{ icon("bookmark") }} 保存した検索</h2>
+    <ul class="item-list">
+    {% for x in saved %}
+      <li>
+        <a href="{{ x.url }}" title="{{ x.label }}"><span class="item-name">{{ x.name }}</span></a>
+        <span class="muted small">{{ x.label }}</span>
+        <details class="rowmenu">
+          <summary aria-label="「{{ x.name }}」の操作">{{ icon("more_horiz") }}</summary>
+          <div class="rowmenu-panel">
+            <form method="post" action="/search/saved/{{ x.id }}/rename" class="form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <label>名前 <input name="name" value="{{ x.name }}" required maxlength="100"></label>
+              <button class="btn btn-sm">{{ icon("edit") }}名前を変更</button>
+            </form>
+            <form method="post" action="/search/saved/{{ x.id }}/delete">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="danger">{{ icon("delete") }}消す</button>
+            </form>
+          </div>
+        </details>
+      </li>
+    {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+  {% if history %}
+  <section class="panel" aria-label="最近の検索">
+    <h2>{{ icon("history") }} 最近の検索</h2>
+    <ul class="item-list">
+    {% for x in history %}
+      <li>
+        <a href="{{ x.url }}"><span class="item-name">{{ x.label }}</span></a>
+        <span class="muted small">{{ x.searched_at | shortdate }}</span>
+        <form method="post" action="/search/history/{{ x.id }}/delete">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="linkish small" aria-label="「{{ x.label }}」を履歴から消す" title="履歴から消す">{{ icon("close") }}</button>
+        </form>
+      </li>
+    {% endfor %}
+    </ul>
+    <form method="post" action="/search/history/clear" data-confirm="検索の履歴をすべて消しますか？">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-sm">{{ icon("delete_sweep") }}履歴をすべて消す</button>
+    </form>
+  </section>
+  {% endif %}
+</div>
 {% endif %}
 
 <details class="search-help">
@@ -77,6 +139,7 @@
     <dt>"株式会社サンプル"</dt><dd>ダブルクォートで囲んだ語は必ず含むものだけにします</dd>
     <dt>見積書 -下書き</dt><dd>先頭に - を付けた語を含むものを除きます</dd>
     <dt>type:pdf tag:経理 after:2026-01-01</dt><dd>種類・タグ・更新日で絞り込みます（上の選択欄と同じ）</dd>
+    <dt>taken:2026-05　taken:2026-05-01..2026-05-10</dt><dd>写真の撮影日で絞り込みます（年・月・日、または「..」で期間）。検索語が無くても、絞り込みだけで一覧を出せます</dd>
   </dl>
   <p class="muted small">「税」「契約」のような 2 文字以下の語は、意味が近い候補の中でだけ照合します。見つからないときは、もう少し長い語で検索してください。</p>
 </details>

@@ -291,6 +291,23 @@ def test_heartbeat_and_daily(worker, settings):
     assert {"worker.heartbeat", "worker.daily"} <= keys
 
 
+def test_daily_prunes_versions_over_limit(login, settings, app):
+    """DOCSEED_VERSIONS_KEEP を減らしたら、毎日の片付けで多すぎる過去の版を消す。"""
+    import dataclasses
+    alice = login("alice")
+    for body in (b"v0", b"v1", b"v2", b"v3"):
+        r = alice.upload(alice.root, {"a.txt": body}, on_conflict="replace").json()["results"][0]
+    did = r["document"]["id"]
+    assert len(alice.get(f"/api/v1/documents/{did}/versions").json()["versions"]) == 3
+    w = Worker(dataclasses.replace(settings, versions_keep=1),
+               Context(settings.files_dir, ocr_factory=FakeOcr, embedder_factory=FakeEmbedder, dpi=50))
+    w.daily()
+    [v] = alice.get(f"/api/v1/documents/{did}/versions").json()["versions"]
+    assert alice.get(f"/api/v1/documents/{did}/versions/{v['id']}/content").content == b"v2"
+    conn = connect(settings.db_path)
+    assert conn.execute("SELECT count(*) FROM blobs").fetchone()[0] == 2
+
+
 # ---------------------------------------------------------------------------
 # テキスト層のある PDF に貼られた画像の OCR
 # ---------------------------------------------------------------------------

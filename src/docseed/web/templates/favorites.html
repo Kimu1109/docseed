@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}お気に入り{% endblock %}
+{% block main %}
+<div class="page-head"><h1 class="page-title">{{ icon("star") }} お気に入り</h1></div>
+
+<section class="panel panel-wide" aria-label="お気に入り">
+  {% if favs %}
+  <ul class="item-list">
+  {% for x in favs %}
+    <li>
+      {% if x.type == "folder" %}
+      <a href="/f/{{ x.id }}">{{ icon("folder") }}<span class="item-name">{{ x.name }}</span></a>
+      {% else %}{% set k = kind_of(x.mime_type, x.filename, x.kind) %}
+      <a href="/d/{{ x.id }}">{{ icon(kind_icon[k], kind_label[k]) }}<span class="item-name">{{ x.filename }}</span></a>
+      {% endif %}
+      <span class="muted small">{{ paths[x.folder_id] }}</span>
+      {% set fav, fav_type, fav_id, small = True, x.type, x.id, True %}{% include "_fav.html" %}
+    </li>
+  {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">まだありません。ファイルやフォルダの画面の「{{ icon("star") }}お気に入り」で入れられます。</p>
+  {% endif %}
+</section>
+
+<section class="panel panel-wide" aria-label="最近開いたファイル">
+  <h2>{{ icon("history") }} 最近開いたファイル</h2>
+  {% if recent %}
+  <ul class="item-list">
+  {% for x in recent %}{% set k = kind_of(x.mime_type, x.filename, x.kind) %}
+    <li>
+      <a href="/d/{{ x.id }}">{{ icon(kind_icon[k], kind_label[k]) }}<span class="item-name">{{ x.filename }}</span></a>
+      <span class="muted small">{{ paths[x.folder_id] }} ・ {{ x.opened_at | shortdate }} に開いた</span>
+    </li>
+  {% endfor %}
+  </ul>
+  <form method="post" action="/favorites/recent/clear" data-confirm="最近開いたファイルの記録を消しますか？">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn btn-sm">{{ icon("delete_sweep") }}記録を消す</button>
+  </form>
+  {% else %}
+  <p class="muted">まだありません。</p>
+  {% endif %}
+</section>
+{% endblock %}

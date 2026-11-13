@@ -104,6 +104,13 @@ RFC 9457（`application/problem+json`）形式。
 | GET | `/me/tokens` | API トークン一覧（先頭 8 文字・名前・最終使用日時） |
 | POST | `/me/tokens` | `{name, scopes, expires_at}` → `{token}`（この 1 回だけ表示） |
 | DELETE | `/me/tokens/{id}` | 無効化 |
+| GET | `/me/favorites` | お気に入り（`{favorites: [{type, id, filename\|name, ..., favorited_at}]}`。見られるものだけ） |
+| PUT / DELETE | `/me/favorites/{type}/{id}` | お気に入りに入れる・外す（type = document \| folder）。204 |
+| GET / DELETE | `/me/recent` | 最近開いたファイル（画面で開いたもの。`?limit=` 最大 50）/ 記録を消す |
+| GET | `/me/search-history` | 画面で検索した条件の履歴（`{history: [{id, params, url, label, searched_at}]}`） |
+| DELETE | `/me/search-history`、`/me/search-history/{id}` | 履歴をすべて・1 件消す |
+| GET / POST | `/me/saved-searches` | 保存した検索の一覧 / `{name?, params}` で保存（params は画面の `/search` と同じキー: q・mode・type・tag・after・before・taken_from・taken_to・folder。ほかは捨てる）。201 |
+| PATCH / DELETE | `/me/saved-searches/{id}` | `{name}` で名前を変える / 消す |
 
 ### 3.2 フォルダ
 
@@ -111,7 +118,7 @@ RFC 9457（`application/problem+json`）形式。
 |---|---|---|
 | GET | `/folders/shared-with-me` | 他のユーザーから共有されたフォルダの一覧 |
 | GET | `/folders/{id}` | フォルダ情報 |
-| GET | `/folders/{id}/children` | 子フォルダと文書の一覧。`?sort=name\|updated_at\|size&order=asc\|desc&cursor=&limit=` |
+| GET | `/folders/{id}/children` | 子フォルダと文書の一覧。`?sort=name\|updated_at\|size&order=asc\|desc&cursor=&limit=`。`limit`（1〜1000）を付けるとページ送り: フォルダ（名前順）→ 文書の順に並べた全体から `limit` 件を返し、続きがあれば `next_cursor` を返す（次は `cursor=<next_cursor>`）。省略時はすべて。応答に `total: {folders, documents}` |
 | POST | `/folders` | `{parent_id, name}` |
 | PATCH | `/folders/{id}` | `{name?, parent_id?}`（名前変更・移動） |
 | DELETE | `/folders/{id}` | 配下ごとゴミ箱へ |
@@ -136,6 +143,12 @@ RFC 9457（`application/problem+json`）形式。
 | POST | `/documents/{id}/copy` | `{folder_id, filename?}` |
 | DELETE | `/documents/{id}` | ゴミ箱へ |
 | POST | `/documents/{id}/reprocess` | `{force_ocr: bool}`（editor 以上） |
+| GET | `/documents/{id}/related` | 内容が似ている文書（`?limit=`、既定 5・最大 20）。`{documents: [{id, filename, kind, mime_type, folder_id, updated_at, similarity, path}]}`。文書のベクトル（先頭 20 チャンクの平均）に近いチャンクを持つ文書を、類似度 0.80 以上・見られるものだけ・同じ中身のコピーを除いて並べる。文字を読み取れていない文書は空 |
+| GET | `/documents/{id}/versions` | 過去の版の一覧（新しい順）。`{versions: [{id, filename, size_bytes, mime_type, sha256, created_by, created_at, archived_by, archived_at}]}` |
+| POST | `/documents/{id}/versions` | 新しい版をアップロード（multipart の `file`、editor 以上）。名前・フォルダ・タグはそのまま、今の中身は過去の版になる。201 `{changed, document}`（中身が今と同じなら `changed: false` で版は増えない）。Web クリップは 422（再取得を使う） |
+| GET | `/documents/{id}/versions/{version_id}/content` | 過去の版のダウンロード（常に attachment） |
+| POST | `/documents/{id}/versions/{version_id}/restore` | 過去の版に戻す（editor 以上）。今の版は過去の版として残る。応答は Document |
+| DELETE | `/documents/{id}/versions/{version_id}` | 過去の版を完全に削除（editor 以上。ゴミ箱には入らない）。204 |
 
 #### 3.3.1 アップロード
 
@@ -162,6 +175,7 @@ files=@領収書.jpg
 ```
 
 - `deduplicated: true` は同じ内容のファイルが既にあり、処理結果を使い回したことを示す。
+- `on_conflict=replace` で置き換えたときは `status: "replaced"`。それまでの中身は過去の版（`/documents/{id}/versions`）に残る。
 - フォルダ構造ごとのアップロード: `files` と同じ順番で `relative_paths`（例 `2026/10/見積書.pdf`）を送ると、`folder_id` の下に必要なフォルダを作成する（空文字のファイルはそのまま `folder_id` に置く）。
 - 大きなファイル: Caddy とアプリの上限は 1GB。分割・再開可能なアップロード（tus 等）は初版では対応しない。
 
@@ -205,7 +219,9 @@ GET /api/v1/search?q=振込先 請求書&mode=hybrid&type=pdf&tag=経理&folder=
 ```
 
 - `text` は HTML エスケープ済みで、`<mark>` タグだけを含む。
-- `q` 内の `type:` `tag:` `folder:` `after:` `before:` もパラメータと同じ意味で解釈する（[検索設計](search.md) 2 章）。
+- `q` 内の `type:` `tag:` `folder:` `after:` `before:` `taken:` もパラメータと同じ意味で解釈する（[検索設計](search.md) 2 章）。
+- `taken`: 写真の撮影日（`2026` / `2026-05` / `2026-05-03` / `2026-05-01..2026-05-10` / `..2025`）。結果の `document.taken_at` に撮影日時（無ければ null）。
+- 検索語が無く `type` `tag` `after` `before` `taken` のどれかがあれば、条件に合う文書を並べる（`mode: "filter"`、`snippets` は空）。
 - `sem_min`（0〜1、省略可）: 意味検索の類似度の下限を一時的に変える。評価スクリプト用で、省略時は設定値（既定 0.80）。
 - 実装では `total_estimate` ではなく `total`（絞り込み後の文書数）を返す。
 
@@ -251,7 +267,9 @@ GET /api/v1/search?q=振込先 請求書&mode=hybrid&type=pdf&tag=経理&folder=
 | POST | `/admin/jobs/{id}/retry` | 失敗ジョブの再実行 |
 | POST | `/admin/reprocess` | `{scope: "failed" \| "outdated" \| "unsupported" \| "all", force_ocr: bool}` で一括再処理（`unsupported` は対応形式が増えたとき用） |
 | GET | `/admin/status` | 状態と警告（Phase 5）。`alerts`（`level`: error / warning / info、`code`、`message`）、worker の最終応答、ジョブの件数、ディスク、CPU 温度、バックアップ（DB スナップショット・restic の最終結果）。外部の監視からは API トークンで呼ぶ |
-| GET | `/admin/system` | CPU 温度・負荷、メモリ、ディスク使用量、DB サイズ、文書数・チャンク数、モデル名、版（未実装。`/admin/status` と管理画面で代替） |
+| GET | `/admin/system` | CPU 温度・負荷・コア数、メモリ（`total`・`available`・スワップ）、ディスク（`total`・`used`・`free`・`free_ratio`）、`db_bytes`、件数（`documents`・`documents_trash`・`versions`・`folders`・`users`・`blobs`・`pages`・`chunks`）、`storage`（`blob_bytes`・過去の版だけが使う `version_only_bytes`）、モデル（`ocr`・`embedding`・`llm`）、版（`version`・`schema_version`・`python`・`machine`）、`uptime_s` |
+| GET | `/admin/notifications` | 通知の設定（`enabled`・`events`・`destinations`（形式とホスト名だけ））と最近の通知（`?limit=`、既定 50） |
+| POST | `/admin/notify/test` | テスト通知をすぐに送る。応答の `status` が `sent` なら送れた（`error` は一部の宛先の失敗）。宛先が無ければ 422 |
 | GET | `/admin/audit` | 監査ログ（`?user_id=&action=&from=&to=`） |
 
 ### 3.10 その他

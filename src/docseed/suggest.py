@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Container
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -157,8 +158,12 @@ class Result:
 
 
 def similar_documents(conn: sqlite3.Connection, vec: np.ndarray, doc_id: int,
-                      allowed: dict[int, str]) -> list[tuple[int, int, float]]:
-    """似ている文書の上位 10 件 (文書 ID, フォルダ ID, 類似度)。候補のフォルダの文書だけ。"""
+                      allowed: Container[int], *, top: int = TOP_DOCS,
+                      exclude_blob: int | None = None) -> list[tuple[int, int, float]]:
+    """似ている文書の上位 top 件 (文書 ID, フォルダ ID, 類似度)。allowed のフォルダの文書だけ。
+
+    exclude_blob: 同じ中身（同じ blob）の文書を除く（関連する文書の表示で、ただのコピーを出さない）。
+    """
     rows = conn.execute(
         "SELECT rowid, distance FROM chunk_vectors WHERE embedding MATCH ? AND k = ?",
         (vec.astype(np.float32).tobytes(), NEAR_K)).fetchall()
@@ -172,15 +177,15 @@ def similar_documents(conn: sqlite3.Connection, vec: np.ndarray, doc_id: int,
         for r in conn.execute(
                 f"SELECT c.id, d.id AS doc_id, d.folder_id FROM chunks c JOIN documents d ON d.blob_id = c.blob_id"
                 f" WHERE c.id IN ({','.join('?' * len(part))}) AND d.deleted_at IS NULL AND d.id != ?"
-                f" AND c.source = 'body'",
-                (*part, doc_id)):
+                f" AND c.source = 'body' AND d.blob_id IS NOT ?",
+                (*part, doc_id, exclude_blob)):
             if r["folder_id"] not in allowed:
                 continue
             s = sim[r["id"]]
             if r["doc_id"] not in best or s > best[r["doc_id"]][1]:
                 best[r["doc_id"]] = (r["folder_id"], s)
-    top = sorted(best.items(), key=lambda kv: -kv[1][1])[:TOP_DOCS]
-    return [(d, f, s) for d, (f, s) in top]
+    ranked = sorted(best.items(), key=lambda kv: (-kv[1][1], kv[0]))[:top]
+    return [(d, f, s) for d, (f, s) in ranked]
 
 
 def compute(conn: sqlite3.Connection, doc: sqlite3.Row, embedder=None, *, sim_min: float = SIM_MIN,

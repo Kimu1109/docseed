@@ -66,6 +66,19 @@ def filesize(n: int | None) -> str:
     return f"{size:.1f} TB"
 
 
+def duration(seconds: float | None) -> str:
+    """「3 日 4 時間」「5 時間 12 分」「8 分」。"""
+    if seconds is None:
+        return "—"
+    m = int(seconds) // 60
+    d, h, m = m // 1440, m // 60 % 24, m % 60
+    if d:
+        return f"{d} 日 {h} 時間"
+    if h:
+        return f"{h} 時間 {m} 分"
+    return f"{m} 分"
+
+
 def taken_at(iso: str | None) -> str:
     """EXIF の撮影日時（時差つきなら画面のタイムゾーンに直す。無ければそのまま）。"""
     if not iso:

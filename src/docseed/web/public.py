@@ -228,6 +228,9 @@ def share_upload(token: str, request: Request, files: list[UploadFile] = File(..
             results.append({"name": f.filename, "ok": False, "error": e.detail})
     _log(conn, acc, request, "upload", count=sum(1 for r in results if r["ok"]))
     root = fo.get_folder_row(conn, acc.folder_id)
+    from ..notify import share_upload as notify_upload
+    notify_upload(conn, settings, acc.share, acc.creator.display_name, acc.folder_id, root["name"],
+                  [r["saved_as"] for r in results if r["ok"]])
     return templates.TemplateResponse(request, "share_page.html", {
         "request": request, "user": None, "token": token, "share": acc.share, "creator": acc.creator,
         "upload_to": root, "results": results, "can_preview": can_preview})

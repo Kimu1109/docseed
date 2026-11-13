@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import datetime as dt
+import os
+import platform
 import shutil
 import sqlite3
 from dataclasses import asdict, dataclass
@@ -32,6 +34,37 @@ def cpu_temp() -> float | None:
         except (OSError, ValueError):
             continue
     return None
+
+
+def memory() -> dict | None:
+    """機械全体のメモリ（/proc/meminfo。コンテナの中でも Pi 全体の値になる）。バイト。"""
+    try:
+        info = {}
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            k, _, v = line.partition(":")
+            parts = v.split()
+            if parts and parts[0].isdigit():
+                info[k] = int(parts[0]) * 1024
+    except OSError:
+        return None
+    if "MemTotal" not in info:
+        return None
+    return {"total": info["MemTotal"], "available": info.get("MemAvailable", info.get("MemFree", 0)),
+            "swap_total": info.get("SwapTotal", 0), "swap_free": info.get("SwapFree", 0)}
+
+
+def load_average() -> tuple[float, float, float] | None:
+    try:
+        return os.getloadavg()
+    except (OSError, AttributeError):
+        return None
+
+
+def uptime_s() -> float | None:
+    try:
+        return float(Path("/proc/uptime").read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
 
 
 def _parse(ts: str | None) -> dt.datetime | None:
@@ -121,6 +154,16 @@ def status(conn: sqlite3.Connection, settings: Settings, *, now: dt.datetime | N
     temp = cpu_temp()
     if temp is not None and temp >= settings.thermal_pause_c:
         alerts.append(Alert("warning", "thermal", f"CPU の温度が {temp:.0f}℃ です。文字の読み取りを一時停止しています"))
+    elif temp is not None and temp >= settings.thermal_warn_c:
+        alerts.append(Alert("warning", "thermal_high",
+                            f"CPU の温度が {temp:.0f}℃ と高めです（{settings.thermal_pause_c:.0f}℃ で文字の読み取りを"
+                            "一時停止します）。冷却ファンと設置場所を確認してください"))
+
+    mem = memory()
+    if mem and mem["total"] and mem["available"] / mem["total"] * 100 < settings.memory_warn_pct:
+        alerts.append(Alert("warning", "memory_low", f"使えるメモリが {mem['available'] / mem['total'] * 100:.0f}%"
+                            f"（{mem['available'] // (1024 * 1024)} MB）しかありません。処理が遅くなったり、"
+                            "止まったりすることがあります"))
 
     def iso(t: dt.datetime | None) -> str | None:
         return t.strftime("%Y-%m-%dT%H:%M:%SZ") if t else None
@@ -134,6 +177,45 @@ def status(conn: sqlite3.Connection, settings: Settings, *, now: dt.datetime | N
         "tls": tls,
         "backup": {"db_snapshot": snap.name if snap else None, "db_snapshot_at": iso(snap_time),
                    "restic": restic, "restic_at": iso(restic_time)},
+    }
+
+
+def system_info(conn: sqlite3.Connection, settings: Settings) -> dict:
+    """機械と docseed の状態（GET /api/v1/admin/system と管理画面の「システム」）。"""
+    from . import __version__
+    from .db import schema_version
+    disk = shutil.disk_usage(settings.data_dir)
+    load = load_average()
+    c = conn.execute(
+        "SELECT (SELECT count(*) FROM documents WHERE deleted_at IS NULL) AS documents,"
+        " (SELECT count(*) FROM documents WHERE deleted_at IS NOT NULL) AS documents_trash,"
+        " (SELECT count(*) FROM document_versions) AS versions,"
+        " (SELECT count(*) FROM folders WHERE deleted_at IS NULL AND parent_id IS NOT NULL) AS folders,"
+        " (SELECT count(*) FROM users WHERE is_active = 1) AS users,"
+        " (SELECT count(*) FROM blobs) AS blobs,"
+        " (SELECT coalesce(sum(size_bytes), 0) FROM blobs) AS blob_bytes,"
+        " (SELECT coalesce(sum(b.size_bytes), 0) FROM blobs b WHERE b.id IN (SELECT blob_id FROM document_versions)"
+        "   AND b.id NOT IN (SELECT blob_id FROM documents)) AS version_only_bytes,"
+        " (SELECT count(*) FROM pages) AS pages,"
+        " (SELECT count(*) FROM chunks) AS chunks").fetchone()
+    db_bytes = sum(p.stat().st_size for p in settings.db_path.parent.glob(settings.db_path.name + "*") if p.is_file())
+    return {
+        "version": __version__,
+        "schema_version": schema_version(conn),
+        "python": platform.python_version(),
+        "machine": platform.machine(),
+        "uptime_s": uptime_s(),
+        "cpu": {"count": os.cpu_count(), "load": list(load) if load else None, "temp_c": cpu_temp(),
+                "temp_warn_c": settings.thermal_warn_c, "temp_pause_c": settings.thermal_pause_c},
+        "memory": memory(),
+        "disk": {"total": disk.total, "used": disk.used, "free": disk.free,
+                 "free_ratio": round(disk.free / disk.total, 4) if disk.total else None},
+        "db_bytes": db_bytes,
+        "counts": {k: c[k] for k in ("documents", "documents_trash", "versions", "folders", "users", "blobs",
+                                     "pages", "chunks")},
+        "storage": {"blob_bytes": c["blob_bytes"], "version_only_bytes": c["version_only_bytes"]},
+        "models": {"ocr": settings.ocr_engine, "embedding": settings.embed_model,
+                   "llm": settings.llm_model if settings.llm_enabled else None},
     }
 
 

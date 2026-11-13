@@ -9,6 +9,7 @@
   <span class="kind kind-{{ k }} kind-lg" title="{{ kind_label[k] }}"></span>
   {{ icon(kind_icon[k], kind_label[k]) }}
   <h1>{{ doc.filename }}</h1>
+  {% set fav_type, fav_id, small = "document", doc.id, False %}{% include "_fav.html" %}
   <button type="button" class="btn" data-open-dialog="dlg-share" hx-get="/x/share?type=document&id={{ doc.id }}"
           hx-target="#share-body" hx-swap="outerHTML">{{ icon("share") }}共有</button>
   <a class="btn btn-primary" href="/api/v1/documents/{{ doc.id }}/content">{{ icon("download") }}ダウンロード</a>
@@ -127,6 +128,7 @@
       {% endif %}
     </section>
     {% endif %}
+    {% if doc.status == "ready" %}<div hx-get="/x/d/{{ doc.id }}/related" hx-trigger="load" hx-swap="outerHTML"></div>{% endif %}
     <dl class="facts">
       <dt>状態</dt><dd><span class="status status-{{ doc.status }}">{{ icon(status_icon[doc.status]) }}{{ status_label[doc.status] }}{% if doc.status == "processing" and doc.progress_total %} <span data-live-progress>{{ doc.progress_done }}/{{ doc.progress_total }}</span>{% endif %}</span>
         {% if error and doc.status in ["failed", "unsupported"] %}<div class="small">{{ error }}</div>{% endif %}
@@ -148,10 +150,54 @@
       {% endif %}
       <dt>追加した人</dt><dd>{{ doc.created_by_name }}</dd>
       <dt>追加日時</dt><dd>{{ doc.created_at | localtime }}</dd>
+      {% if versions %}<dt>今の版</dt><dd>{{ (doc.content_updated_at or doc.created_at) | localtime }}<div class="muted small">過去の版 {{ versions | length }} 件</div></dd>{% endif %}
       <dt>更新日時</dt><dd>{{ doc.updated_at | localtime }}</dd>
       <dt>タグ</dt><dd>{% for t in tags %}<span class="tag">{{ icon("label") }}{{ t }}</span>{% else %}<span class="muted">なし</span>{% endfor %}</dd>
       <dt>SHA-256</dt><dd class="hash">{{ doc.sha256 }}</dd>
     </dl>
+
+    {% if versions or (can_edit and doc.kind != "webclip" and versions_keep) %}
+    <section class="form-panel versions-panel" id="versions" aria-label="過去の版">
+      <h2>{{ icon("history") }} 過去の版</h2>
+      {% if versions %}
+      <ol class="versions">
+      {% for v in versions %}
+        <li>
+          <div><b>{{ v.created_at | localtime }}</b> <span class="muted small">{{ v.size_bytes | filesize }}{% if v.created_by_name %} ・ {{ v.created_by_name }}{% endif %}</span></div>
+          <div class="muted small">{% if v.filename != doc.filename %}{{ v.filename }} ・ {% endif %}{{ v.archived_at | localtime }} に置き換え{% if v.archived_by_name %}（{{ v.archived_by_name }}）{% endif %}</div>
+          <div class="row-actions-in">
+            <a class="btn btn-sm" href="/api/v1/documents/{{ doc.id }}/versions/{{ v.id }}/content">{{ icon("download") }}ダウンロード</a>
+            {% if can_edit %}
+            {% if v.blob_id != doc.blob_id %}
+            <form method="post" action="/d/{{ doc.id }}/versions/{{ v.id }}/restore" class="form-inline"
+                  data-confirm="この版（{{ v.created_at | localtime }}）に戻しますか？ 今の版は過去の版に残ります。">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-sm">{{ icon("undo") }}この版に戻す</button>
+            </form>
+            {% else %}<span class="muted small">今の版と同じ内容</span>{% endif %}
+            <form method="post" action="/d/{{ doc.id }}/versions/{{ v.id }}/delete" class="form-inline"
+                  data-confirm="この版（{{ v.created_at | localtime }}）を完全に削除しますか？ 元に戻せません。">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-sm btn-danger">{{ icon("delete_forever") }}削除</button>
+            </form>
+            {% endif %}
+          </div>
+        </li>
+      {% endfor %}
+      </ol>
+      {% else %}
+      <p class="muted small">まだありません。新しい版をアップロードすると、今の版がここに残ります。</p>
+      {% endif %}
+      {% if can_edit and doc.kind != "webclip" and versions_keep %}
+      <form method="post" action="/d/{{ doc.id }}/versions" enctype="multipart/form-data" class="form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>新しい版のファイル <input type="file" name="file" required></label>
+        <p class="muted small">名前・フォルダ・タグはそのままで、中身だけが変わります。過去の版は新しいものから {{ versions_keep }} 件まで残します。</p>
+        <button type="submit" class="btn">{{ icon("upload_file") }}新しい版をアップロード</button>
+      </form>
+      {% endif %}
+    </section>
+    {% endif %}
 
     {% if can_edit %}
     <form method="post" action="/d/{{ doc.id }}" class="form form-panel">

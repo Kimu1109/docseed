@@ -4,7 +4,10 @@
      hx-target="#listing" hx-swap="outerHTML" hx-push-url="true"
      {% if sort == key %}aria-sort="{{ 'ascending' if order == 'asc' else 'descending' }}"{% endif %}>{{ label }}{% if sort == key %}<span class="sort-dir" aria-hidden="true">{{ "↑" if order == "asc" else "↓" }}</span>{% endif %}</a>
 {%- endmacro %}
-<div id="listing" hx-get="/f/{{ folder.id }}?sort={{ sort }}&order={{ order }}" hx-trigger="refresh" hx-swap="outerHTML"
+{% macro page_url(n) -%}
+  /f/{{ folder.id }}?{% if sort != "name" or order != "asc" %}sort={{ sort }}&order={{ order }}&{% endif %}page={{ n }}
+{%- endmacro %}
+<div id="listing" hx-get="/f/{{ folder.id }}?sort={{ sort }}&order={{ order }}&page={{ page }}" hx-trigger="refresh" hx-swap="outerHTML"
      data-folder-id="{{ folder.id }}" {% if can_edit %}data-can-edit{% endif %}
      {% if docs | selectattr("status", "in", ["pending", "processing"]) | list or clips | selectattr("status", "in", ["pending", "fetching"]) | list %}data-has-pending{% endif %}>
 {% if auto_moves %}
@@ -47,7 +50,7 @@
   {% for f in folders %}
     <tr data-item="folder:{{ f.id }}" data-name="{{ f.name }}" {% if can_edit %}draggable="true" data-drop="{{ f.id }}"{% endif %}>
       <td class="col-kind"><span class="kind kind-folder" title="フォルダ"></span></td>
-      <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon("folder_shared" if f.member_count else "folder") }}</span><a class="name" href="/f/{{ f.id }}">{{ f.name }}{% if f.member_count %}<span class="flag">共有中</span>{% endif %}</a></div></td>
+      <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon("folder_shared" if f.member_count else "folder") }}</span><a class="name" href="/f/{{ f.id }}">{{ f.name }}{% if f.id in favs.folder %}<span class="fav-mark" title="お気に入り">{{ icon("star") }}</span>{% endif %}{% if f.member_count %}<span class="flag">共有中</span>{% endif %}</a></div></td>
       <td class="col-date">{{ f.updated_at | shortdate }}</td>
       <td class="col-size muted">{{ f.item_count }} 項目</td>
       <td class="col-status"></td>
@@ -96,7 +99,7 @@
     {% set k = kind_of(d.mime_type, d.filename, d.kind) %}
     <tr data-item="document:{{ d.id }}" data-name="{{ d.filename }}" {% if can_edit %}draggable="true"{% endif %}>
       <td class="col-kind"><span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span></td>
-      <td class="col-name"><div class="cell-name">{% if d.thumb_path %}<img class="thumb" draggable="false" src="/api/v1/documents/{{ d.id }}/thumbnail" alt="" loading="lazy">{% else %}<span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span>{% endif %}<a class="name" href="/d/{{ d.id }}">{{ d.filename }}{% if d.uploaded_via_share_id %}<span class="flag">リンクで受け取り</span>{% endif %}</a></div>
+      <td class="col-name"><div class="cell-name">{% if d.thumb_path %}<img class="thumb" draggable="false" src="/api/v1/documents/{{ d.id }}/thumbnail" alt="" loading="lazy">{% else %}<span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span>{% endif %}<a class="name" href="/d/{{ d.id }}">{{ d.filename }}{% if d.id in favs.document %}<span class="fav-mark" title="お気に入り">{{ icon("star") }}</span>{% endif %}{% if d.uploaded_via_share_id %}<span class="flag">リンクで受け取り</span>{% endif %}</a></div>
         {% if reco.get(d.id) %}{% set r = reco[d.id] %}
         <div class="reco small">
           <label><input type="checkbox" name="doc" value="{{ d.id }}" form="reco-form" aria-label="「{{ d.filename }}」をまとめて移動する"> おすすめ: {{ r.path }}</label>
@@ -126,5 +129,14 @@
   {% endfor %}
   </tbody>
 </table>
+{% if pages > 1 %}
+<nav class="pager" aria-label="ページ送り">
+  {% if page > 1 %}<a class="btn" href="{{ page_url(page - 1) }}" hx-get="{{ page_url(page - 1) }}" hx-target="#listing"
+     hx-swap="outerHTML show:window:top" hx-push-url="true" rel="prev">{{ icon("chevron_left") }}前へ</a>{% endif %}
+  <span class="muted">{{ page }} / {{ pages }} ページ（{{ (page - 1) * page_size + 1 }}〜{{ [page * page_size, total] | min }} 件目 / 全 {{ total }} 件）</span>
+  {% if page < pages %}<a class="btn" href="{{ page_url(page + 1) }}" hx-get="{{ page_url(page + 1) }}" hx-target="#listing"
+     hx-swap="outerHTML show:window:top" hx-push-url="true" rel="next">次へ{{ icon("chevron_right") }}</a>{% endif %}
+</nav>
+{% endif %}
 {% endif %}
 </div>

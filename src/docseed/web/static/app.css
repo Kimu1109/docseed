@@ -290,6 +290,8 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .stats dt { font-size: 13px; color: var(--muted); }
 .stats dd { margin: 4px 0 0; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .stats .unit { font-size: 13px; font-weight: 400; color: var(--muted); margin-left: 4px; }
+.stats dd.small { font-size: 14px; font-weight: 400; overflow-wrap: anywhere; }
+.stats dd div.small { font-weight: 400; }
 
 /* ---- ログイン・エラー -------------------------------------------------- */
 .login { min-height: 100vh; display: grid; place-items: center; padding: var(--s4); }
@@ -564,3 +566,31 @@ body.has-selection .main { padding-bottom: 96px; }
 .alert-list li.alert-warning .icon { color: var(--warn); }
 .alert-list li.alert-info .icon { color: var(--muted); }
 .dropzone div .icon { width: 22px; height: 22px; color: var(--accent); vertical-align: -5px; }
+
+/* ---- 過去の版 ----------------------------------------------------------- */
+.versions { list-style: none; margin: 0 0 var(--s3); padding: 0; display: grid; gap: var(--s2); }
+.versions li { display: grid; gap: 4px; padding-bottom: var(--s2); border-bottom: 1px solid var(--line); }
+.versions li:last-child { border-bottom: 0; }
+.versions .form-inline { margin-top: 0; }
+
+/* ---- 関連する文書 ------------------------------------------------------- */
+.related { list-style: none; margin: 0 0 var(--s2); padding: 0; display: grid; gap: var(--s2); }
+.related a { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.related .related-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.related .icon { flex: none; width: 1.1em; height: 1.1em; }
+
+/* ---- お気に入り・最近開いたファイル・保存した検索 -------------------------- */
+.fav-btn.is-fav { color: var(--warn); border-color: currentColor; }
+.fav-mark { color: var(--warn); margin-left: 4px; }
+.fav-mark .icon { width: 0.95em; height: 0.95em; vertical-align: -0.1em; }
+.item-list { list-style: none; margin: 0 0 var(--s3); padding: 0; display: grid; gap: var(--s2); }
+.item-list li { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; min-width: 0; }
+.item-list a { display: inline-flex; gap: 6px; align-items: center; min-width: 0; }
+.item-list .item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-list .icon { flex: none; width: 1.1em; height: 1.1em; }
+.item-list form { display: inline; margin: 0; }
+.item-list .fav-btn { margin-left: auto; }
+.search-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--s4); margin-top: var(--s4); }
+.search-save { display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; margin: 0 0 var(--s3); }
+.search-save input[name=name] { height: 32px; min-width: 200px; }
+.search-lists > .panel { margin: 0; }

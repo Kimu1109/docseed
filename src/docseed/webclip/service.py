@@ -334,8 +334,8 @@ def _store_document(conn: sqlite3.Connection, store: BlobStore, settings: Settin
             if mime:
                 stored.mime_type = mime
             blob_id, _dedup = dm._register_blob(conn, store, stored)
-            conn.execute("UPDATE documents SET blob_id = ?, updated_at = ? WHERE id = ?", (blob_id, now(), d["id"]))
+            dm.replace_blob(conn, int(d["id"]), blob_id, user.id, settings.versions_keep)
             return int(d["id"])
     res = dm.upload(conn, store, user, c["folder_id"], name, src, max_bytes=settings.max_upload_bytes,
-                    mime_type=mime, kind=kind)
+                    mime_type=mime, kind=kind, keep_versions=settings.versions_keep)
     return res.document_id

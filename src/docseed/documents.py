@@ -14,6 +14,7 @@ from .storage import BlobStore, StoredFile
 from .users import User
 
 ON_CONFLICT = ("rename", "replace", "error")
+DEFAULT_KEEP_VERSIONS = 10   # 1 文書あたりの過去の版の数（DOCSEED_VERSIONS_KEEP。0 なら版を残さない）
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +108,7 @@ def _register_blob(conn: sqlite3.Connection, store: BlobStore, f: StoredFile) ->
 def upload(conn: sqlite3.Connection, store: BlobStore, user: User, folder_id: int, filename: str,
            src: BinaryIO, *, max_bytes: int, on_conflict: str = "rename", relative_path: str | None = None,
            ip: str | None = None, via_share_id: int | None = None, mime_type: str | None = None,
-           kind: str = "file") -> UploadResult:
+           kind: str = "file", keep_versions: int = DEFAULT_KEEP_VERSIONS) -> UploadResult:
     """ファイルを保存する。mime_type は判定を上書きする（Web クリップの HTML）。kind は documents.kind。"""
     if on_conflict not in ON_CONFLICT:
         raise ValidationFailed("on_conflict は rename / replace / error のいずれかです")
@@ -137,9 +138,8 @@ def upload(conn: sqlite3.Connection, store: BlobStore, user: User, folder_id: in
                 if on_conflict == "error":
                     raise NameConflict(f"「{name}」は既にこのフォルダにあります")
                 if on_conflict == "replace":
-                    conn.execute("UPDATE documents SET blob_id = ?, updated_at = ? WHERE id = ?",
-                                 (blob_id, t, existing[0]))
                     doc_id, replaced = int(existing[0]), True
+                    replace_blob(conn, doc_id, blob_id, user.id, keep_versions)
                 else:
                     name = free_doc_name(conn, target, name)
             if not replaced:
@@ -157,6 +157,40 @@ def upload(conn: sqlite3.Connection, store: BlobStore, user: User, folder_id: in
     if replaced:
         gc_blobs(conn, store)
     return UploadResult(doc_id, name, dedup, replaced)
+
+
+def replace_blob(conn: sqlite3.Connection, doc_id: int, blob_id: int, user_id: int | None,
+                 keep_versions: int = DEFAULT_KEEP_VERSIONS) -> bool:
+    """文書の中身を差し替え、それまでの中身を過去の版として残す。呼び出し側のトランザクションの中で使う。
+
+    中身が同じ（同じ blob）なら版は増やさない。差し替えたら True。古い blob の削除は呼び出し側が gc_blobs で行う。
+    """
+    d = conn.execute("SELECT blob_id, filename, created_by, created_at, content_updated_by, content_updated_at"
+                     " FROM documents WHERE id = ?", (doc_id,)).fetchone()
+    t = now()
+    if d["blob_id"] == blob_id:
+        conn.execute("UPDATE documents SET updated_at = ? WHERE id = ?", (t, doc_id))
+        return False
+    if keep_versions > 0:
+        conn.execute(
+            "INSERT INTO document_versions(document_id, blob_id, filename, created_by, created_at, archived_by,"
+            " archived_at) VALUES (?,?,?,?,?,?,?)",
+            (doc_id, d["blob_id"], d["filename"], d["content_updated_by"] or d["created_by"],
+             d["content_updated_at"] or d["created_at"], user_id, t))
+    conn.execute("UPDATE documents SET blob_id = ?, updated_at = ?, content_updated_at = ?, content_updated_by = ?"
+                 " WHERE id = ?", (blob_id, t, t, user_id, doc_id))
+    prune_versions(conn, doc_id, keep_versions)
+    return True
+
+
+def prune_versions(conn: sqlite3.Connection, doc_id: int | None, keep: int) -> int:
+    """過去の版を新しい順に keep 件だけ残す。doc_id が None ならすべての文書。消した件数を返す。"""
+    where, args = ("WHERE document_id = ?", [doc_id]) if doc_id is not None else ("", [])
+    cur = conn.execute(
+        "DELETE FROM document_versions WHERE id IN (SELECT id FROM (SELECT id, row_number() OVER"
+        f" (PARTITION BY document_id ORDER BY id DESC) AS n FROM document_versions {where}) WHERE n > ?)",
+        (*args, max(keep, 0)))
+    return cur.rowcount
 
 
 # ---------------------------------------------------------------------------
@@ -381,6 +415,8 @@ def gc_blobs(conn: sqlite3.Connection, store: BlobStore) -> int:
             " WHERE NOT EXISTS (SELECT 1 FROM documents d WHERE d.blob_id = b.id)"
             # Web クリップの og:image（どの文書からも直接は参照されない）は、クリップがある間は残す
             " AND NOT EXISTS (SELECT 1 FROM web_clips w WHERE w.image_blob_id = b.id)"
+            # 過去の版の中身は、版がある間は残す
+            " AND NOT EXISTS (SELECT 1 FROM document_versions v WHERE v.blob_id = b.id)"
         ).fetchall()
         for r in rows:
             conn.execute("DELETE FROM blobs WHERE id = ?", (r["id"],))

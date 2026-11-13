@@ -15,16 +15,21 @@
 </section>
 {% endif %}
 
-<section class="panel panel-wide">
+<section class="panel panel-wide" id="system">
   <h2>{{ icon("monitoring") }} システム</h2>
+  {% set c = system.cpu %}{% set m = system.memory %}{% set d = system.disk %}
   <dl class="stats">
-    <div><dt>ファイル</dt><dd>{{ stats.docs }}</dd></div>
-    <div><dt>保存している実体</dt><dd>{{ stats.blobs }}<span class="unit">件</span> {{ stats.blob_bytes | filesize }}</dd></div>
-    <div><dt>データベース</dt><dd>{{ db_bytes | filesize }}</dd></div>
-    <div><dt>SSD の空き</dt><dd>{{ disk.free | filesize }}<span class="unit">/ {{ disk.total | filesize }}</span></dd></div>
-    <div><dt>処理待ちのジョブ</dt><dd>{{ stats.jobs_waiting }}</dd></div>
-    <div><dt>失敗したジョブ</dt><dd>{{ stats.jobs_failed }}</dd></div>
-    {% if sys.cpu_temp_c is not none %}<div><dt>CPU 温度</dt><dd>{{ "%.1f" | format(sys.cpu_temp_c) }}<span class="unit">℃（{{ thermal_pause_c | int }}℃ で処理を一時停止）</span></dd></div>{% endif %}
+    {% if c.temp_c is not none %}<div><dt>CPU 温度</dt><dd class="{{ 'err-text' if c.temp_c >= c.temp_pause_c else ('warn-text' if c.temp_c >= c.temp_warn_c else '') }}">{{ "%.1f" | format(c.temp_c) }}<span class="unit">℃（{{ c.temp_warn_c | int }}℃ で警告、{{ c.temp_pause_c | int }}℃ で処理を一時停止）</span></dd></div>{% endif %}
+    {% if c.load %}<div><dt>負荷（1・5・15 分）</dt><dd>{{ "%.2f" | format(c.load[0]) }}<span class="unit">{{ "%.2f" | format(c.load[1]) }} / {{ "%.2f" | format(c.load[2]) }}（{{ c.count }} コア）</span></dd></div>{% endif %}
+    {% if m %}<div><dt>メモリ</dt><dd>{{ m.available | filesize }}<span class="unit">空き / {{ m.total | filesize }}（{{ (m.available / m.total * 100) | round | int }}%）{% if m.swap_total %}・スワップ {{ (m.swap_total - m.swap_free) | filesize }} 使用{% endif %}</span></dd></div>{% endif %}
+    <div><dt>SSD の空き</dt><dd class="{{ 'err-text' if d.free_ratio is not none and d.free_ratio < 0.05 else ('warn-text' if d.free_ratio is not none and d.free_ratio < 0.10 else '') }}">{{ d.free | filesize }}<span class="unit">/ {{ d.total | filesize }}（{{ (d.free_ratio * 100) | round(1) if d.free_ratio is not none else "—" }}%）</span></dd></div>
+    <div><dt>データベース</dt><dd>{{ system.db_bytes | filesize }}</dd></div>
+    <div><dt>保存している実体</dt><dd>{{ system.counts.blobs }}<span class="unit">件</span> {{ system.storage.blob_bytes | filesize }}{% if system.storage.version_only_bytes %}<div class="muted small">うち過去の版だけのもの {{ system.storage.version_only_bytes | filesize }}</div>{% endif %}</dd></div>
+    <div><dt>ファイル</dt><dd>{{ system.counts.documents }}<span class="unit">件（ゴミ箱 {{ system.counts.documents_trash }}・過去の版 {{ system.counts.versions }}）</span></dd></div>
+    <div><dt>検索の索引</dt><dd>{{ system.counts.chunks }}<span class="unit">チャンク / {{ system.counts.pages }} ページ</span></dd></div>
+    <div><dt>処理待ちのジョブ</dt><dd>{{ stats.jobs_waiting }}<span class="unit">（失敗 {{ stats.jobs_failed }}）</span></dd></div>
+    <div><dt>モデル</dt><dd class="small">文字の読み取り: {{ system.models.ocr }}<div>埋め込み: {{ system.models.embedding }}</div>{% if system.models.llm %}<div>要約: {{ system.models.llm }}</div>{% endif %}</dd></div>
+    <div><dt>版</dt><dd class="small">docseed {{ system.version }}（スキーマ {{ system.schema_version }}）<div class="muted small">Python {{ system.python }} / {{ system.machine }}{% if system.uptime_s %}・起動から {{ system.uptime_s | duration }}{% endif %}</div></dd></div>
   </dl>
 </section>
 
@@ -72,6 +77,41 @@
     </dd></div>
   </dl>
   <p class="muted small">設定と復旧の手順は README の「バックアップと復旧」を参照してください。</p>
+</section>
+
+<section class="panel panel-wide" id="notify">
+  <h2>{{ icon("send") }} 通知</h2>
+  {% if notify.enabled %}
+  <dl class="stats">
+    <div><dt>宛先</dt><dd class="small">{% for d in notify.destinations %}<div>{{ d }}</div>{% endfor %}</dd></div>
+    <div><dt>知らせること</dt><dd class="small">{% for e in notify.events %}<div>{{ e }}</div>{% endfor %}</dd></div>
+  </dl>
+  <form method="post" action="/admin/notify/test" class="row-actions-in">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn btn-sm">{{ icon("send") }}テスト通知を送る</button>
+  </form>
+  {% if notify.recent %}
+  <h3 class="small">最近の通知</h3>
+  <table class="plain small">
+    <thead><tr><th>日時</th><th>種類</th><th>内容</th><th>状態</th></tr></thead>
+    <tbody>
+    {% for n in notify.recent %}
+      <tr>
+        <td>{{ n.created_at | localtime("%m/%d %H:%M") }}</td>
+        <td>{{ notify.event_label.get(n.kind, n.kind) }}</td>
+        <td>{{ n.title }}<div class="muted">{{ n.body | truncate(80) }}</div></td>
+        <td>{% if n.status == "sent" %}<span class="ok-text">{{ icon("check_circle") }}送信済み</span>
+            {% elif n.status == "failed" %}<span class="err-text">{{ icon("error") }}失敗</span>
+            {% else %}<span class="muted">{{ icon("schedule") }}送信待ち</span>{% endif %}
+            {% if n.error %}<div class="err-text">{{ n.error | truncate(160) }}</div>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% else %}
+  <p class="muted small">通知の宛先が設定されていません。<code>.env</code> の <code>DOCSEED_NOTIFY_URLS</code>（ntfy・Discord・Slack などの Webhook）か、<code>DOCSEED_SMTP_HOST</code> と <code>DOCSEED_NOTIFY_EMAIL</code>（メール）を設定すると、警告・共有リンクでの受け取り・受け取り箱の取り込みを知らせます（README の「通知」）。</p>
+  {% endif %}
 </section>
 
 <section class="panel panel-wide">

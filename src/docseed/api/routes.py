@@ -221,14 +221,25 @@ def api_folder(folder_id: int, conn: sqlite3.Connection = Depends(get_conn), aut
 
 
 @router.get("/folders/{folder_id}/children")
-def api_children(folder_id: int, sort: str = "name", order: str = "asc",
-                 conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+def api_children(folder_id: int, sort: str = "name", order: str = "asc", limit: int | None = None,
+                 cursor: str | None = None, conn: sqlite3.Connection = Depends(get_conn),
+                 auth: Auth = Depends(require_auth)):
+    """子フォルダと文書。limit を付けるとページ送り（フォルダ → 文書の順に limit 件、続きは next_cursor）。"""
     role = fo.require_folder_role(conn, auth.user, folder_id, "viewer")
-    folders, docs = fo.list_children(conn, folder_id, sort=sort, order=order)
+    if limit is not None and not 1 <= limit <= 1000:
+        raise ValidationFailed("limit は 1〜1000 にしてください")
+    if cursor is not None and not cursor.isdigit():
+        raise ValidationFailed("cursor が正しくありません")
+    offset = int(cursor or 0)
+    folders, docs = fo.list_children(conn, folder_id, sort=sort, order=order, limit=limit, offset=offset)
+    nf, nd = fo.count_children(conn, folder_id)
+    shown = offset + len(folders) + len(docs)
     return {
         "folders": [{"id": f["id"], "name": f["name"], "item_count": f["item_count"],
                      "updated_at": f["updated_at"]} for f in folders],
         "documents": [doc_json(conn, d, role) for d in docs],
+        "total": {"folders": nf, "documents": nd},
+        "next_cursor": str(shown) if limit is not None and shown < nf + nd else None,
     }
 
 
@@ -395,7 +406,7 @@ def api_upload(request: Request, folder_id: int = Form(...), on_conflict: str = 
         try:
             r = dm.upload(conn, store, auth.user, folder_id, f.filename or "無題", f.file,
                           max_bytes=settings.max_upload_bytes, on_conflict=on_conflict, relative_path=rel,
-                          ip=client_ip(request))
+                          ip=client_ip(request), keep_versions=settings.versions_keep)
             d = dm.get_document(conn, auth.user, r.document_id)
             results.append({"filename": f.filename, "status": "replaced" if r.replaced else "created",
                             "deduplicated": r.deduplicated, "document": doc_json(conn, d)})
@@ -469,6 +480,71 @@ def api_doc_copy(doc_id: int, body: CopyIn, conn: sqlite3.Connection = Depends(g
 def api_doc_delete(doc_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
                    auth: Auth = Depends(require_auth)):
     dm.delete_document(conn, auth.user, doc_id, ip=client_ip(request))
+
+
+# ---------------------------------------------------------------------------
+# 過去の版
+# ---------------------------------------------------------------------------
+
+@router.get("/documents/{doc_id}/related")
+def api_related(doc_id: int, limit: int = 5, conn: sqlite3.Connection = Depends(get_conn),
+                auth: Auth = Depends(require_auth)):
+    """内容が似ている文書（見られるものだけ、似ている順）。文字を読み取れていない文書は空。"""
+    from ..related import related_documents
+    d = dm.get_document(conn, auth.user, doc_id)
+    labels: dict[int, str] = {}
+    return {"documents": [{k: r[k] for k in ("id", "filename", "kind", "mime_type", "folder_id", "updated_at",
+                                             "similarity")} | {"path": folder_label(conn, r["folder_id"], labels)}
+                          for r in related_documents(conn, auth.user, d, limit=max(1, min(limit, 20)))]}
+
+
+@router.get("/documents/{doc_id}/versions")
+def api_versions(doc_id: int, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from ..versions import list_versions, version_json
+    return {"versions": [version_json(r) for r in list_versions(conn, auth.user, doc_id)]}
+
+
+@router.post("/documents/{doc_id}/versions", status_code=201)
+def api_version_upload(doc_id: int, request: Request, file: UploadFile = File(...),
+                       conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth),
+                       store: BlobStore = Depends(get_store), settings: Settings = Depends(get_settings)):
+    """新しい版をアップロードする（名前・フォルダ・タグはそのまま、今の中身は過去の版になる）。"""
+    from ..versions import upload_new_version
+    changed = upload_new_version(conn, store, auth.user, doc_id, file.filename or "無題", file.file,
+                                 max_bytes=settings.max_upload_bytes, keep_versions=settings.versions_keep,
+                                 ip=client_ip(request))
+    return {"changed": changed, "document": api_document(doc_id, conn, auth)}
+
+
+@router.get("/documents/{doc_id}/versions/{version_id}/content")
+def api_version_content(doc_id: int, version_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                        auth: Auth = Depends(require_auth), store: BlobStore = Depends(get_store)):
+    """過去の版のファイル（常にダウンロード）。"""
+    from ..versions import get_version
+    v = get_version(conn, auth.user, doc_id, version_id)
+    if "range" not in request.headers:
+        with Tx(conn):
+            audit(conn, "download", user_id=auth.user.id, target_type="document", target_id=doc_id,
+                  ip=client_ip(request), version_id=version_id)
+    return file_response(store.path(v["storage_path"]), v, inline=False)
+
+
+@router.post("/documents/{doc_id}/versions/{version_id}/restore")
+def api_version_restore(doc_id: int, version_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                        auth: Auth = Depends(require_auth), store: BlobStore = Depends(get_store),
+                        settings: Settings = Depends(get_settings)):
+    """過去の版を今の版に戻す（今の版は過去の版として残る）。"""
+    from ..versions import restore_version
+    restore_version(conn, store, auth.user, doc_id, version_id, keep_versions=settings.versions_keep,
+                    ip=client_ip(request))
+    return api_document(doc_id, conn, auth)
+
+
+@router.delete("/documents/{doc_id}/versions/{version_id}", status_code=204)
+def api_version_delete(doc_id: int, version_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                       auth: Auth = Depends(require_auth), store: BlobStore = Depends(get_store)):
+    from ..versions import delete_version
+    delete_version(conn, store, auth.user, doc_id, version_id, ip=client_ip(request))
 
 
 @router.get("/documents/{doc_id}/text")
@@ -550,7 +626,7 @@ def api_doc_reprocess(doc_id: int, body: ReprocessIn, request: Request, conn: sq
 def run_search(request: Request, conn: sqlite3.Connection, auth: Auth, q: str, mode: str, limit: int, offset: int,
                filters: dict[str, str], sem_min: float | None = None):
     from ..search import search
-    embedder, err = request.app.state.query_embedder.get() if mode != "keyword" else (None, None)
+    embedder, err = request.app.state.query_embedder.get() if mode != "keyword" and q.strip() else (None, None)
     floor = request.app.state.settings.search_sem_min if sem_min is None else max(0.0, min(sem_min, 1.0))
     return search(conn, auth.user, q, mode=mode, embedder=embedder, embed_error=err, limit=limit, offset=offset,
                   filters=filters, sem_min=floor)
@@ -565,10 +641,15 @@ def folder_label(conn: sqlite3.Connection, folder_id: int, cache: dict[int, str]
 @router.get("/search")
 def api_search(request: Request, q: str = "", mode: str = "hybrid", type: str | None = None,
                tag: str | None = None, folder: str | None = None, after: str | None = None,
-               before: str | None = None, limit: int = 20, offset: int = 0, sem_min: float | None = None,
-               conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
-    """sem_min: 意味検索の類似度の下限を一時的に変える（評価スクリプト用。省略時は設定値）。"""
-    filters = {"type": type, "tag": tag, "folder": folder, "after": after, "before": before}
+               before: str | None = None, taken: str | None = None, limit: int = 20, offset: int = 0,
+               sem_min: float | None = None, conn: sqlite3.Connection = Depends(get_conn),
+               auth: Auth = Depends(require_auth)):
+    """sem_min: 意味検索の類似度の下限を一時的に変える（評価スクリプト用。省略時は設定値）。
+
+    taken: 撮影日（2026 / 2026-05 / 2026-05-03 / 2026-05-01..2026-05-10）。検索語が無く絞り込みだけなら、
+    条件に合う文書を並べる（mode は "filter"、snippets は空）。
+    """
+    filters = {"type": type, "tag": tag, "folder": folder, "after": after, "before": before, "taken": taken}
     r = run_search(request, conn, auth, q, mode, limit, offset, {k: v for k, v in filters.items() if v}, sem_min)
     labels: dict[int, str] = {}
     return {
@@ -580,6 +661,113 @@ def api_search(request: Request, q: str = "", mode: str = "hybrid", type: str | 
                                   for s in h.snippets]}
                     for h in r.hits],
     }
+
+
+# ---------------------------------------------------------------------------
+# お気に入り・最近開いたファイル・検索の履歴・保存した検索（本人のものだけ）
+# ---------------------------------------------------------------------------
+
+def _personal_item(x: dict) -> dict[str, Any]:
+    if x["type"] == "folder":
+        return {"type": "folder", "id": x["id"], "name": x["name"], "updated_at": x["updated_at"],
+                "favorited_at": x.get("favorited_at")}
+    return {"type": "document", "id": x["id"], "filename": x["filename"], "folder_id": x["folder_id"],
+            "mime_type": x["mime_type"], "updated_at": x["updated_at"],
+            **({"favorited_at": x["favorited_at"]} if "favorited_at" in x else {}),
+            **({"opened_at": x["opened_at"]} if "opened_at" in x else {})}
+
+
+@router.get("/me/favorites")
+def api_favorites(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from ..personal import list_favorites
+    return {"favorites": [_personal_item(x) for x in list_favorites(conn, auth.user)]}
+
+
+@router.put("/me/favorites/{target_type}/{target_id}", status_code=204)
+def api_favorite_add(target_type: str, target_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                     auth: Auth = Depends(require_auth)):
+    from ..personal import set_favorite
+    set_favorite(conn, auth.user, target_type, target_id, True)
+
+
+@router.delete("/me/favorites/{target_type}/{target_id}", status_code=204)
+def api_favorite_remove(target_type: str, target_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                        auth: Auth = Depends(require_auth)):
+    from ..personal import set_favorite
+    set_favorite(conn, auth.user, target_type, target_id, False)
+
+
+@router.get("/me/recent")
+def api_recent(limit: int = 20, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    """最近開いたファイル（画面で文書を開いたもの。API での取得は数えない）。"""
+    from ..personal import list_recent
+    return {"documents": [_personal_item(x) for x in list_recent(conn, auth.user, max(1, min(limit, 50)))]}
+
+
+@router.delete("/me/recent", status_code=204)
+def api_recent_clear(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from ..personal import clear_recent
+    clear_recent(conn, auth.user)
+
+
+@router.get("/me/search-history")
+def api_search_history(limit: int = 30, conn: sqlite3.Connection = Depends(get_conn),
+                       auth: Auth = Depends(require_auth)):
+    """画面で検索した条件の履歴（新しい順。API の /search は記録しない）。"""
+    from ..personal import list_history
+    return {"history": list_history(conn, auth.user, max(1, min(limit, 30)))}
+
+
+@router.delete("/me/search-history", status_code=204)
+def api_search_history_clear(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from ..personal import delete_history
+    delete_history(conn, auth.user)
+
+
+@router.delete("/me/search-history/{history_id}", status_code=204)
+def api_search_history_delete(history_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                              auth: Auth = Depends(require_auth)):
+    from ..personal import delete_history
+    if not delete_history(conn, auth.user, history_id):
+        raise NotFound("履歴が見つかりません")
+
+
+class SavedSearchIn(BaseModel):
+    name: str = ""
+    params: dict[str, str] = Field(default_factory=dict)
+
+
+@router.get("/me/saved-searches")
+def api_saved_searches(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from ..personal import list_saved
+    return {"saved_searches": list_saved(conn, auth.user)}
+
+
+@router.post("/me/saved-searches", status_code=201)
+def api_saved_search_create(body: SavedSearchIn, conn: sqlite3.Connection = Depends(get_conn),
+                            auth: Auth = Depends(require_auth)):
+    """params は画面の /search と同じ（q・mode・type・tag・after・before・taken_from・taken_to・folder）。"""
+    from ..personal import list_saved, save_search
+    sid = save_search(conn, auth.user, body.name, body.params)
+    return next(x for x in list_saved(conn, auth.user) if x["id"] == sid)
+
+
+class SavedSearchPatch(BaseModel):
+    name: str
+
+
+@router.patch("/me/saved-searches/{saved_id}", status_code=204)
+def api_saved_search_rename(saved_id: int, body: SavedSearchPatch, conn: sqlite3.Connection = Depends(get_conn),
+                            auth: Auth = Depends(require_auth)):
+    from ..personal import rename_saved
+    rename_saved(conn, auth.user, saved_id, body.name)
+
+
+@router.delete("/me/saved-searches/{saved_id}", status_code=204)
+def api_saved_search_delete(saved_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                            auth: Auth = Depends(require_auth)):
+    from ..personal import delete_saved
+    delete_saved(conn, auth.user, saved_id)
 
 
 # ---------------------------------------------------------------------------
@@ -707,6 +895,42 @@ def api_status(request: Request, conn: sqlite3.Connection = Depends(get_conn), a
     """状態と警告（deployment.md 6 章）。外部の監視から使う場合は API トークンで呼ぶ。"""
     from ..monitor import status
     return status(conn, request.app.state.settings)
+
+
+@router.get("/admin/system")
+def api_system(request: Request, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_admin)):
+    """機械と docseed の状態（CPU 温度・負荷、メモリ、ディスク、DB、件数、モデル、版）。"""
+    from ..monitor import system_info
+    return system_info(conn, request.app.state.settings)
+
+
+def notification_json(r: sqlite3.Row) -> dict[str, Any]:
+    return {k: r[k] for k in ("id", "kind", "level", "title", "body", "status", "attempts", "error", "created_at",
+                              "sent_at")}
+
+
+@router.get("/admin/notifications")
+def api_notifications(request: Request, limit: int = 50, conn: sqlite3.Connection = Depends(get_conn),
+                      auth: Auth = Depends(require_admin)):
+    """通知の設定（宛先は形式とホスト名だけ）と、最近の通知。"""
+    from ..notify import describe_destination, recent
+    s = request.app.state.settings
+    return {"enabled": s.notify_enabled, "events": sorted(s.notify_events),
+            "destinations": [describe_destination(u) for u in s.notify_urls]
+            + ([f"メール（{len(s.notify_email)} 件の宛先）"] if s.smtp_host and s.notify_email else []),
+            "notifications": [notification_json(r) for r in recent(conn, max(1, min(limit, 200)))]}
+
+
+@router.post("/admin/notify/test")
+def api_notify_test(request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                    auth: Auth = Depends(require_admin)):
+    """テスト通知をすぐに送る。応答の status が sent なら届いている（error は一部の宛先の失敗）。"""
+    from ..notify import send_test
+    try:
+        r = send_test(conn, request.app.state.settings)
+    except ValueError as e:
+        raise ValidationFailed(str(e)) from None
+    return notification_json(r)
 
 
 # ---------------------------------------------------------------------------

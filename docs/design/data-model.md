@@ -173,7 +173,26 @@ CREATE TABLE document_tags (
 ```
 
 - 同じフォルダに同名ファイルをアップロードした場合は、API の指定に従い「別名で保存（`name (2).pdf`）」「置き換え」「エラー」のいずれかにする。既定は「別名で保存」。
-- 版管理（履歴）は初版では持たない。「置き換え」は `documents.blob_id` を差し替え、古い blob は参照がなくなれば削除する。
+- 「置き換え」は `documents.blob_id` を差し替え、それまでの中身を **過去の版**（`document_versions`、0008）として残す。中身が同じ（同じ blob）なら版は増やさない。Web クリップの再取得も同じ。
+
+```sql
+CREATE TABLE document_versions (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,   -- 消した版の ID を使い回さない
+  document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  blob_id     INTEGER NOT NULL REFERENCES blobs(id),
+  filename    TEXT NOT NULL,                  -- その版だったときのファイル名
+  created_by  INTEGER REFERENCES users(id),   -- その版を追加した人
+  created_at  TEXT NOT NULL,                  -- その版が今の版になった日時
+  archived_by INTEGER REFERENCES users(id),   -- 次の版で置き換えた人
+  archived_at TEXT NOT NULL                   -- 過去の版になった日時
+);
+-- documents に content_updated_at / content_updated_by（今の版を追加した日時と人。NULL なら created_at / created_by）
+```
+
+- 1 文書あたり新しいものから `DOCSEED_VERSIONS_KEEP`（既定 10）件だけ残し、古いものから消す（置き換えのたびと、毎日の片付け（`purge_trash`）で）。0 なら版を残さない。
+- 過去の版の blob は、どの文書からも参照されていなくても、版がある間は消さない（`gc_blobs`）。版を消す・文書を完全に削除する（カスケード）と、参照がなくなった blob を消す。
+- 過去の版は検索の対象にしない（チャンクは blob に付くが、検索は今の版の文書からたどる）。使用量（`usage_bytes`）にも数えない。
+- 過去の版に戻すと、今の版を過去の版として残し、戻した版の行を消す（戻したことも取り消せる）。
 
 ### 3.4 抽出結果
 
@@ -321,6 +340,15 @@ CREATE TABLE schema_migrations (
   applied_at TEXT NOT NULL
 );
 ```
+
+利用者ごとの記録（0010、[画面設計](ui.md) S11）:
+
+| 表 | 内容 |
+|---|---|
+| `favorites(user_id, target_type, target_id, created_at)` | お気に入り（`document` / `folder`）。対象への外部キーは持たず、読むときに今の権限とゴミ箱を確かめ、消えた対象の行は消す |
+| `recent_documents(user_id, document_id, opened_at)` | 最近開いたファイル。開き直すと消して入れ直す（rowid の順＝開いた順）。利用者ごとに 50 件 |
+| `search_history(id, user_id, params, searched_at)` | 検索の履歴。`params` は条件の JSON（キーの順をそろえる）で、同じ条件は 1 件。利用者ごとに 30 件 |
+| `saved_searches(id, user_id, name, params, created_at)` | 保存した検索。利用者ごとに 100 件まで |
 
 ## 4. 削除とゴミ箱
 
