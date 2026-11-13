@@ -98,6 +98,7 @@ DONE_MESSAGES = {
     "version_deleted": "過去の版を削除しました",
     "notify_sent": "テスト通知を送りました。届いたか確かめてください",
     "recent_cleared": "最近開いたファイルの記録を消しました",
+    "theme": "画面の色を変えました",
     "search_saved": "検索を保存しました",
     "search_deleted": "保存した検索を消しました",
     "search_renamed": "保存した検索の名前を変えました",
@@ -121,6 +122,8 @@ def base_context(request: Request, conn: sqlite3.Connection, auth: Auth | None, 
            "csrf_token": getattr(request.state, "csrf_token", ""), "done": None}
     if auth:
         ctx["root_id"] = um.root_folder_id(conn, auth.user.id)
+        from ..personal import get_theme
+        ctx["theme"] = get_theme(conn, auth.user)
         ctx["usage"] = um.usage_bytes(conn, auth.user.id)
         ctx["pending"] = conn.execute(
             "SELECT count(DISTINCT b.id) FROM documents d JOIN blobs b ON b.id = d.blob_id"
@@ -340,6 +343,14 @@ def document_suggestion(doc_id: int, sid: int, action: str, conn: sqlite3.Connec
     else:
         raise AppError("不明な操作です")
     return RedirectResponse(f"/d/{doc_id}?done={'suggest_' + action}", status_code=303)
+
+
+@router.post("/settings/theme")
+def settings_theme(theme: str = Form("auto"), conn: sqlite3.Connection = Depends(get_conn),
+                   auth: Auth = Depends(require_session)):
+    from ..personal import set_theme
+    set_theme(conn, auth.user, theme)
+    return RedirectResponse("/settings?done=theme#theme", status_code=303)
 
 
 @router.post("/settings/prefs")

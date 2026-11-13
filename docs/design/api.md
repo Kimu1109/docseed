@@ -104,6 +104,7 @@ RFC 9457（`application/problem+json`）形式。
 | GET | `/me/tokens` | API トークン一覧（先頭 8 文字・名前・最終使用日時） |
 | POST | `/me/tokens` | `{name, scopes, expires_at}` → `{token}`（この 1 回だけ表示） |
 | DELETE | `/me/tokens/{id}` | 無効化 |
+| GET / PUT | `/me/theme` | 画面の色 `{theme: "auto" \| "light" \| "dark"}` |
 | GET | `/me/favorites` | お気に入り（`{favorites: [{type, id, filename\|name, ..., favorited_at}]}`。見られるものだけ） |
 | PUT / DELETE | `/me/favorites/{type}/{id}` | お気に入りに入れる・外す（type = document \| folder）。204 |
 | GET / DELETE | `/me/recent` | 最近開いたファイル（画面で開いたもの。`?limit=` 最大 50）/ 記録を消す |

@@ -56,6 +56,17 @@
     {% endif %}
   </section>
 
+  <section class="panel" id="theme" aria-label="画面の色">
+    <h2>{{ icon("visibility") }} 画面の色</h2>
+    <form method="post" action="/settings/theme" class="form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% for k, label in [("auto", "端末の設定に合わせる"), ("light", "ライト"), ("dark", "ダーク")] %}
+      <label class="check"><input type="radio" name="theme" value="{{ k }}" {% if theme == k %}checked{% endif %}> {{ label }}</label>
+      {% endfor %}
+      <button class="btn btn-primary">{{ icon("save") }}保存</button>
+    </form>
+  </section>
+
   {% if suggest_enabled or llm_enabled %}
   <section class="panel panel-wide">
     <h2>{{ icon("wand_stars") }} 整理の補助</h2>

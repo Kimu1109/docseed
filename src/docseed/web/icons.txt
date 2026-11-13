@@ -61,6 +61,7 @@ undo
 history
 star
 bookmark
+keyboard
 replay
 deselect
 delete_sweep

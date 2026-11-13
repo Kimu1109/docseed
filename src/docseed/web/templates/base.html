@@ -1,8 +1,9 @@
 <!doctype html>
-<html lang="ja">
+<html lang="ja"{% if theme in ("light", "dark") %} data-theme="{{ theme }}"{% endif %}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="{{ theme if theme in ('light', 'dark') else 'light dark' }}">
 <meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false, "allowScriptTags": false}'>
 <title>{% block title %}docseed{% endblock %} | docseed</title>
 <link rel="stylesheet" href="/static/app.css?v={{ version }}">
@@ -28,6 +29,7 @@
       <summary>{{ icon("account_circle") }}{{ user.display_name }}</summary>
       <div class="usermenu-panel">
         <a href="/settings">{{ icon("settings") }}設定</a>
+        <button type="button" class="linkish" data-open-dialog="dlg-keys">{{ icon("keyboard") }}キーボード操作 <kbd>?</kbd></button>
         <form method="post" action="/logout">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button type="submit" class="linkish">{{ icon("logout") }}ログアウト</button>
@@ -38,13 +40,13 @@
 </header>
 <div class="shell">
   <nav class="side" id="side" aria-label="メイン">
-    <a href="/f/{{ root_id }}" data-drop="{{ root_id }}" {% if nav == 'files' %}aria-current="page"{% endif %}>{{ icon("folder") }}マイファイル</a>
-    <a href="/favorites" {% if nav == 'favorites' %}aria-current="page"{% endif %}>{{ icon("star") }}お気に入り</a>
+    <a href="/f/{{ root_id }}" data-drop="{{ root_id }}" data-goto="files" {% if nav == 'files' %}aria-current="page"{% endif %}>{{ icon("folder") }}マイファイル</a>
+    <a href="/favorites" data-goto="favorites" {% if nav == 'favorites' %}aria-current="page"{% endif %}>{{ icon("star") }}お気に入り</a>
     <a href="/search" {% if nav == 'search' %}aria-current="page"{% endif %}>{{ icon("search") }}検索</a>
-    <a href="/shared" {% if nav == 'shared' %}aria-current="page"{% endif %}>{{ icon("folder_shared") }}共有されたフォルダ</a>
-    <a href="/tags" {% if nav == 'tags' %}aria-current="page"{% endif %}>{{ icon("label") }}タグ</a>
-    <a href="/trash" {% if nav == 'trash' %}aria-current="page"{% endif %}>{{ icon("delete") }}ゴミ箱</a>
-    {% if user.is_admin %}<a href="/admin" {% if nav == 'admin' %}aria-current="page"{% endif %}>{{ icon("admin_panel_settings") }}管理{% if alert_count %} <span class="alert-badge" title="確認が必要な項目が {{ alert_count }} 件あります" aria-label="警告 {{ alert_count }} 件">!{{ alert_count }}</span>{% endif %}</a>{% endif %}
+    <a href="/shared" data-goto="shared" {% if nav == 'shared' %}aria-current="page"{% endif %}>{{ icon("folder_shared") }}共有されたフォルダ</a>
+    <a href="/tags" data-goto="tags" {% if nav == 'tags' %}aria-current="page"{% endif %}>{{ icon("label") }}タグ</a>
+    <a href="/trash" data-goto="trash" {% if nav == 'trash' %}aria-current="page"{% endif %}>{{ icon("delete") }}ゴミ箱</a>
+    {% if user.is_admin %}<a href="/admin" data-goto="admin" {% if nav == 'admin' %}aria-current="page"{% endif %}>{{ icon("admin_panel_settings") }}管理{% if alert_count %} <span class="alert-badge" title="確認が必要な項目が {{ alert_count }} 件あります" aria-label="警告 {{ alert_count }} 件">!{{ alert_count }}</span>{% endif %}</a>{% endif %}
     <div class="side-foot">
       <div>使用量 <b>{{ usage | filesize }}</b></div>
       {% if pending %}<div>処理待ち <b>{{ pending }}</b> 件</div>{% endif %}
@@ -56,6 +58,52 @@
 </div>
 {% else %}
 {% block bare %}{% endblock %}
+{% endif %}
+{% if user %}
+<dialog id="dlg-keys" class="dialog dialog-wide" aria-labelledby="dlg-keys-title">
+  <div class="dialog-in">
+    <h2 id="dlg-keys-title">{{ icon("keyboard") }} キーボード操作</h2>
+    <p class="muted small">文字を入力しているときは使えません。</p>
+    <div class="keys">
+      <section>
+        <h3>どこでも</h3>
+        <dl>
+          <dt><kbd>/</kbd></dt><dd>検索欄へ</dd>
+          <dt><kbd>?</kbd></dt><dd>この一覧を出す</dd>
+          <dt><kbd>g</kbd> <kbd>m</kbd></dt><dd>マイファイル</dd>
+          <dt><kbd>g</kbd> <kbd>f</kbd></dt><dd>お気に入り</dd>
+          <dt><kbd>g</kbd> <kbd>s</kbd></dt><dd>共有されたフォルダ</dd>
+          <dt><kbd>g</kbd> <kbd>t</kbd></dt><dd>タグ</dd>
+          <dt><kbd>g</kbd> <kbd>d</kbd></dt><dd>ゴミ箱</dd>
+          {% if user.is_admin %}<dt><kbd>g</kbd> <kbd>a</kbd></dt><dd>管理</dd>{% endif %}
+          <dt><kbd>s</kbd></dt><dd>今のファイル・フォルダをお気に入りに入れる・外す</dd>
+        </dl>
+      </section>
+      <section>
+        <h3>ファイルの一覧</h3>
+        <dl>
+          <dt><kbd>j</kbd> <kbd>k</kbd> / <kbd>↓</kbd> <kbd>↑</kbd></dt><dd>下・上へ（Shift で範囲を選ぶ）</dd>
+          <dt><kbd>Enter</kbd></dt><dd>開く</dd>
+          <dt><kbd>x</kbd></dt><dd>選択に足す・外す</dd>
+          <dt><kbd>Ctrl</kbd> <kbd>A</kbd></dt><dd>すべて選ぶ</dd>
+          <dt><kbd>Esc</kbd></dt><dd>選択を外す</dd>
+          <dt><kbd>F2</kbd></dt><dd>名前を変更</dd>
+          <dt><kbd>Delete</kbd></dt><dd>ゴミ箱に移動</dd>
+          <dt><kbd>u</kbd></dt><dd>アップロード</dd>
+          <dt><kbd>n</kbd></dt><dd>新しいフォルダ</dd>
+        </dl>
+        <p class="muted small">選ぶ・名前の変更・削除・アップロードは、編集できるフォルダだけ。</p>
+      </section>
+      <section>
+        <h3>検索結果</h3>
+        <dl>
+          <dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>次・前の結果へ（Enter で開く）</dd>
+        </dl>
+      </section>
+    </div>
+    <div class="dialog-actions"><button type="button" class="btn" data-close-dialog>{{ icon("close") }}閉じる</button></div>
+  </div>
+</dialog>
 {% endif %}
 <div id="toast" class="toast {% if done %}toast-ok{% endif %}" role="status">{% if done %}{{ done }}{% endif %}</div>
 </body>

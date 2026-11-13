@@ -677,6 +677,23 @@ def _personal_item(x: dict) -> dict[str, Any]:
             **({"opened_at": x["opened_at"]} if "opened_at" in x else {})}
 
 
+class ThemeIn(BaseModel):
+    theme: str
+
+
+@router.get("/me/theme")
+def api_theme(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    """画面の色: auto（端末の設定に合わせる）/ light / dark。"""
+    from ..personal import get_theme
+    return {"theme": get_theme(conn, auth.user)}
+
+
+@router.put("/me/theme")
+def api_theme_set(body: ThemeIn, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from ..personal import set_theme
+    return {"theme": set_theme(conn, auth.user, body.theme)}
+
+
 @router.get("/me/favorites")
 def api_favorites(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
     from ..personal import list_favorites
