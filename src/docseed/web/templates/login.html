@@ -5,7 +5,6 @@
 <main class="login">
   <div class="login-box">
     <div class="brand brand-lg"><span class="brand-mark" aria-hidden="true"></span>docseed</div>
-    <p class="login-lead">書類の保管庫にログインします。</p>
     {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
     <p class="alert" role="alert" data-passkey-error hidden></p>
     <form method="post" action="/login" class="form" data-passkey-login data-next="{{ next or '' }}"

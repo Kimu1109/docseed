@@ -68,7 +68,7 @@
 <dialog id="dlg-webclip" class="dialog">
   <form hx-post="/f/{{ folder.id }}/webclips" hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
     <h2>{{ icon("link") }} URL を追加</h2>
-    <p class="muted small">ページを取得して、タイトル・説明・本文で検索できるように保存します。PDF や画像の URL は、そのファイルを保存します。</p>
+    <p class="muted small">PDF や画像の URL は、そのファイルを保存します。</p>
     <label>URL <input name="url" type="url" required maxlength="2048" placeholder="https://" autocomplete="off" inputmode="url"></label>
     <div class="dialog-actions">
       <button type="button" class="btn" data-close-dialog>キャンセル</button>
@@ -99,7 +99,7 @@
     <label>外すタグ <span class="muted small">（カンマ区切り）</span>
       <input name="remove" placeholder="例: 未整理" autocomplete="off">
     </label>
-    <p class="muted small">選んだファイルのほかのタグはそのままです。フォルダは対象外です。</p>
+    <p class="muted small">フォルダは対象外です。</p>
     <div class="dialog-actions">
       <button type="button" class="btn" data-close-dialog>キャンセル</button>
       <button type="submit" class="btn btn-primary">{{ icon("check") }}変更</button>

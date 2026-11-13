@@ -58,29 +58,29 @@ DONE_MESSAGES = {
     "user_created": "ユーザーを作成しました",
     "user_updated": "ユーザーを更新しました",
     "token_revoked": "トークンを無効にしました",
-    "reprocess": "再処理を受け付けました。順番に処理されます",
-    "reprocess_page": "このページの読み直しを受け付けました。終わると画面が新しくなります",
+    "reprocess": "再処理を受け付けました",
+    "reprocess_page": "このページの読み直しを受け付けました",
     "tag_renamed": "タグの名前を変えました",
     "tag_deleted": "タグを外しました",
-    "unrejected": "却下を取り消しました。また候補に出ます",
+    "unrejected": "却下を取り消しました",
     "unrejected_cleared": "却下の記録を消しました（今の状態では候補に出ません）",
     "retried": "ジョブをやり直します",
     "share_revoked": "共有リンクを無効にしました",
-    "clip": "URL を受け付けました。取得が済むと一覧に表示されます",
+    "clip": "URL を受け付けました",
     "clip_dup": "URL を受け付けました（このページは既に保存されています）",
-    "refetch": "もう一度取得します。終わると内容が新しくなります",
+    "refetch": "再取得を受け付けました",
     "suggest_accept": "候補を採用しました",
-    "suggest_reject": "候補を却下しました。この文書には二度と出しません",
+    "suggest_reject": "候補を却下しました",
     "prefs": "整理の補助の設定を保存しました",
-    "summaries": "古い要約の作り直しを受け付けました。順番に上書きされます",
-    "redo": "要約とタグの候補の作り直しを受け付けました。終わると画面が新しくなります",
-    "summary_saved": "要約を保存しました（この文書だけに使います）",
+    "summaries": "古い要約の作り直しを受け付けました",
+    "redo": "要約とタグの候補の作り直しを受け付けました",
+    "summary_saved": "要約を保存しました",
     "summary_hidden": "この文書では要約を出さないようにしました",
     "summary_restored": "自動で作った要約に戻しました",
     "redo_suggest": "タグとフォルダの候補を作り直しました",
     "redo_short": "タグとフォルダの候補を作り直しました（本文が短いため、要約は作りません）",
     "summaries_none": "作り直す要約はありません",
-    "reauthed": "本人確認ができました。10 分間はログイン方法を変更できます",
+    "reauthed": "本人確認ができました",
     "totp_disabled": "確認コードを無効にしました",
     "passkey_added": "パスキーを登録しました",
     "passkey_removed": "パスキーを削除しました",
@@ -325,7 +325,7 @@ def admin_summaries_rebuild(scope: str = Form("outdated"), conn: sqlite3.Connect
 
 def _dup_message(conn: sqlite3.Connection, auth: Auth, dups: list[dict]) -> str:
     if not dups:
-        return "URL を受け付けました。取得が済むと一覧に表示されます"
+        return "URL を受け付けました"
     return (f"URL を受け付けました。このページは既に「{dups[0]['filename']}」として保存されています"
             + (f"（ほか {len(dups) - 1} 件）" if len(dups) > 1 else ""))
 

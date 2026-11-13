@@ -17,7 +17,7 @@
   <section class="panel panel-wide" id="reauth">
     <h2>{{ icon("verified_user") }} 本人確認</h2>
     {% if recent %}
-      <p class="ok-text">{{ icon("check_circle") }} 本人確認が済んでいます。ログインか本人確認から 10 分間は、ログイン方法を変更できます。</p>
+      <p class="ok-text">{{ icon("check_circle") }} 本人確認が済んでいます（10 分間有効）。</p>
     {% else %}
       <p class="muted">パスキーの追加・削除、確認コードの設定、外部アカウントの連携などの前に、もう一度本人確認をしてください。</p>
       <form method="post" action="/auth/reauth" class="form form-row">
@@ -32,7 +32,7 @@
 
   <section class="panel">
     <h2>{{ icon("passkey") }} パスキー</h2>
-    <p class="muted">端末の指紋・顔認証や PIN でログインできます。パスワードより安全で、入力も不要です。</p>
+    <p class="muted">端末の指紋・顔認証や PIN でログインできます。</p>
     {% if sec.passkeys %}
     <table class="plain">
       <thead><tr><th>名前</th><th>登録日</th><th>最終使用</th><th><span class="sr">操作</span></th></tr></thead>
@@ -104,7 +104,7 @@
   {% if providers or sec.identities %}
   <section class="panel">
     <h2>{{ icon("link") }} 外部アカウントの連携</h2>
-    <p class="muted">連携したアカウント（Google など）でログインできます。連携していないアカウントではログインできません。</p>
+    <p class="muted">連携したアカウント（Google など）でログインできます。</p>
     {% if sec.identities %}
     <table class="plain">
       <thead><tr><th>提供者</th><th>メールアドレス</th><th>最終ログイン</th><th><span class="sr">操作</span></th></tr></thead>
@@ -133,7 +133,7 @@
     <h2>{{ icon("key") }} パスワードでのログイン</h2>
     {% if sec.password_login %}
       <p><span class="state-on">{{ icon("check_circle") }}使う</span></p>
-      <p class="muted small">パスキーか外部アカウントだけでログインするなら、パスワードでのログインを止められます（パスワードを知られても入られなくなります）。</p>
+      <p class="muted small">パスキーか外部アカウントだけでログインするなら、パスワードでのログインを止められます。</p>
       <form method="post" action="/settings/security/password-login" data-confirm="パスワードでのログインを止めますか？ パスキーか外部アカウントでだけログインできるようになります。">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="enabled" value="0">

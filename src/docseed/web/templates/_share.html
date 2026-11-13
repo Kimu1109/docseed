@@ -37,19 +37,19 @@
       <button type="submit" class="btn">{{ icon("person_add") }}追加</button>
     </form>
     {% else %}
-    <p class="muted small">共有できるほかのユーザーがいません（管理画面でユーザーを追加できます）。</p>
+    <p class="muted small">共有できるほかのユーザーがいません。</p>
     {% endif %}
   {% else %}
     <p class="muted small">ユーザーの追加・変更は所有者だけが行えます。</p>
   {% endif %}
 </section>
 {% else %}
-<p class="muted small">ファイルの閲覧権限は、置いてあるフォルダの共有設定に従います。外部の人にはリンクで渡せます。</p>
+<p class="muted small">ファイルの閲覧権限は、置いてあるフォルダの共有設定に従います。</p>
 {% endif %}
 
 <section class="share-sec">
   <h3>{{ icon("link") }} リンク</h3>
-  {% if gps_count %}<p class="note small" role="note">{{ icon("location_on") }} 位置情報（撮影場所）を含む写真が {{ gps_count }} 件あります。リンクで共有すると、受け取った人は原本から撮影場所を読み取れます。</p>{% endif %}
+  {% if gps_count %}<p class="note small" role="note">{{ icon("location_on") }} 位置情報（撮影場所）を含む写真が {{ gps_count }} 件あります。受け取った人は撮影場所を読み取れます。</p>{% endif %}
   {% if links %}
   <ul class="links">
     {% for l in links %}
