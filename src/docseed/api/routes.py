@@ -24,6 +24,7 @@ from ..deps import (
     get_settings,
     get_store,
     require_admin,
+    require_admin_read,
     require_auth,
     require_session,
 )
@@ -602,7 +603,7 @@ class ReprocessIn(BaseModel):
 def api_page_reprocess(doc_id: int, page_no: int, body: ReprocessIn, request: Request,
                        conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
     """このページだけを読み直す（PDF・画像。ほかのページの結果はそのまま）。force_ocr はそのページだけに効く。"""
-    from ..web.routes import reprocess_one_page
+    from ..web.views.documents import reprocess_one_page
     reprocess_one_page(request, conn, auth, doc_id, page_no, body.force_ocr)
     return {"queued": True}
 
@@ -628,8 +629,14 @@ def run_search(request: Request, conn: sqlite3.Connection, auth: Auth, q: str, m
     from ..search import search
     embedder, err = request.app.state.query_embedder.get() if mode != "keyword" and q.strip() else (None, None)
     floor = request.app.state.settings.search_sem_min if sem_min is None else max(0.0, min(sem_min, 1.0))
-    return search(conn, auth.user, q, mode=mode, embedder=embedder, embed_error=err, limit=limit, offset=offset,
-                  filters=filters, sem_min=floor)
+    import time
+
+    from ..metrics import observe_search
+    t0 = time.perf_counter()
+    r = search(conn, auth.user, q, mode=mode, embedder=embedder, embed_error=err, limit=limit, offset=offset,
+               filters=filters, sem_min=floor)
+    observe_search(r.mode, time.perf_counter() - t0)
+    return r
 
 
 def folder_label(conn: sqlite3.Connection, folder_id: int, cache: dict[int, str]) -> str:
@@ -971,17 +978,28 @@ def api_bulk_reprocess(body: BulkReprocessIn, conn: sqlite3.Connection = Depends
 
 
 @router.get("/admin/status")
-def api_status(request: Request, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_admin)):
+def api_status(request: Request, conn: sqlite3.Connection = Depends(get_conn),
+               auth: Auth = Depends(require_admin_read)):
     """状態と警告（deployment.md 6 章）。外部の監視から使う場合は API トークンで呼ぶ。"""
     from ..monitor import status
     return status(conn, request.app.state.settings)
 
 
 @router.get("/admin/system")
-def api_system(request: Request, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_admin)):
+def api_system(request: Request, conn: sqlite3.Connection = Depends(get_conn),
+               auth: Auth = Depends(require_admin_read)):
     """機械と docseed の状態（CPU 温度・負荷、メモリ、ディスク、DB、件数、モデル、版）。"""
     from ..monitor import system_info
     return system_info(conn, request.app.state.settings)
+
+
+@router.get("/admin/metrics")
+def api_metrics(request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                auth: Auth = Depends(require_admin_read)):
+    """Prometheus 形式の指標。Prometheus からは管理者の API トークン（read）を bearer で渡す。"""
+    from ..metrics import render
+    return Response(render(conn, request.app.state.settings), media_type="text/plain; version=0.0.4; charset=utf-8",
+                    headers={"Cache-Control": "no-store"})
 
 
 def notification_json(r: sqlite3.Row) -> dict[str, Any]:

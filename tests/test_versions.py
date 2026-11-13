@@ -204,8 +204,8 @@ def test_api_children_pagination(login):
 
 
 def test_folder_page_pagination(login, monkeypatch):
-    from docseed.web import routes
-    monkeypatch.setattr(routes, "LISTING_PAGE_SIZE", 4)
+    from docseed.web.views import files
+    monkeypatch.setattr(files, "LISTING_PAGE_SIZE", 4)
     alice = login("alice")
     _fill(alice, 2, 7)
     names = lambda html: re.findall(r'data-item="[^"]+" data-name="([^"]+)"', html)  # noqa: E731

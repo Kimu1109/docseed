@@ -26,6 +26,8 @@
 
 画面から API を直接呼ぶのではなく、画面用のルート（`/`, `/f/{id}` など）が HTML の断片を返す。データの処理は API と同じサービス層の関数を使う。
 
+画面のルートは `src/docseed/web/views/` に画面ごとに分ける（`login`・`files`・`webclips`・`share`・`documents`・`organize`（お気に入り・タグ・却下した候補）・`search`・`trash`・`settings`・`admin`）。共通のテンプレート・ルーター・`base_context`・お知らせは `web/common.py`、`web/routes.py` は views を読み込む順を決めて共通の名前を出し直すだけ。
+
 ## 2. 画面一覧
 
 | ID | 画面 | URL | 対象 |

@@ -542,6 +542,8 @@ Word（docx）・Excel（xlsx）・PowerPoint（pptx）の文字も検索でき�
 
 管理画面の「確認が必要な項目」に、worker の停止・失敗したジョブ・SSD の空き不足・バックアップの遅れや失敗・CPU の高温（`DOCSEED_THERMAL_WARN_C`、既定 75℃）・メモリ不足（`DOCSEED_MEMORY_WARN_PCT`、既定 10%）をまとめて表示します。項目があると、左メニューの「管理」に赤いバッジが付きます。同じ内容を `docker compose exec api docseed status` や `GET /api/v1/admin/status`（管理者の API トークン）でも確認できます。
 
+Prometheus で集めるときは `GET /api/v1/admin/metrics` を使います（管理者の API トークン（read）を bearer で渡す。設定の例は [配置・運用](docs/design/deployment.md) の 6.2）。処理待ちの件数、OCR・埋め込みにかかった時間、検索の速さ、CPU 温度、SSD の空き、ユーザーごとの使用量などを出します。
+
 管理画面の「システム」には、CPU の温度・負荷、メモリ、SSD、データベースの大きさ、ファイル・過去の版・検索の索引の件数、使っているモデル、docseed の版を表示します（`GET /api/v1/admin/system` でも取れます）。
 
 ### 通知

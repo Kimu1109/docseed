@@ -270,7 +270,8 @@ GET /api/v1/search?q=振込先 請求書&mode=hybrid&type=pdf&tag=経理&folder=
 | GET | `/admin/jobs` | ジョブ一覧（`?status=`）と状態ごとの件数 |
 | POST | `/admin/jobs/{id}/retry` | 失敗ジョブの再実行 |
 | POST | `/admin/reprocess` | `{scope: "failed" \| "outdated" \| "unsupported" \| "all", force_ocr: bool}` で一括再処理（`unsupported` は対応形式が増えたとき用） |
-| GET | `/admin/status` | 状態と警告（Phase 5）。`alerts`（`level`: error / warning / info、`code`、`message`）、worker の最終応答、ジョブの件数、ディスク、CPU 温度、バックアップ（DB スナップショット・restic の最終結果）。外部の監視からは API トークンで呼ぶ |
+| GET | `/admin/status` | 状態と警告（Phase 5）。`alerts`（`level`: error / warning / info、`code`、`message`）、worker の最終応答、ジョブの件数、ディスク、CPU 温度、バックアップ（DB スナップショット・restic の最終結果）。外部の監視からは管理者の API トークン（read）で呼べる |
+| GET | `/admin/metrics` | Prometheus のテキスト形式の指標（[配置・運用](deployment.md) 6.2）。管理者のセッションか、管理者の API トークン（read） |
 | GET | `/admin/system` | CPU 温度・負荷・コア数、メモリ（`total`・`available`・スワップ）、ディスク（`total`・`used`・`free`・`free_ratio`）、`db_bytes`、件数（`documents`・`documents_trash`・`versions`・`folders`・`users`・`blobs`・`pages`・`chunks`）、`storage`（`blob_bytes`・過去の版だけが使う `version_only_bytes`）、モデル（`ocr`・`embedding`・`llm`）、版（`version`・`schema_version`・`python`・`machine`）、`uptime_s` |
 | GET | `/admin/notifications` | 通知の設定（`enabled`・`events`・`destinations`（形式とホスト名だけ））と最近の通知（`?limit=`、既定 50） |
 | POST | `/admin/notify/test` | テスト通知をすぐに送る。応答の `status` が `sent` なら送れた（`error` は一部の宛先の失敗）。宛先が無ければ 422 |
