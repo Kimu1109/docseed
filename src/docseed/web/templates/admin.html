@@ -36,7 +36,7 @@
     <div><dt>期限</dt><dd class="small">{% if sys.tls.not_after %}{{ sys.tls.not_after | localtime }}<div class="muted small">あと {{ sys.tls.days_left | round | int }} 日</div>{% else %}—{% endif %}</dd></div>
     <div><dt>方式・発行者</dt><dd class="small">{{ sys.tls.mode }}<div class="muted small">{{ sys.tls.issuer or "—" }}（{{ sys.tls.server_name }}）</div></dd></div>
   </dl>
-  <p class="muted small">6 時間ごとに確かめます（最終確認 {{ sys.tls.checked_at | localtime }}）。証明書は Caddy が自動で更新します。</p>
+  <p class="muted small">最終確認 {{ sys.tls.checked_at | localtime }}</p>
 </section>
 {% endif %}
 
@@ -57,7 +57,6 @@
     <button name="scope" value="model" class="btn btn-sm" {% if not llm.old_model %}disabled{% endif %}
             data-confirm="旧モデルで作った {{ llm.old_model }} 件の要約を、今のモデル（{{ llm.model }}）で上書きします。1 件あたり {{ (llm.avg_ms / 1000) | round | int if llm.avg_ms else "数十" }} 秒ほどかかります。よろしいですか？">{{ icon("refresh") }}旧モデルの要約を今のモデルで上書き</button>
   </form>
-  <p class="muted small">作り直しは、ほかの処理の合間に順番に行います。作り直すまでは今の要約が使われます。</p>
 </section>
 {% endif %}
 
@@ -72,7 +71,7 @@
       {% else %}記録がありません{% endif %}
     </dd></div>
   </dl>
-  <p class="muted small">バックアップはホスト（Raspberry Pi）の systemd タイマーが毎日行います。設定と復旧の手順は README の「バックアップと復旧」を参照してください。</p>
+  <p class="muted small">設定と復旧の手順は README の「バックアップと復旧」を参照してください。</p>
 </section>
 
 <section class="panel panel-wide">
@@ -119,7 +118,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label class="check"><input type="checkbox" name="require_2fa" value="1" {% if auth_settings.require_2fa %}checked{% endif %}>
       パスワードでログインする人に 2 段階認証（確認コード）を必須にする</label>
-    <p class="muted small">必須にすると、まだ設定していないユーザーはログイン直後に設定画面へ移り、設定するまでほかの画面を使えません。パスキーや外部アカウントでログインした人は対象外です。</p>
+    <p class="muted small">未設定のユーザーは、設定するまでほかの画面を使えません。パスキーや外部アカウントでログインした人は対象外です。</p>
     {% if oidc_enabled %}
     <label>外部アカウントで連携できるメールアドレスのドメイン <span class="muted small">（空なら制限しない。複数はスペースかカンマで区切る）</span>
       <input name="oidc_allowed_domains" value="{{ auth_settings.oidc_allowed_domains | join(' ') }}" placeholder="例: example.com"></label>

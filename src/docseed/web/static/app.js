@@ -206,7 +206,7 @@
     stage.append(img);
     const caption = document.createElement("p");
     caption.className = "ocr-caption small muted";
-    caption.textContent = "枠を押すと、その行の読み取り結果を表示します。点線の枠は信頼度が低く、本文に使っていない行です。";
+    caption.textContent = "枠を押すと、その行の読み取り結果を表示します。点線の枠は本文に使っていない行です。";
     const lowered = terms.map((t) => t.toLowerCase());
     let firstHit = null, hits = 0;
     const W = data.width || 1, H = data.height || 1;
@@ -581,7 +581,7 @@
     }
     if (e.target.closest("[data-sel-reprocess]")) {
       const rows = docRows();
-      if (rows.length && confirm(describe(rows) + "の文字の読み取りをやり直しますか？（順番に処理します）")) {
+      if (rows.length && confirm(describe(rows) + "の文字の読み取りをやり直しますか？")) {
         submitBatch("/x/items/reprocess", rows.map((r) => r.dataset.item));
       }
       return;
