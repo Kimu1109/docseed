@@ -486,6 +486,18 @@ def api_doc_delete(doc_id: int, request: Request, conn: sqlite3.Connection = Dep
 # 過去の版
 # ---------------------------------------------------------------------------
 
+@router.get("/documents/{doc_id}/related")
+def api_related(doc_id: int, limit: int = 5, conn: sqlite3.Connection = Depends(get_conn),
+                auth: Auth = Depends(require_auth)):
+    """内容が似ている文書（見られるものだけ、似ている順）。文字を読み取れていない文書は空。"""
+    from ..related import related_documents
+    d = dm.get_document(conn, auth.user, doc_id)
+    labels: dict[int, str] = {}
+    return {"documents": [{k: r[k] for k in ("id", "filename", "kind", "mime_type", "folder_id", "updated_at",
+                                             "similarity")} | {"path": folder_label(conn, r["folder_id"], labels)}
+                          for r in related_documents(conn, auth.user, d, limit=max(1, min(limit, 20)))]}
+
+
 @router.get("/documents/{doc_id}/versions")
 def api_versions(doc_id: int, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
     from ..versions import list_versions, version_json
@@ -614,7 +626,7 @@ def api_doc_reprocess(doc_id: int, body: ReprocessIn, request: Request, conn: sq
 def run_search(request: Request, conn: sqlite3.Connection, auth: Auth, q: str, mode: str, limit: int, offset: int,
                filters: dict[str, str], sem_min: float | None = None):
     from ..search import search
-    embedder, err = request.app.state.query_embedder.get() if mode != "keyword" else (None, None)
+    embedder, err = request.app.state.query_embedder.get() if mode != "keyword" and q.strip() else (None, None)
     floor = request.app.state.settings.search_sem_min if sem_min is None else max(0.0, min(sem_min, 1.0))
     return search(conn, auth.user, q, mode=mode, embedder=embedder, embed_error=err, limit=limit, offset=offset,
                   filters=filters, sem_min=floor)
@@ -629,10 +641,15 @@ def folder_label(conn: sqlite3.Connection, folder_id: int, cache: dict[int, str]
 @router.get("/search")
 def api_search(request: Request, q: str = "", mode: str = "hybrid", type: str | None = None,
                tag: str | None = None, folder: str | None = None, after: str | None = None,
-               before: str | None = None, limit: int = 20, offset: int = 0, sem_min: float | None = None,
-               conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
-    """sem_min: 意味検索の類似度の下限を一時的に変える（評価スクリプト用。省略時は設定値）。"""
-    filters = {"type": type, "tag": tag, "folder": folder, "after": after, "before": before}
+               before: str | None = None, taken: str | None = None, limit: int = 20, offset: int = 0,
+               sem_min: float | None = None, conn: sqlite3.Connection = Depends(get_conn),
+               auth: Auth = Depends(require_auth)):
+    """sem_min: 意味検索の類似度の下限を一時的に変える（評価スクリプト用。省略時は設定値）。
+
+    taken: 撮影日（2026 / 2026-05 / 2026-05-03 / 2026-05-01..2026-05-10）。検索語が無く絞り込みだけなら、
+    条件に合う文書を並べる（mode は "filter"、snippets は空）。
+    """
+    filters = {"type": type, "tag": tag, "folder": folder, "after": after, "before": before, "taken": taken}
     r = run_search(request, conn, auth, q, mode, limit, offset, {k: v for k, v in filters.items() if v}, sem_min)
     labels: dict[int, str] = {}
     return {

@@ -136,6 +136,7 @@ RFC 9457（`application/problem+json`）形式。
 | POST | `/documents/{id}/copy` | `{folder_id, filename?}` |
 | DELETE | `/documents/{id}` | ゴミ箱へ |
 | POST | `/documents/{id}/reprocess` | `{force_ocr: bool}`（editor 以上） |
+| GET | `/documents/{id}/related` | 内容が似ている文書（`?limit=`、既定 5・最大 20）。`{documents: [{id, filename, kind, mime_type, folder_id, updated_at, similarity, path}]}`。文書のベクトル（先頭 20 チャンクの平均）に近いチャンクを持つ文書を、類似度 0.80 以上・見られるものだけ・同じ中身のコピーを除いて並べる。文字を読み取れていない文書は空 |
 | GET | `/documents/{id}/versions` | 過去の版の一覧（新しい順）。`{versions: [{id, filename, size_bytes, mime_type, sha256, created_by, created_at, archived_by, archived_at}]}` |
 | POST | `/documents/{id}/versions` | 新しい版をアップロード（multipart の `file`、editor 以上）。名前・フォルダ・タグはそのまま、今の中身は過去の版になる。201 `{changed, document}`（中身が今と同じなら `changed: false` で版は増えない）。Web クリップは 422（再取得を使う） |
 | GET | `/documents/{id}/versions/{version_id}/content` | 過去の版のダウンロード（常に attachment） |
@@ -211,7 +212,9 @@ GET /api/v1/search?q=振込先 請求書&mode=hybrid&type=pdf&tag=経理&folder=
 ```
 
 - `text` は HTML エスケープ済みで、`<mark>` タグだけを含む。
-- `q` 内の `type:` `tag:` `folder:` `after:` `before:` もパラメータと同じ意味で解釈する（[検索設計](search.md) 2 章）。
+- `q` 内の `type:` `tag:` `folder:` `after:` `before:` `taken:` もパラメータと同じ意味で解釈する（[検索設計](search.md) 2 章）。
+- `taken`: 写真の撮影日（`2026` / `2026-05` / `2026-05-03` / `2026-05-01..2026-05-10` / `..2025`）。結果の `document.taken_at` に撮影日時（無ければ null）。
+- 検索語が無く `type` `tag` `after` `before` `taken` のどれかがあれば、条件に合う文書を並べる（`mode: "filter"`、`snippets` は空）。
 - `sem_min`（0〜1、省略可）: 意味検索の類似度の下限を一時的に変える。評価スクリプト用で、省略時は設定値（既定 0.80）。
 - 実装では `total_estimate` ではなく `total`（絞り込み後の文書数）を返す。
 

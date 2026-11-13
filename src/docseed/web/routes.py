@@ -917,6 +917,19 @@ def _live_state(conn: sqlite3.Connection, settings: Settings, d: sqlite3.Row) ->
             "status": d["status"], "done": d["progress_done"], "total": d["progress_total"]}
 
 
+@router.get("/x/d/{doc_id}/related", response_class=HTMLResponse)
+def document_related(doc_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                     auth: Auth = Depends(require_auth)):
+    """文書の画面の「関連する文書」（開いた後に読み込む。似ている文書が無ければ何も出さない）。"""
+    from ..related import related_documents
+    d = dm.get_document(conn, auth.user, doc_id)
+    items = related_documents(conn, auth.user, d)
+    labels: dict[int, str] = {}
+    paths = {r["folder_id"]: display_location(conn, auth, r["folder_id"], labels) for r in items}
+    return templates.TemplateResponse(request, "_related.html", {"request": request, "items": items,
+                                                                 "paths": paths})
+
+
 @router.get("/x/d/{doc_id}/state")
 def document_state(doc_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
                    auth: Auth = Depends(require_auth)):
@@ -1038,13 +1051,18 @@ TYPE_OPTIONS = ["pdf", "image", "text", "doc", "sheet", "slide", "webclip"]
 
 @router.get("/search", response_class=HTMLResponse)
 def search_page(request: Request, q: str = "", mode: str = "hybrid", type: str = "", tag: str = "",
-                after: str = "", before: str = "", folder: str = "", page: int = 1,
-                conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+                after: str = "", before: str = "", folder: str = "", taken_from: str = "", taken_to: str = "",
+                page: int = 1, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
     from ..api.routes import folder_label, run_search
+    from ..search import LIST_FILTERS
     page = max(1, min(page, 1 + 500 // PER_PAGE))
+    taken = f"{taken_from}..{taken_to}" if taken_from or taken_to else ""
     filters = {k: v for k, v in {"type": type, "tag": tag, "after": after, "before": before,
-                                 "folder": folder}.items() if v}
-    result = run_search(request, conn, auth, q, mode, PER_PAGE, (page - 1) * PER_PAGE, filters) if q.strip() else None
+                                 "folder": folder, "taken": taken}.items() if v}
+    # 検索語が無くても、種類・タグ・日付・撮影日で絞り込めば一覧を出す（フォルダだけでは出さない）
+    listing = any(k in filters for k in LIST_FILTERS)
+    result = run_search(request, conn, auth, q, mode, PER_PAGE, (page - 1) * PER_PAGE, filters) \
+        if q.strip() or listing else None
     labels: dict[int, str] = {}
     paths = {h.document["folder_id"]: display_location(conn, auth, h.document["folder_id"], labels)
              for h in (result.hits if result else [])}
@@ -1070,8 +1088,9 @@ def search_page(request: Request, q: str = "", mode: str = "hybrid", type: str =
         request, conn, auth, nav="search", q=q, mode=mode if mode in MODE_LABEL else "hybrid", result=result,
         paths=paths, page=page, per_page=PER_PAGE, mode_label=MODE_LABEL, type_options=TYPE_OPTIONS,
         type=type, tag=tag, after=after, before=before, folder=folder, folder_name=folder_name, tags=tags,
-        summaries=summaries,
-        params={k: v for k, v in {"q": q, "mode": mode, **filters}.items() if v}))
+        summaries=summaries, taken_from=taken_from, taken_to=taken_to,
+        params={k: v for k, v in {"q": q, "mode": mode, "taken_from": taken_from, "taken_to": taken_to,
+                                  **{k: v for k, v in filters.items() if k != "taken"}}.items() if v}))
 
 
 # ---------------------------------------------------------------------------

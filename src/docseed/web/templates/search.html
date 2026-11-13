@@ -20,6 +20,8 @@
     {% endif %}
     <label>更新日（から）<input type="date" name="after" value="{{ after }}"></label>
     <label>更新日（まで）<input type="date" name="before" value="{{ before }}"></label>
+    <label>撮影日（から）<input type="date" name="taken_from" value="{{ taken_from }}"></label>
+    <label>撮影日（まで）<input type="date" name="taken_to" value="{{ taken_to }}"></label>
     {% if folder %}
     <label class="check folder-filter"><input type="checkbox" name="folder" value="{{ folder }}" checked> {{ folder_name or "指定したフォルダ" }} の中だけ</label>
     {% endif %}
@@ -40,6 +42,7 @@
             <a class="result-name" href="/d/{{ d.id }}?q={{ q | urlencode }}">{{ d.filename }}</a>
             <span class="muted small">{{ icon("folder") }}{{ paths[d.folder_id] }}</span>
             <span class="muted small">{{ icon("schedule") }}{{ d.updated_at | shortdate }}</span>
+            {% if d.taken_at %}<span class="muted small" title="撮影日時">{{ icon("image") }}{{ d.taken_at | taken_at }}</span>{% endif %}
           </div>
           {% if summaries.get(d.id) %}<p class="result-summary small">{{ icon("wand_stars") }} {{ summaries[d.id] }}</p>{% endif %}
           {% for s in h.snippets %}
@@ -64,7 +67,7 @@
   {% else %}
     <div class="empty">
       {{ icon("search_off") }}
-      <p>「{{ q }}」に一致するファイルは見つかりませんでした。</p>
+      <p>{% if q %}「{{ q }}」に一致するファイルは見つかりませんでした。{% else %}条件に合うファイルは見つかりませんでした。{% endif %}</p>
       <p class="muted">別の言い方で検索するか、種類や期間の絞り込みを外してみてください。処理待ちのファイルはまだ検索できません。</p>
     </div>
   {% endif %}
@@ -77,6 +80,7 @@
     <dt>"株式会社サンプル"</dt><dd>ダブルクォートで囲んだ語は必ず含むものだけにします</dd>
     <dt>見積書 -下書き</dt><dd>先頭に - を付けた語を含むものを除きます</dd>
     <dt>type:pdf tag:経理 after:2026-01-01</dt><dd>種類・タグ・更新日で絞り込みます（上の選択欄と同じ）</dd>
+    <dt>taken:2026-05　taken:2026-05-01..2026-05-10</dt><dd>写真の撮影日で絞り込みます（年・月・日、または「..」で期間）。検索語が無くても、絞り込みだけで一覧を出せます</dd>
   </dl>
   <p class="muted small">「税」「契約」のような 2 文字以下の語は、意味が近い候補の中でだけ照合します。見つからないときは、もう少し長い語で検索してください。</p>
 </details>

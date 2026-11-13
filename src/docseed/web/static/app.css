@@ -572,3 +572,9 @@ body.has-selection .main { padding-bottom: 96px; }
 .versions li { display: grid; gap: 4px; padding-bottom: var(--s2); border-bottom: 1px solid var(--line); }
 .versions li:last-child { border-bottom: 0; }
 .versions .form-inline { margin-top: 0; }
+
+/* ---- 関連する文書 ------------------------------------------------------- */
+.related { list-style: none; margin: 0 0 var(--s2); padding: 0; display: grid; gap: var(--s2); }
+.related a { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.related .related-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.related .icon { flex: none; width: 1.1em; height: 1.1em; }
