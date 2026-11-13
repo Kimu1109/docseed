@@ -82,9 +82,8 @@ class Worker:
         today = dt.date.today().isoformat()
         if last and last[0] == today:
             return
-        cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(days=self.settings.trash_retention_days)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ")
-        n = purge_expired(self.conn, self.store, cutoff)
+        from ..limits import retention_cutoffs  # ゴミ箱の保持日数は利用者ごとに選べる
+        n = purge_expired(self.conn, self.store, retention_cutoffs(self.conn, self.settings.trash_retention_days))
         # DOCSEED_VERSIONS_KEEP を減らしたときに、多すぎる過去の版を消す
         with Tx(self.conn):
             pruned = prune_versions(self.conn, None, self.settings.versions_keep)

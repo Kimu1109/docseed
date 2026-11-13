@@ -178,13 +178,25 @@
   </div>
   {% endif %}
   <table class="plain">
-    <thead><tr><th>ユーザー名</th><th>表示名</th><th>ロール</th><th>状態</th><th><span class="sr">操作</span></th></tr></thead>
+    <thead><tr><th>ユーザー名</th><th>表示名</th><th>ロール</th><th>状態</th><th>使用量・上限</th><th><span class="sr">操作</span></th></tr></thead>
     <tbody>
     {% for u in users %}
       <tr {% if not u.is_active %}class="inactive"{% endif %}>
         <td>{{ u.username }}</td><td>{{ u.display_name }}</td>
         <td>{{ "管理者" if u.is_admin else "一般" }}</td>
         <td>{{ "有効" if u.is_active else "無効" }}</td>
+        {% set q = quotas[u.id] %}
+        <td class="quota-cell">
+          <div class="small">{{ q.total | filesize }} / {% if q.quota %}{{ q.quota | filesize }}{% else %}上限なし{% endif %}{% if not q.custom %} <span class="muted">（既定）</span>{% endif %}</div>
+          {% if q.quota %}<meter class="quota-meter" min="0" max="{{ q.quota }}" value="{{ [q.total, q.quota] | min }}" low="{{ (q.quota * 0.7) | int }}" high="{{ (q.quota * 0.9) | int }}" optimum="0">{{ (q.ratio * 100) | round | int }}%</meter>{% endif %}
+          <form method="post" action="/admin/users/{{ u.id }}" class="quota-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="quota">
+            <input name="quota_gb" inputmode="decimal" placeholder="既定" value="{{ ('%g' | format(q.quota / 1073741824)) if q.custom else '' }}" aria-label="{{ u.username }} の容量の上限（GB）">
+            <span class="small muted">GB</span>
+            <button class="btn btn-sm">{{ icon("save") }}保存</button>
+          </form>
+        </td>
         <td class="row-actions"><div class="row-actions-in">
           {% if u.id != user.id %}
           <form method="post" action="/admin/users/{{ u.id }}">
@@ -210,6 +222,14 @@
     {% endfor %}
     </tbody>
   </table>
+
+  <form method="post" action="/admin/quota" class="form form-row" id="quota">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>容量の上限の全体の既定 <span class="muted small">（GB。空か 0 で上限なし）</span>
+      <input name="quota_gb" inputmode="decimal" value="{{ ('%g' | format(default_quota / 1073741824)) if default_quota else '' }}" placeholder="上限なし"></label>
+    <button class="btn">{{ icon("save") }}保存</button>
+  </form>
+  <p class="muted small">ユーザーごとの上限は上の表で決めます（空にすると全体の既定、0 で上限なし）。ゴミ箱の中と過去の版も数えます。共有されたフォルダや受け取り用のリンクに置かれたファイルは、フォルダの持ち主の分として数えます。</p>
 
   <h3>{{ icon("person_add") }} ユーザーを追加</h3>
   <form method="post" action="/admin/users" class="form form-row">

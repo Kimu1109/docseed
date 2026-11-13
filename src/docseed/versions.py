@@ -43,13 +43,18 @@ def upload_new_version(conn: sqlite3.Connection, store: BlobStore, user: User, d
                        src: BinaryIO, *, max_bytes: int, keep_versions: int = dm.DEFAULT_KEEP_VERSIONS,
                        ip: str | None = None) -> bool:
     """文書の中身を新しいファイルにする（名前・フォルダ・タグはそのまま）。中身が今と同じなら False。"""
-    if dm.get_document(conn, user, doc_id, "editor")["kind"] == "webclip":
+    first = dm.get_document(conn, user, doc_id, "editor")
+    if first["kind"] == "webclip":
         raise ValidationFailed("Web クリップは「再取得」で新しい版にしてください")
+    from . import limits
+    owner_id = first["owner_id"]
+    limits.check(conn, owner_id, 0, owner_is_actor=owner_id == user.id)
     store.check_free_space()
     stored = store.receive(src, filename or "無題", max_bytes)  # 受信はトランザクションの外で行う
     try:
         with Tx(conn):
             d = dm.get_document(conn, user, doc_id, "editor")
+            limits.check(conn, owner_id, stored.size, owner_is_actor=owner_id == user.id)
             blob_id, dedup = dm._register_blob(conn, store, stored)
             changed = dm.replace_blob(conn, doc_id, blob_id, user.id, keep_versions)
             audit(conn, "upload", user_id=user.id, target_type="document", target_id=doc_id, ip=ip,

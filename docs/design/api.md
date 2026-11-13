@@ -104,6 +104,9 @@ RFC 9457（`application/problem+json`）形式。
 | GET | `/me/tokens` | API トークン一覧（先頭 8 文字・名前・最終使用日時） |
 | POST | `/me/tokens` | `{name, scopes, expires_at}` → `{token}`（この 1 回だけ表示） |
 | DELETE | `/me/tokens/{id}` | 無効化 |
+| GET | `/me/usage` | 使用量 `{current, trash, versions, total, quota, ratio, custom}`（バイト。quota 0 = 上限なし） |
+| GET / PUT | `/me/trash-retention` | ゴミ箱の保持日数 `{days}`（7 / 14 / 30 / 60 / 90 / 180 / 365、null で既定に戻す）。応答 `{days, default, custom}` |
+| GET / PUT | `/me/theme` | 画面の色 `{theme: "auto" \| "light" \| "dark"}` |
 | GET | `/me/favorites` | お気に入り（`{favorites: [{type, id, filename\|name, ..., favorited_at}]}`。見られるものだけ） |
 | PUT / DELETE | `/me/favorites/{type}/{id}` | お気に入りに入れる・外す（type = document \| folder）。204 |
 | GET / DELETE | `/me/recent` | 最近開いたファイル（画面で開いたもの。`?limit=` 最大 50）/ 記録を消す |
@@ -260,7 +263,8 @@ GET /api/v1/search?q=振込先 請求書&mode=hybrid&type=pdf&tag=経理&folder=
 
 | メソッド | パス | 説明 |
 |---|---|---|
-| GET | `/admin/users` | ユーザー一覧 |
+| GET | `/admin/users` | ユーザー一覧（`quota: {bytes, custom, used}` を含む。bytes 0 = 上限なし、custom = 個別に決めたか） |
+| GET / PUT | `/admin/quota` | 容量の上限の全体の既定 `{quota_bytes}`（0 = 上限なし）。ユーザーごとは `PATCH /admin/users/{id}` の `quota_bytes`（0 = 上限なし）か `quota_default: true`（既定に戻す） |
 | POST | `/admin/users` | `{username, display_name, password, role}` |
 | PATCH | `/admin/users/{id}` | ロール変更、無効化、パスワード再設定 |
 | GET | `/admin/jobs` | ジョブ一覧（`?status=`）と状態ごとの件数 |

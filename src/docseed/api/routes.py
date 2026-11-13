@@ -677,6 +677,57 @@ def _personal_item(x: dict) -> dict[str, Any]:
             **({"opened_at": x["opened_at"]} if "opened_at" in x else {})}
 
 
+@router.get("/me/usage")
+def api_usage(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    """使用量（current: 今のファイル、trash: ゴミ箱、versions: 過去の版、total）と上限（quota。0 = 上限なし）。"""
+    from ..limits import status
+    return status(conn, auth.user.id)
+
+
+class RetentionIn(BaseModel):
+    days: int | None = None
+
+
+def _retention_json(conn: sqlite3.Connection, request: Request, user_id: int) -> dict[str, Any]:
+    from ..limits import has_own_retention, trash_retention
+    default = request.app.state.settings.trash_retention_days
+    return {"days": trash_retention(conn, user_id, default), "default": default,
+            "custom": has_own_retention(conn, user_id)}
+
+
+@router.get("/me/trash-retention")
+def api_trash_retention(request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                        auth: Auth = Depends(require_auth)):
+    """ゴミ箱の保持日数（自分のファイル）。"""
+    return _retention_json(conn, request, auth.user.id)
+
+
+@router.put("/me/trash-retention")
+def api_trash_retention_set(body: RetentionIn, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                            auth: Auth = Depends(require_auth)):
+    """days: 7 / 14 / 30 / 60 / 90 / 180 / 365、null なら全体の既定（DOCSEED_TRASH_RETENTION_DAYS）に戻す。"""
+    from ..limits import set_trash_retention
+    set_trash_retention(conn, auth.user.id, body.days)
+    return _retention_json(conn, request, auth.user.id)
+
+
+class ThemeIn(BaseModel):
+    theme: str
+
+
+@router.get("/me/theme")
+def api_theme(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    """画面の色: auto（端末の設定に合わせる）/ light / dark。"""
+    from ..personal import get_theme
+    return {"theme": get_theme(conn, auth.user)}
+
+
+@router.put("/me/theme")
+def api_theme_set(body: ThemeIn, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from ..personal import set_theme
+    return {"theme": set_theme(conn, auth.user, body.theme)}
+
+
 @router.get("/me/favorites")
 def api_favorites(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
     from ..personal import list_favorites
@@ -810,7 +861,31 @@ class UserIn(BaseModel):
 
 @router.get("/admin/users")
 def api_users(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_admin)):
-    return {"users": [user_json(u) for u in um.list_users(conn)]}
+    from ..limits import status
+    out = []
+    for u in um.list_users(conn):
+        q = status(conn, u.id)
+        out.append(user_json(u) | {"quota": {"bytes": q["quota"], "custom": q["custom"], "used": q["total"]}})
+    return {"users": out}
+
+
+class QuotaIn(BaseModel):
+    quota_bytes: int = Field(ge=0)
+
+
+@router.get("/admin/quota")
+def api_quota_default(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_admin)):
+    """容量の上限の全体の既定（0 = 上限なし）。ユーザーごとの上限は PATCH /admin/users/{id} の quota_bytes。"""
+    from ..limits import default_quota
+    return {"quota_bytes": default_quota(conn)}
+
+
+@router.put("/admin/quota")
+def api_quota_default_set(body: QuotaIn, conn: sqlite3.Connection = Depends(get_conn),
+                          auth: Auth = Depends(require_admin)):
+    from ..limits import default_quota, set_default_quota
+    set_default_quota(conn, body.quota_bytes)
+    return {"quota_bytes": default_quota(conn)}
 
 
 @router.post("/admin/users", status_code=201)
@@ -827,12 +902,17 @@ class UserPatch(BaseModel):
     role: str | None = None
     is_active: bool | None = None
     password: str | None = None
+    quota_bytes: int | None = None     # 容量の上限（0 = 上限なし）
+    quota_default: bool = False        # true なら容量の上限を全体の既定に戻す
 
 
 @router.patch("/admin/users/{user_id}")
 def api_user_patch(user_id: int, body: UserPatch, request: Request, conn: sqlite3.Connection = Depends(get_conn),
                    auth: Auth = Depends(require_admin)):
     u = um.update_user(conn, user_id, display_name=body.display_name, role=body.role, is_active=body.is_active)
+    if body.quota_default or body.quota_bytes is not None:
+        from ..limits import set_user_quota
+        set_user_quota(conn, user_id, None if body.quota_default else body.quota_bytes)
     if body.password:
         um.set_password(conn, user_id, body.password)
         security.delete_other_sessions(conn, user_id, None)

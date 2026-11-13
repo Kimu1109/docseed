@@ -98,6 +98,9 @@ DONE_MESSAGES = {
     "version_deleted": "過去の版を削除しました",
     "notify_sent": "テスト通知を送りました。届いたか確かめてください",
     "recent_cleared": "最近開いたファイルの記録を消しました",
+    "theme": "画面の色を変えました",
+    "trash_retention": "ゴミ箱の保持日数を保存しました",
+    "quota": "容量の上限を保存しました",
     "search_saved": "検索を保存しました",
     "search_deleted": "保存した検索を消しました",
     "search_renamed": "保存した検索の名前を変えました",
@@ -121,7 +124,11 @@ def base_context(request: Request, conn: sqlite3.Connection, auth: Auth | None, 
            "csrf_token": getattr(request.state, "csrf_token", ""), "done": None}
     if auth:
         ctx["root_id"] = um.root_folder_id(conn, auth.user.id)
-        ctx["usage"] = um.usage_bytes(conn, auth.user.id)
+        from ..personal import get_theme
+        ctx["theme"] = get_theme(conn, auth.user)
+        from ..limits import status as quota_status
+        ctx["quota"] = quota_status(conn, auth.user.id)
+        ctx["usage"] = ctx["quota"]["total"]
         ctx["pending"] = conn.execute(
             "SELECT count(DISTINCT b.id) FROM documents d JOIN blobs b ON b.id = d.blob_id"
             " JOIN folders f ON f.id = d.folder_id"
@@ -340,6 +347,14 @@ def document_suggestion(doc_id: int, sid: int, action: str, conn: sqlite3.Connec
     else:
         raise AppError("不明な操作です")
     return RedirectResponse(f"/d/{doc_id}?done={'suggest_' + action}", status_code=303)
+
+
+@router.post("/settings/theme")
+def settings_theme(theme: str = Form("auto"), conn: sqlite3.Connection = Depends(get_conn),
+                   auth: Auth = Depends(require_session)):
+    from ..personal import set_theme
+    set_theme(conn, auth.user, theme)
+    return RedirectResponse("/settings?done=theme#theme", status_code=303)
 
 
 @router.post("/settings/prefs")
@@ -1200,8 +1215,10 @@ def search_history_clear(conn: sqlite3.Connection = Depends(get_conn), auth: Aut
 
 def render_trash(request: Request, conn: sqlite3.Connection, auth: Auth, message: str | None = None,
                  partial: bool = False, settings: Settings | None = None) -> HTMLResponse:
+    from ..limits import trash_retention
+    default = (settings or request.app.state.settings).trash_retention_days
     ctx = base_context(request, conn, auth, nav="trash", items=dm.list_trash(conn, auth.user),
-                       retention=settings.trash_retention_days if settings else 30)
+                       retention=trash_retention(conn, auth.user.id, default))
     if partial:
         html = templates.get_template("_trash_list.html").render(ctx) + (str(toast(message)) if message else "")
         return HTMLResponse(html)
@@ -1255,8 +1272,23 @@ def settings_context(request: Request, conn: sqlite3.Connection, auth: Auth, **e
                         my_shares=list_shares(conn, auth.user), base_url=str(request.base_url).rstrip("/"),
                         bookmarklet=bookmarklet, prefs=_prefs(conn, auth.user.id),
                         suggest_enabled=settings.suggest_enabled,
-                        llm_enabled=settings.llm_enabled,
+                        llm_enabled=settings.llm_enabled, retention=_retention_ctx(conn, auth, settings),
                         new_token=None, error=None, **extra)
+
+
+def _retention_ctx(conn: sqlite3.Connection, auth: Auth, settings: Settings) -> dict:
+    from .. import limits
+    return {"days": limits.trash_retention(conn, auth.user.id, settings.trash_retention_days),
+            "own": limits.has_own_retention(conn, auth.user.id), "default": settings.trash_retention_days,
+            "choices": limits.RETENTION_CHOICES}
+
+
+@router.post("/settings/trash-retention")
+def settings_trash_retention(days: str = Form(""), conn: sqlite3.Connection = Depends(get_conn),
+                             auth: Auth = Depends(require_session)):
+    from ..limits import set_trash_retention
+    set_trash_retention(conn, auth.user.id, int(days) if days.isdigit() else None)
+    return RedirectResponse("/settings?done=trash_retention#storage", status_code=303)
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -1342,7 +1374,10 @@ def admin_context(request: Request, conn: sqlite3.Connection, auth: Auth, settin
     notify = {"enabled": settings.notify_enabled, "destinations": dests, "recent": recent(conn, 10),
               "events": [EVENT_LABEL[e] for e in sorted(settings.notify_events) if e in EVENT_LABEL],
               "event_label": EVENT_LABEL}
+    from .. import limits
+    quotas = {u.id: limits.status(conn, u.id) for u in um.list_users(conn)}
     return base_context(request, conn, auth, nav="admin", users=um.list_users(conn), stats=stats,
+                        quotas=quotas, default_quota=limits.default_quota(conn),
                         system=system_info(conn, settings), notify=notify,
                         disk=disk, db_bytes=db_bytes, worker_seen=st["worker"]["last_seen"],
                         worker_alive=st["worker"]["alive"], sys=st, thermal_pause_c=settings.thermal_pause_c,
@@ -1350,6 +1385,14 @@ def admin_context(request: Request, conn: sqlite3.Connection, auth: Auth, settin
                         llm=_llm_status(conn, settings),
                         **({"reset_done": None, "auth_settings": get_auth_settings(conn),
                             "oidc_enabled": bool(settings.oidc_providers)} | extra))
+
+
+@router.post("/admin/quota")
+def admin_quota_default(quota_gb: str = Form(""), conn: sqlite3.Connection = Depends(get_conn),
+                        auth: Auth = Depends(require_admin)):
+    from ..limits import parse_gb, set_default_quota
+    set_default_quota(conn, parse_gb(quota_gb) or 0)
+    return RedirectResponse("/admin?done=quota#quota", status_code=303)
 
 
 @router.post("/admin/notify/test")
@@ -1406,6 +1449,7 @@ def admin_user_create(request: Request, username: str = Form(""), display_name: 
 
 @router.post("/admin/users/{user_id}", response_class=HTMLResponse)
 def admin_user_update(user_id: int, request: Request, action: str = Form(...), password: str = Form(""),
+                      quota_gb: str = Form(""),
                       conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_admin),
                       settings: Settings = Depends(get_settings)):
     try:
@@ -1417,6 +1461,10 @@ def admin_user_update(user_id: int, request: Request, action: str = Form(...), p
             um.update_user(conn, user_id, role="admin")
         elif action == "make_user":
             um.update_user(conn, user_id, role="user")
+        elif action == "quota":
+            from ..limits import parse_gb, set_user_quota
+            um.get_user(conn, user_id)
+            set_user_quota(conn, user_id, parse_gb(quota_gb))
         elif action == "password":
             um.set_password(conn, user_id, password)
             security.delete_other_sessions(conn, user_id, None)
@@ -1424,9 +1472,10 @@ def admin_user_update(user_id: int, request: Request, action: str = Form(...), p
             raise AppError("不明な操作です")
         with Tx(conn):
             audit(conn, "user_update", user_id=auth.user.id, target_type="user", target_id=user_id,
-                  ip=client_ip(request), action=action)
+                  ip=client_ip(request), op=action)
     except AppError as e:
         return templates.TemplateResponse(request, "admin.html",
                                           admin_context(request, conn, auth, settings) | {"error": e.detail},
                                           status_code=e.status)
-    return RedirectResponse("/admin?done=user_updated", status_code=303)
+    return RedirectResponse("/admin?done=" + ("quota#quota" if action == "quota" else "user_updated"),
+                            status_code=303)

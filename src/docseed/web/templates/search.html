@@ -30,14 +30,16 @@
 
 {% if result %}
   {% for n in result.notices %}<p class="note">{{ n }}</p>{% endfor %}
-  <form class="search-save" method="post" action="/search/saved">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    {% for k, v in current.items() %}<input type="hidden" name="p_{{ k }}" value="{{ v }}">{% endfor %}
-    <input name="name" maxlength="100" placeholder="{{ q or '名前' }}" aria-label="保存する名前" autocomplete="off">
-    <button class="btn btn-sm">{{ icon("bookmark") }}この検索を保存</button>
-  </form>
+  <div class="result-bar">
+    {% if result.total %}<p class="result-count"><b>{{ result.total }}</b> 件<span class="muted">（{{ result.took_ms }} ミリ秒）</span></p>{% else %}<span></span>{% endif %}
+    <form class="search-save" method="post" action="/search/saved">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% for k, v in current.items() %}<input type="hidden" name="p_{{ k }}" value="{{ v }}">{% endfor %}
+      <input name="name" maxlength="100" placeholder="名前（省略時は{{ '検索語' if q else '「保存した検索」' }}）" aria-label="保存する名前" autocomplete="off">
+      <button class="btn btn-sm">{{ icon("bookmark") }}この検索を保存</button>
+    </form>
+  </div>
   {% if result.total %}
-    <p class="result-count"><b>{{ result.total }}</b> 件<span class="muted">（{{ result.took_ms }} ミリ秒）</span></p>
     <ol class="results">
     {% for h in result.hits %}
       {% set d = h.document %}{% set k = kind_of(d.mime_type, d.filename, d.kind) %}

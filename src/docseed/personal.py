@@ -254,3 +254,24 @@ def delete_saved(conn: sqlite3.Connection, user: User, saved_id: int) -> None:
         if conn.execute("DELETE FROM saved_searches WHERE id = ? AND user_id = ?",
                         (saved_id, user.id)).rowcount == 0:
             raise NotFound("保存した検索が見つかりません")
+
+
+# ---------------------------------------------------------------------------
+# 画面の色（自動 / ライト / ダーク）
+# ---------------------------------------------------------------------------
+
+THEMES = ("auto", "light", "dark")
+
+
+def get_theme(conn: sqlite3.Connection, user: User) -> str:
+    r = conn.execute("SELECT value FROM user_prefs WHERE user_id = ? AND key = 'theme'", (user.id,)).fetchone()
+    return r[0] if r and r[0] in THEMES else "auto"
+
+
+def set_theme(conn: sqlite3.Connection, user: User, theme: str) -> str:
+    if theme not in THEMES:
+        raise ValidationFailed("画面の色は auto / light / dark のいずれかです")
+    with Tx(conn):
+        conn.execute("INSERT INTO user_prefs(user_id, key, value) VALUES (?, 'theme', ?)"
+                     " ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value", (user.id, theme))
+    return theme

@@ -120,6 +120,38 @@
     const box = $("[data-search-shortcut]") || $(".search-form input[name=q]");
     if (box) { e.preventDefault(); box.focus(); box.select(); }
   });
+  // ---- キーボード操作（? で一覧を出す） ------------------------------------
+  // g に続けて押すと画面を移る。s: お気に入り、u: アップロード、n: 新しいフォルダ、検索結果では j / k
+  const GOTO = { m: "[data-goto=files]", f: "[data-goto=favorites]", s: "[data-goto=shared]",
+                 t: "[data-goto=tags]", d: "[data-goto=trash]", a: "[data-goto=admin]" };
+  let gPressed = 0;
+  const typing = (t) => t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName);
+  document.addEventListener("keydown", (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || $("dialog[open]") || e.defaultPrevented) return;
+    const k = e.key;
+    if (gPressed && Date.now() - gPressed < 1500) {
+      gPressed = 0;
+      const link = GOTO[k] && $(GOTO[k]);
+      if (link) { e.preventDefault(); location.href = link.href; }
+      return;
+    }
+    gPressed = 0;
+    if (k === "g") { gPressed = Date.now(); return; }
+    if (k === "?") { e.preventDefault(); $("#dlg-keys")?.showModal(); return; }
+    if (k === "s") { const b = $(".page-head .fav-btn, .doc-title .fav-btn"); if (b) { e.preventDefault(); b.click(); } return; }
+    if (k === "u") { const b = $("[data-upload-pick]"); if (b) { e.preventDefault(); b.click(); } return; }
+    if (k === "n") { const b = $("[data-open-dialog=dlg-folder]"); if (b) { e.preventDefault(); b.click(); } return; }
+    if (k === "j" || k === "k") {                 // 検索結果を上下に移る（Enter で開く）
+      const links = $$(".results .result-name");
+      if (!links.length) return;
+      e.preventDefault();
+      const i = links.indexOf(document.activeElement);
+      const j = i < 0 ? 0 : Math.max(0, Math.min(links.length - 1, i + (k === "j" ? 1 : -1)));
+      links[j].focus();
+      links[j].closest(".result")?.scrollIntoView({ block: "nearest" });
+    }
+  });
+
   // 絞り込みを変えたらすぐ検索し直す
   document.addEventListener("change", (e) => {
     const form = e.target.closest?.("form[data-autosubmit]");
@@ -627,13 +659,20 @@
   });
 
   document.addEventListener("keydown", (e) => {
-    if (!listingEl() || !editable() || e.altKey) return;
+    // 上下の移動と開くことは閲覧だけのフォルダでもできる。選択の操作（すべて選択・削除・名前の変更）は編集できるときだけ
+    if (!listingEl() || e.altKey) return;
     const t = e.target;
     if (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName) || $("dialog[open]")) return;
     const keys = itemRows().map((r) => r.dataset.item);
     if (!keys.length) return;
     const mod = e.ctrlKey || e.metaKey;
-    const key = e.key;
+    const key = !mod && e.key === "j" ? "ArrowDown" : !mod && e.key === "k" ? "ArrowUp" : e.key;
+    if (!editable() && (mod || !["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(key))) return;
+    if (!mod && key === "x" && cursor) {           // カーソルの行を選択に足す・外す
+      e.preventDefault();
+      selectItem(cursor, { toggle: true });
+      return;
+    }
     if (mod && key.toLowerCase() === "a") {
       e.preventDefault();
       keys.forEach((k) => selected.add(k));
@@ -648,7 +687,7 @@
       const i = keys.indexOf(cursor);
       const step = key === "ArrowDown" ? 1 : -1;
       const j = i < 0 ? (step > 0 ? 0 : keys.length - 1) : Math.max(0, Math.min(keys.length - 1, i + step));
-      selectItem(keys[j], { range: e.shiftKey });
+      selectItem(keys[j], { range: e.shiftKey && editable() });
       rowOf(keys[j])?.scrollIntoView({ block: "nearest" });
       return;
     }

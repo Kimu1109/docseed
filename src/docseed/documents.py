@@ -120,12 +120,16 @@ def upload(conn: sqlite3.Connection, store: BlobStore, user: User, folder_id: in
         if parts:
             filename = parts.pop()
     name = fo.clean_name(filename, what="ファイル名")
+    from . import limits
+    owner_id = limits.owner_of_folder(conn, folder_id)
+    limits.check(conn, owner_id, 0, owner_is_actor=owner_id == user.id)   # もう上限なら受信の前に断る
     store.check_free_space()
     stored = store.receive(src, name, max_bytes)  # 時間のかかる受信はトランザクションの外で行う
     if mime_type:
         stored.mime_type = mime_type
     try:
         with Tx(conn):
+            limits.check(conn, owner_id, stored.size, owner_is_actor=owner_id == user.id)
             target = fo.ensure_path(conn, user, folder_id, parts) if parts else folder_id
             blob_id, dedup = _register_blob(conn, store, stored)
             t = now()
@@ -240,6 +244,9 @@ def copy_document(conn: sqlite3.Connection, user: User, doc_id: int, folder_id: 
     with Tx(conn):
         d = get_document(conn, user, doc_id, "viewer")
         fo.require_folder_role(conn, user, folder_id, "editor")
+        from . import limits
+        owner_id = limits.owner_of_folder(conn, folder_id)
+        limits.check(conn, owner_id, d["size_bytes"], owner_is_actor=owner_id == user.id)
         name = free_doc_name(conn, folder_id, fo.clean_name(filename or d["filename"], what="ファイル名"))
         t = now()
         cur = conn.execute(
@@ -392,17 +399,30 @@ def empty_trash(conn: sqlite3.Connection, store: BlobStore, user: User) -> int:
     return len(items)
 
 
-def purge_expired(conn: sqlite3.Connection, store: BlobStore, cutoff_iso: str) -> int:
-    """保持期間（cutoff より前に削除されたもの）を過ぎた項目を完全に削除する。"""
+def purge_expired(conn: sqlite3.Connection, store: BlobStore, cutoff_iso: str | dict[int, str]) -> int:
+    """保持期間を過ぎた項目を完全に削除する。
+
+    cutoff_iso: この日時より前に削除されたもの。{持ち主のユーザー ID: 日時} なら持ち主ごと（ゴミ箱の保持日数は
+    利用者ごとに選べる。limits.retention_cutoffs）。dict に無い持ち主のものは消さない。
+    """
+    cutoffs = cutoff_iso if isinstance(cutoff_iso, dict) else None
     n = 0
     with Tx(conn):
-        for r in conn.execute("SELECT id FROM folders WHERE deleted_at IS NOT NULL AND deleted_at < ?"
-                              " AND parent_id IS NOT NULL", (cutoff_iso,)).fetchall():
-            if conn.execute("SELECT 1 FROM folders WHERE id = ?", (r[0],)).fetchone():
-                _purge_folder(conn, r[0])
+        for r in conn.execute("SELECT id, owner_id, deleted_at FROM folders WHERE deleted_at IS NOT NULL"
+                              " AND parent_id IS NOT NULL ORDER BY id").fetchall():
+            cut = cutoffs.get(r["owner_id"]) if cutoffs is not None else cutoff_iso
+            if cut is None or r["deleted_at"] >= cut:
+                continue
+            if conn.execute("SELECT 1 FROM folders WHERE id = ?", (r["id"],)).fetchone():
+                _purge_folder(conn, r["id"])
                 n += 1
-        cur = conn.execute("DELETE FROM documents WHERE deleted_at IS NOT NULL AND deleted_at < ?", (cutoff_iso,))
-        n += cur.rowcount
+        rows = conn.execute("SELECT d.id, d.deleted_at, f.owner_id FROM documents d"
+                            " JOIN folders f ON f.id = d.folder_id WHERE d.deleted_at IS NOT NULL").fetchall()
+        for r in rows:
+            cut = cutoffs.get(r["owner_id"]) if cutoffs is not None else cutoff_iso
+            if cut is not None and r["deleted_at"] < cut:
+                conn.execute("DELETE FROM documents WHERE id = ?", (r["id"],))
+                n += 1
     gc_blobs(conn, store)
     return n
 
