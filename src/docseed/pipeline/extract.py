@@ -82,6 +82,8 @@ def kind(mime: str) -> str:
         return office.MIME_KIND[mime.lower()]
     if mime.startswith("text/") or mime in TEXT_TYPES:
         return "text"
+    if mime.startswith(("audio/", "video/")):
+        return "media"   # 文字起こし（任意機能。pipeline/transcribe.py）。無効なら保存のみ
     return "unsupported"
 
 

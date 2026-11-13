@@ -14,6 +14,7 @@ Raspberry Pi 5 で動くローカルのドキュメントサーバーです。�
 | Phase 7 | ログイン（パスキー・確認コード・復旧コード・Google などの OIDC・再認証） | 実装済み |
 | Phase 8 | URL の取り込み（Web クリップ。SSRF 対策つきの取得、OGP・本文の取り出しと検索、ブックマークレット） | 実装済み |
 | Phase 9 | 整理の補助（フォルダ・タグの候補、小型 LLM による要約） | 実装済み（LLM のモデルは Pi 5 での計測で決める） |
+| Phase 10 | 音声・動画の文字起こし（任意。バッチ処理・既定はオフ） | 実装済み |
 
 ## Raspberry Pi で動かす（Docker）
 
@@ -314,6 +315,26 @@ docker compose up -d     # fetcher（取得の担当）が起動する
 **安全のための制限**: LAN の機器（ルーター・NAS など）や Pi 自身へのリクエストを作らせないよう、取得の前に名前を引いて、プライベートな IP（192.168.x.x・10.x.x.x・Tailscale の 100.64.0.0/10 など）を指す URL は取得しません。リダイレクトのたびに確かめ直し、確かめた IP にだけ接続します。ポートは 80・443・8080・8443 だけ、HTML は 5MB（`DOCSEED_WEBCLIP_MAX_MB`）・30 秒までです。取得するのは fetcher だけで、文字の読み取りを行う worker は今まで通り外部と通信しません。
 
 `DOCSEED_WEBCLIP_PROXY` でプロキシを使うこともできます。そのときは名前の解決をプロキシに任せることになるので、**プロキシの側で LAN への通信を止めてください**。
+
+## 音声・動画の文字起こし（任意）
+
+音声（mp3・m4a・wav など）と動画（mp4・mov など）を、10 分ごとに区切って文字起こしし、検索できるようにします。既定はオフで、オフのときは従来どおり「保存のみ」です。**Pi 5 の CPU で動かすので遅く**（1 時間の動画に数時間かかることがあります）、夜間などにまとめて処理される前提のオプション機能です。外部とは通信しません。
+
+1. イメージに ffmpeg と whisper-cli（whisper.cpp）を入れて作り直します。`.env` で `DOCSEED_IMAGE_TARGET=asr` にし、`docker compose build` してから `up -d` します（作るのに Pi 5 で数十分かかります）。
+2. モデルを取得します（`small` は約 0.5GB。RAM に余裕がなければ `base`）。
+
+   ```bash
+   docker compose exec api docseed fetch-models --asr small
+   ```
+
+3. `.env` で `DOCSEED_ASR_ENABLED=true` にし、`DOCSEED_ASR_MODEL=ggml-small.bin`（取得時に表示された名前）を確かめて、worker を起動し直します（`docker compose up -d`）。
+4. すでに保存してある音声・動画は、管理画面の「形式が未対応だったファイルを再処理」で読み直せます。
+
+- 文字起こしの行の先頭には動画の中の時刻（`[00:12:34]`）を付けるので、検索結果で場所が分かります。
+- worker の上限（`mem_limit: 3g`）は、文字起こしの間も共有されます。メモリが足りないときは `DOCSEED_ASR_MODEL=ggml-base.bin` にするか、compose の `mem_limit` を上げてください。
+- 無音や音楽だけの音声は、警告「音声から文字を取り出せませんでした」が出ます。
+- 文字の精度は音声の質に大きく左右されます。大事な記録は、必ず元の音声で確かめてください。
+- 設定: `DOCSEED_ASR_LANGUAGE`（既定 `ja`）・`DOCSEED_ASR_THREADS`（既定 3）・`DOCSEED_ASR_TIMEOUT_S`（10 分の区切り 1 つの上限、既定 1800）。
 
 ## 整理の補助（フォルダ・タグの候補と要約）
 

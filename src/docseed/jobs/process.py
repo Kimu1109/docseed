@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 
 from ..db import Tx, now
-from ..pipeline import derive, extract, office
+from ..pipeline import derive, extract, office, transcribe
 from ..pipeline.embed import Embedder
 from ..pipeline.ocr import OcrEngine, order_lines, prepare_image
 from ..pipeline.text import chunk_pages, normalize
@@ -33,6 +33,7 @@ PIPELINE_CHANGES: dict[int, frozenset[str]] = {
     2: frozenset({"pdf"}),   # テキスト層のある PDF のページに貼られた画像も OCR する
 }
 EMBED_COMMIT_EVERY = 64
+MEDIA_OFF_MESSAGE = "音声・動画の文字起こしはこの環境では有効になっていません（保存・共有はできます）"
 
 
 class Context:
@@ -41,12 +42,15 @@ class Context:
     def __init__(self, files_dir: Path, *, ocr_factory: Callable[[], OcrEngine],
                  embedder_factory: Callable[[], Embedder], dpi: int = 200, min_score: float = 0.5,
                  between_pages: Callable[[], None] | None = None, data_dir: Path | None = None,
-                 suggest_enabled: bool = True, llm=None, pdf_images: bool = True):
+                 suggest_enabled: bool = True, llm=None, pdf_images: bool = True,
+                 asr=None, tmp_dir: Path | None = None):
         self.files_dir = files_dir
         self.data_dir = data_dir or files_dir.parent   # 派生ファイルは <data_dir>/derived/
         self.suggest_enabled = suggest_enabled         # フォルダ・タグの候補（Phase 9）
         self.llm = llm                                 # 要約（LlmClient。無効なら None）
         self.pdf_images = pdf_images                   # テキスト層のある PDF のページの画像も OCR する
+        self.asr = asr                                 # 音声・動画の文字起こし（WhisperCli。無効なら None）
+        self.tmp_dir = tmp_dir                         # ffmpeg の一時ファイル（SSD 上に置く）
         self._ocr_factory = ocr_factory
         self._embedder_factory = embedder_factory
         self._ocr: OcrEngine | None = None
@@ -96,8 +100,11 @@ def process_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int, *, force_
     else:
         warnings = json.loads(blob["warnings"]) if blob["warnings"] and blob["status"] == "processing" else []
 
+    media = extract.kind(mime) == "media"
+    if media and ctx.asr is None:
+        return _give_up(conn, blob_id, extract.Unsupported("unsupported_type", MEDIA_OFF_MESSAGE))
     try:
-        total = extract.page_count(path, mime)
+        total = transcribe.page_count(path) if media else extract.page_count(path, mime)
     except extract.Unsupported as e:
         return _give_up(conn, blob_id, e)
     if total > extract.MAX_PAGES:
@@ -112,17 +119,23 @@ def process_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int, *, force_
     _set(conn, blob_id, status="processing", page_count=total, progress_total=total,
          progress_done=len(done_pages), error=None)
 
-    # ① 抽出・OCR（ページ単位）
+    # ① 抽出・OCR（ページ単位）。音声・動画は 10 分ごとの区切りを文字起こしして、ページにする
     clip = webclip_info(conn, blob_id) if extract.kind(mime) == "html" else None
+    if media:
+        source = transcribe.iter_pages(path, ctx.asr, skip=done_pages, tmp_dir=ctx.tmp_dir)
+    else:
+        source = extract.iter_pages(path, mime, dpi=ctx.dpi, skip=done_pages, force_ocr=force_ocr,
+                                    webclip=clip, pdf_images=ctx.pdf_images)
     try:
-        for page in extract.iter_pages(path, mime, dpi=ctx.dpi, skip=done_pages, force_ocr=force_ocr,
-                                       webclip=clip, pdf_images=ctx.pdf_images):
+        for page in source:
             _store_page(conn, ctx, blob_id, page, warnings)
             done_pages.add(page.page_no)
             _set(conn, blob_id, progress_done=len(done_pages), warnings=json.dumps(warnings, ensure_ascii=False))
             ctx.between_pages()
     except extract.Unsupported as e:
         return _give_up(conn, blob_id, e)
+    if media and not _has_text(conn, blob_id):
+        _warn(warnings, "no_speech")   # 音声はあったが、文字が取り出せなかった（無音・音楽など）
 
     # ② チャンク分割（作り直す）
     pages = [(r["page_no"], r["text"]) for r in conn.execute(
@@ -148,6 +161,11 @@ def process_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int, *, force_
          warnings=json.dumps(warnings, ensure_ascii=False) if warnings else None)
     after_ready(conn, ctx, blob_id)
     return "ready"
+
+
+def _has_text(conn: sqlite3.Connection, blob_id: int) -> bool:
+    return conn.execute("SELECT 1 FROM pages WHERE blob_id = ? AND trim(text) <> '' LIMIT 1",
+                        (blob_id,)).fetchone() is not None
 
 
 def after_ready(conn: sqlite3.Connection, ctx: Context, blob_id: int) -> None:

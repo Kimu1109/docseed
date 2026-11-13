@@ -217,4 +217,14 @@ def default_context(settings: Settings, between_pages) -> Context:
         data_dir=settings.data_dir, suggest_enabled=settings.suggest_enabled, pdf_images=settings.ocr_pdf_images,
         llm=LlmClient(settings.llm_url, settings.llm_model, timeout_s=settings.llm_timeout_s,
                       max_input_chars=settings.llm_max_input_chars) if settings.llm_enabled else None,
+        asr=_asr(settings), tmp_dir=settings.tmp_dir,
     )
+
+
+def _asr(settings: Settings):
+    """音声・動画の文字起こし（DOCSEED_ASR_ENABLED=true のときだけ）。"""
+    if not settings.asr_enabled:
+        return None
+    from ..pipeline.transcribe import WhisperCli
+    return WhisperCli(settings.asr_bin, settings.asr_model_path, language=settings.asr_language,
+                      threads=settings.asr_threads, timeout_s=settings.asr_timeout_s)

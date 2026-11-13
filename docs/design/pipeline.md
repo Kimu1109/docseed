@@ -146,6 +146,21 @@ RETURNING *;
 - 画面の「取り出したテキスト」では、ページの代わりに「N 番目の区切り」「N 枚目のシート」「スライド N」と表示する。
 - Phase 5 より前に保存した Office 文書は `unsupported` になっているので、管理画面の「形式が未対応だったファイルを再処理」（`docseed reprocess unsupported`）で処理し直す。
 
+### 3.5 音声・動画（任意機能・Phase 10）
+
+`DOCSEED_ASR_ENABLED=true` のときだけ動く（既定は保存のみ。`extract.kind` は `media`）。
+
+1. `ffprobe` で長さと音声のトラックを調べる。音声が無い動画は `no_audio`（保存のみ）。
+2. `ffmpeg` で先頭の音声トラックを 16kHz・モノラルの WAV にし、10 分（`SLICE_SECONDS`）ごとに区切る（`-segment_start_number 1` で、区切りの番号がページ番号になる）。
+3. 区切りごとに `whisper-cli`（whisper.cpp v1.9.5、静的リンク）で文字起こしし、区切りを 1 ページとして保存する。行の先頭には動画の中の時刻 `[時:分:秒]` を付ける。
+4. 以降は文書と同じ（チャンク分割・全文索引・埋め込み）。読み終えたページは残るので、途中で止まっても続きから読める（`skip`）。
+5. 文字が 1 つも取れなかったら警告 `no_speech`。
+
+- 外部とは通信しない。モデル（ggml）は `docseed fetch-models --asr` で `models/asr/` に取得する。
+- 必要なもの（`DOCSEED_IMAGE_TARGET=asr` で作るイメージに入る）: `ffmpeg`、`whisper-cli`。
+- 無効のときは、従来どおり「保存のみ」（`unsupported`）。有効にしたあとは、管理画面の「形式が未対応だったファイルを再処理」で読める。
+- Pi 5 の CPU では処理が遅い。バッチ処理前提で、worker の 1 ジョブとして順に処理する（オプション機能）。
+
 ## 4. OCR（PP-OCRv6）
 
 ### 4.1 構成
