@@ -74,6 +74,12 @@ class Settings:
     llm_model: str = "LFM2.5-1.2B-JP-Q4_K_M.gguf"   # DOCSEED_LLM_MODEL（models/llm/ の GGUF）
     llm_timeout_s: int = 180          # DOCSEED_LLM_TIMEOUT_S
     llm_max_input_chars: int = 3000   # DOCSEED_LLM_MAX_INPUT_CHARS
+    asr_enabled: bool = False         # DOCSEED_ASR_ENABLED（音声・動画の文字起こし。既定は保存のみ）
+    asr_bin: str = "whisper-cli"      # DOCSEED_ASR_BIN（whisper.cpp の実行ファイル）
+    asr_model: str = "ggml-small.bin"  # DOCSEED_ASR_MODEL（models/asr/ の ggml ファイル）
+    asr_language: str = "ja"          # DOCSEED_ASR_LANGUAGE
+    asr_threads: int = 3              # DOCSEED_ASR_THREADS
+    asr_timeout_s: int = 1800         # DOCSEED_ASR_TIMEOUT_S（10 分の区切り 1 つの上限）
     # 受け取り用の共有リンク（ログインなしでアップロードできる。docs/design/security.md 4.3）
     share_upload_link_gb: float = 10.0    # DOCSEED_SHARE_UPLOAD_LINK_GB（1 リンクの合計）
     share_upload_daily_gb: float = 20.0   # DOCSEED_SHARE_UPLOAD_DAILY_GB（すべてのリンクの 24 時間の合計）
@@ -132,6 +138,10 @@ class Settings:
     @property
     def models_dir(self) -> Path:
         return self.data_dir / "models"
+
+    @property
+    def asr_model_path(self) -> Path:
+        return self.models_dir / "asr" / self.asr_model
 
     @property
     def inbox_dir(self) -> Path:
@@ -201,6 +211,12 @@ class Settings:
             llm_model=e.get("DOCSEED_LLM_MODEL") or "LFM2.5-1.2B-JP-Q4_K_M.gguf",
             llm_timeout_s=int(e.get("DOCSEED_LLM_TIMEOUT_S") or "180"),
             llm_max_input_chars=int(e.get("DOCSEED_LLM_MAX_INPUT_CHARS") or "3000"),
+            asr_enabled=_bool(e.get("DOCSEED_ASR_ENABLED"), False),
+            asr_bin=e.get("DOCSEED_ASR_BIN") or "whisper-cli",
+            asr_model=e.get("DOCSEED_ASR_MODEL") or "ggml-small.bin",
+            asr_language=e.get("DOCSEED_ASR_LANGUAGE") or "ja",
+            asr_threads=int(e.get("DOCSEED_ASR_THREADS") or "3"),
+            asr_timeout_s=int(e.get("DOCSEED_ASR_TIMEOUT_S") or "1800"),
             share_upload_link_gb=float(e.get("DOCSEED_SHARE_UPLOAD_LINK_GB") or "10"),
             share_upload_daily_gb=float(e.get("DOCSEED_SHARE_UPLOAD_DAILY_GB") or "20"),
             rate_limit_enabled=_bool(e.get("DOCSEED_RATE_LIMIT"), True),

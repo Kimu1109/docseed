@@ -122,6 +122,14 @@ def cmd_fetch_models(args: argparse.Namespace) -> None:
     if args.llm:
         fetch_llm_only(Settings.from_env(), args.llm, force=args.force)
         return
+    if args.asr:
+        from .models import fetch_asr, write_manifest
+        settings = Settings.from_env()
+        p = fetch_asr(settings, args.asr, force=args.force)
+        m = write_manifest(settings)
+        print(f"完了しました → {p}\n  .env の DOCSEED_ASR_MODEL={p.name} にして、"
+              f"DOCSEED_ASR_ENABLED=true にしてください（manifest: {m}）")
+        return
     fetch_all(Settings.from_env(), force=args.force)
 
 
@@ -285,6 +293,8 @@ def main(argv: list[str] | None = None) -> None:
     s = sub.add_parser("fetch-models", help="OCR と埋め込みのモデルを取得する（初回に 1 度）")
     s.add_argument("--force", action="store_true", help="取得済みでも取り直す")
     s.add_argument("--llm", metavar="NAME", help="要約に使う LLM（GGUF）だけを取得する（例 lfm2.5-1.2b-jp）")
+    s.add_argument("--asr", metavar="NAME", choices=["base", "small"],
+                   help="音声・動画の文字起こしのモデル（whisper.cpp の ggml）だけを取得する（base / small）")
     s.set_defaults(func=cmd_fetch_models)
 
     s = sub.add_parser("export-texts", help="LLM の比較に使う文書のテキストを書き出す（scripts/bench_llm.sh）")

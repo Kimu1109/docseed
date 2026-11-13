@@ -26,6 +26,28 @@ ENTRYPOINT ["tini", "--"]
 CMD ["docseed", "serve", "--port", "8000"]
 
 
+# 音声・動画の文字起こし（任意）。whisper.cpp の whisper-cli を静的に作る（builder）。
+# 使うときは .env の DOCSEED_IMAGE_TARGET=asr にして build する（既定の base には入れない）
+FROM python:3.12-slim-bookworm AS asr-build
+ARG WHISPER_CPP_REF=v1.9.5
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends build-essential cmake git ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch "${WHISPER_CPP_REF}" https://github.com/ggml-org/whisper.cpp /src \
+ && cmake -S /src -B /src/build -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF \
+      -DCMAKE_BUILD_TYPE=Release \
+ && cmake --build /src/build --target whisper-cli -j 4
+
+# 文字起こしの実行環境（ffmpeg で音声を取り出し、whisper-cli で読む）
+FROM base AS asr
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg libgomp1 \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=asr-build /src/build/bin/whisper-cli /usr/local/bin/whisper-cli
+USER docseed
+
+
 FROM base AS tools
 USER root
 # torch は CPU 版を入れる（x86 の PyPI 版は CUDA 込みで巨大なため。arm64 はどちらも CPU 版）

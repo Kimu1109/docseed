@@ -78,6 +78,36 @@ LLM_MODELS = {
 }
 
 
+def asr_dir(settings: Settings) -> Path:
+    return settings.models_dir / "asr"
+
+
+# 音声・動画の文字起こし（whisper.cpp の ggml 形式。変換は要らない）。docs/design/pipeline.md 3.5
+ASR_MODELS = {
+    "base": ("ggerganov/whisper.cpp", "ggml-base.bin", "MIT"),
+    "small": ("ggerganov/whisper.cpp", "ggml-small.bin", "MIT"),
+}
+
+
+def fetch_asr(settings: Settings, name: str, *, force: bool = False) -> Path:
+    """ggml の Whisper モデルを models/asr/ に取得する（worker が読み取る）。"""
+    if name not in ASR_MODELS:
+        raise SystemExit(f"不明なモデルです: {name}（{', '.join(ASR_MODELS)} のどれか）")
+    repo, filename, license_ = ASR_MODELS[name]
+    dest = asr_dir(settings) / filename
+    if dest.exists() and not force:
+        print(f"  取得済みです: {dest}")
+        return dest
+    from huggingface_hub import hf_hub_download
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    print(f"  {repo} の {filename} を取得しています（ライセンス: {license_}）")
+    path = Path(hf_hub_download(repo, filename, local_dir=str(dest.parent)))
+    if path != dest:
+        shutil.move(str(path), dest)
+    shutil.rmtree(dest.parent / ".cache", ignore_errors=True)
+    return dest
+
+
 def llm_dir(settings: Settings) -> Path:
     return settings.models_dir / "llm"
 

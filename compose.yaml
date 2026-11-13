@@ -86,7 +86,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-      target: base
+      # 音声・動画の文字起こしを使うときだけ asr（ffmpeg と whisper-cli を入れる）。worker も同じイメージを使う
+      target: ${DOCSEED_IMAGE_TARGET:-base}
     image: docseed:latest
     command: ["docseed", "serve", "--port", "8000"]
     <<: *hardening
