@@ -109,6 +109,15 @@ async def require_session(auth: Auth = Depends(require_auth)) -> Auth:
     return auth
 
 
+async def require_admin_read(auth: Auth = Depends(require_auth)) -> Auth:
+    """管理者の読み取りだけの API（状態・指標）。外部の監視から、管理者の API トークン（read）でも呼べる。"""
+    if not auth.user.is_admin:
+        raise Forbidden("管理者だけが行える操作です")
+    if auth.kind == "token" and "read" not in auth.scopes:
+        raise Forbidden("この API トークンには read の権限がありません")
+    return auth
+
+
 async def require_admin(auth: Auth = Depends(require_session)) -> Auth:
     if not auth.user.is_admin:
         raise Forbidden("管理者だけが行える操作です")

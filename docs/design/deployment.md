@@ -250,6 +250,24 @@ Phase 5 では開発環境で、アップロード → `backup.sh`（restic の�
 
 - ユーザーごとの宛先（自分の共有リンクの受け取りだけを自分に送る）は持たない。宛先は管理者が `.env` で決める。
 
+### 6.2 指標（Prometheus）
+
+- `GET /api/v1/admin/metrics` が Prometheus のテキスト形式（`text/plain; version=0.0.4`）で返す（`docseed.metrics`。依存は増やさず自前で書く）。管理者のセッションか、**管理者の API トークン（read）** で呼べる（`deps.require_admin_read`。`/admin/status`・`/admin/system` も同じ。ほかの管理の操作はこれまでどおりブラウザのセッションだけ）。
+- 出すもの: 版（`docseed_info`）、文書・過去の版・フォルダ・ページ・チャンク・実体の数と大きさ、ジョブの数（type・status ごと）といちばん古い処理待ちの待ち時間、直近 24 時間に終わったジョブの平均・最大の所要時間（OCR と埋め込みは `process_blob`）、worker の生存と最終応答、警告の数（level ごと）と出ている警告（code）、CPU 温度・負荷・メモリ・SSD・DB の大きさ、バックアップの最終成功時刻（DB スナップショット・restic）、証明書の期限、ユーザーごとの使用量・上限・有効か、通知の数、検索の時間のヒストグラム（`docseed_search_duration_seconds`、mode ごと。api の中で数えるので再起動で 0 に戻る）。
+- 取得のたびに少しの集計（SELECT）を行う。取得の間隔は 30 秒〜1 分を想定。
+- Prometheus の設定の例（Pi の外の Prometheus から）:
+
+```yaml
+scrape_configs:
+  - job_name: docseed
+    scheme: https
+    metrics_path: /api/v1/admin/metrics
+    authorization:
+      credentials_file: /etc/prometheus/docseed-token   # 管理者の API トークン（read）
+    static_configs:
+      - targets: ["docs.example.com"]
+```
+
 ## 7. 更新手順
 
 1. バックアップを手動で実行する（`sudo systemctl start docseed-backup.service`）。
