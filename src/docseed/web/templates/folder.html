@@ -4,6 +4,7 @@
 <div class="page-head">
   {% set link_last = False %}{% include "_crumbs.html" %}
   <div class="actions">
+    {% set fav, fav_type, fav_id, small = folder.id in favs.folder, "folder", folder.id, False %}{% include "_fav.html" %}
     <a class="btn" href="/api/v1/folders/{{ folder.id }}/archive" title="このフォルダをまとめてダウンロード">{{ icon("folder_zip") }}ZIP</a>
     <button type="button" class="btn" data-open-dialog="dlg-share" hx-get="/x/share?type=folder&id={{ folder.id }}"
             hx-target="#share-body" hx-swap="outerHTML">{{ icon("share") }}共有</button>

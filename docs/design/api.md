@@ -104,6 +104,13 @@ RFC 9457（`application/problem+json`）形式。
 | GET | `/me/tokens` | API トークン一覧（先頭 8 文字・名前・最終使用日時） |
 | POST | `/me/tokens` | `{name, scopes, expires_at}` → `{token}`（この 1 回だけ表示） |
 | DELETE | `/me/tokens/{id}` | 無効化 |
+| GET | `/me/favorites` | お気に入り（`{favorites: [{type, id, filename\|name, ..., favorited_at}]}`。見られるものだけ） |
+| PUT / DELETE | `/me/favorites/{type}/{id}` | お気に入りに入れる・外す（type = document \| folder）。204 |
+| GET / DELETE | `/me/recent` | 最近開いたファイル（画面で開いたもの。`?limit=` 最大 50）/ 記録を消す |
+| GET | `/me/search-history` | 画面で検索した条件の履歴（`{history: [{id, params, url, label, searched_at}]}`） |
+| DELETE | `/me/search-history`、`/me/search-history/{id}` | 履歴をすべて・1 件消す |
+| GET / POST | `/me/saved-searches` | 保存した検索の一覧 / `{name?, params}` で保存（params は画面の `/search` と同じキー: q・mode・type・tag・after・before・taken_from・taken_to・folder。ほかは捨てる）。201 |
+| PATCH / DELETE | `/me/saved-searches/{id}` | `{name}` で名前を変える / 消す |
 
 ### 3.2 フォルダ
 

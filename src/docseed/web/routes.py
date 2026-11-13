@@ -97,6 +97,12 @@ DONE_MESSAGES = {
     "version_restored": "過去の版に戻しました（戻す前の版も「過去の版」に残しています）",
     "version_deleted": "過去の版を削除しました",
     "notify_sent": "テスト通知を送りました。届いたか確かめてください",
+    "recent_cleared": "最近開いたファイルの記録を消しました",
+    "search_saved": "検索を保存しました",
+    "search_deleted": "保存した検索を消しました",
+    "search_renamed": "保存した検索の名前を変えました",
+    "history_deleted": "検索の履歴から消しました",
+    "history_cleared": "検索の履歴をすべて消しました",
     "notify_failed": "テスト通知を送れませんでした。下の「最近の通知」のエラーを確認してください",
 }
 
@@ -245,7 +251,12 @@ def listing_context(request: Request, conn: sqlite3.Connection, auth: Auth, fold
                         order=order, owner=owner, nav="files" if owner.id == auth.user.id else "shared",
                         clips=clips, webclip_enabled=settings.webclip_enabled, reco=reco, in_inbox=in_inbox,
                         auto_moves=auto_moves, page=page, pages=pages, total=total,
-                        page_size=LISTING_PAGE_SIZE)
+                        page_size=LISTING_PAGE_SIZE, favs=_favorite_ids(conn, auth))
+
+
+def _favorite_ids(conn: sqlite3.Connection, auth: Auth) -> dict[str, set[int]]:
+    from ..personal import favorite_ids
+    return favorite_ids(conn, auth.user)
 
 
 def render_listing(request: Request, conn: sqlite3.Connection, auth: Auth, folder_id: int,
@@ -807,7 +818,15 @@ def document_page(doc_id: int, request: Request, conn: sqlite3.Connection = Depe
         llm_enabled=request.app.state.settings.llm_enabled,
         sugg=_suggestions_for(request, conn, d) if role in ("editor", "owner") else None,
         versions=list_versions(conn, auth.user, doc_id), versions_keep=request.app.state.settings.versions_keep,
+        fav=_opened(conn, auth, doc_id),
         nav="files" if d["owner_id"] == auth.user.id else "shared"))
+
+
+def _opened(conn: sqlite3.Connection, auth: Auth, doc_id: int) -> bool:
+    """文書の画面を開いた: 最近開いたファイルに記録し、お気に入りかを返す。"""
+    from .. import personal as ps
+    ps.record_open(conn, auth.user, doc_id)
+    return ps.is_favorite(conn, auth.user, "document", doc_id)
 
 
 @router.post("/d/{doc_id}/versions")
@@ -983,6 +1002,39 @@ def document_delete(doc_id: int, request: Request, conn: sqlite3.Connection = De
 # タグの管理・却下した候補
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# お気に入り・最近開いたファイル
+# ---------------------------------------------------------------------------
+
+@router.get("/favorites", response_class=HTMLResponse)
+def favorites_page(request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                   auth: Auth = Depends(require_auth)):
+    from .. import personal as ps
+    favs, recent = ps.list_favorites(conn, auth.user), ps.list_recent(conn, auth.user)
+    labels: dict[int, str] = {}
+    paths = {x["folder_id"]: display_location(conn, auth, x["folder_id"], labels) for x in favs + recent}
+    return templates.TemplateResponse(request, "favorites.html", base_context(
+        request, conn, auth, nav="favorites", favs=favs, recent=recent, paths=paths))
+
+
+@router.post("/x/favorite", response_class=HTMLResponse)
+def favorite_toggle(request: Request, type: str = Form(...), id: int = Form(...), on: str = Form("1"),
+                    small: str = Form(""), conn: sqlite3.Connection = Depends(get_conn),
+                    auth: Auth = Depends(require_auth)):
+    from .. import personal as ps
+    fav = ps.set_favorite(conn, auth.user, type, id, on == "1")
+    html = templates.get_template("_fav.html").render({"fav": fav, "fav_type": type, "fav_id": id,
+                                                        "small": bool(small)})
+    return HTMLResponse(html + str(toast("お気に入りに入れました" if fav else "お気に入りから外しました")))
+
+
+@router.post("/favorites/recent/clear")
+def recent_clear(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from .. import personal as ps
+    ps.clear_recent(conn, auth.user)
+    return RedirectResponse("/favorites?done=recent_cleared", status_code=303)
+
+
 @router.get("/tags", response_class=HTMLResponse)
 def tags_page(request: Request, tag: str = "", conn: sqlite3.Connection = Depends(get_conn),
               auth: Auth = Depends(require_auth)):
@@ -1063,6 +1115,11 @@ def search_page(request: Request, q: str = "", mode: str = "hybrid", type: str =
     listing = any(k in filters for k in LIST_FILTERS)
     result = run_search(request, conn, auth, q, mode, PER_PAGE, (page - 1) * PER_PAGE, filters) \
         if q.strip() or listing else None
+    from .. import personal as ps
+    current = {"q": q, "mode": mode, "type": type, "tag": tag, "after": after, "before": before,
+               "taken_from": taken_from, "taken_to": taken_to, "folder": folder}
+    if result is not None and page == 1:
+        ps.record_search(conn, auth.user, current)
     labels: dict[int, str] = {}
     paths = {h.document["folder_id"]: display_location(conn, auth, h.document["folder_id"], labels)
              for h in (result.hits if result else [])}
@@ -1089,8 +1146,52 @@ def search_page(request: Request, q: str = "", mode: str = "hybrid", type: str =
         paths=paths, page=page, per_page=PER_PAGE, mode_label=MODE_LABEL, type_options=TYPE_OPTIONS,
         type=type, tag=tag, after=after, before=before, folder=folder, folder_name=folder_name, tags=tags,
         summaries=summaries, taken_from=taken_from, taken_to=taken_to,
+        saved=ps.list_saved(conn, auth.user), history=ps.list_history(conn, auth.user) if result is None else [],
+        current=ps.normalize_params(current),
         params={k: v for k, v in {"q": q, "mode": mode, "taken_from": taken_from, "taken_to": taken_to,
                                   **{k: v for k, v in filters.items() if k != "taken"}}.items() if v}))
+
+
+@router.post("/search/saved")
+async def search_save(request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                      auth: Auth = Depends(require_auth)):
+    """今の検索に名前を付けて保存する（フォームの p_* が条件、name が名前）。"""
+    from .. import personal as ps
+    form = await request.form()
+    params = {k[2:]: str(v) for k, v in form.items() if k.startswith("p_")}
+    ps.save_search(conn, auth.user, str(form.get("name") or ""), params)
+    return RedirectResponse(ps.search_url(ps.normalize_params(params) | {"done": "search_saved"}), status_code=303)
+
+
+@router.post("/search/saved/{saved_id}/rename")
+def search_saved_rename(saved_id: int, name: str = Form(""), conn: sqlite3.Connection = Depends(get_conn),
+                        auth: Auth = Depends(require_auth)):
+    from .. import personal as ps
+    ps.rename_saved(conn, auth.user, saved_id, name)
+    return RedirectResponse("/search?done=search_renamed", status_code=303)
+
+
+@router.post("/search/saved/{saved_id}/delete")
+def search_saved_delete(saved_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                        auth: Auth = Depends(require_auth)):
+    from .. import personal as ps
+    ps.delete_saved(conn, auth.user, saved_id)
+    return RedirectResponse("/search?done=search_deleted", status_code=303)
+
+
+@router.post("/search/history/{history_id}/delete")
+def search_history_delete(history_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                          auth: Auth = Depends(require_auth)):
+    from .. import personal as ps
+    ps.delete_history(conn, auth.user, history_id)
+    return RedirectResponse("/search?done=history_deleted", status_code=303)
+
+
+@router.post("/search/history/clear")
+def search_history_clear(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from .. import personal as ps
+    ps.delete_history(conn, auth.user)
+    return RedirectResponse("/search?done=history_cleared", status_code=303)
 
 
 # ---------------------------------------------------------------------------

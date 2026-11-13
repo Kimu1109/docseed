@@ -30,6 +30,12 @@
 
 {% if result %}
   {% for n in result.notices %}<p class="note">{{ n }}</p>{% endfor %}
+  <form class="search-save" method="post" action="/search/saved">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for k, v in current.items() %}<input type="hidden" name="p_{{ k }}" value="{{ v }}">{% endfor %}
+    <input name="name" maxlength="100" placeholder="{{ q or '名前' }}" aria-label="保存する名前" autocomplete="off">
+    <button class="btn btn-sm">{{ icon("bookmark") }}この検索を保存</button>
+  </form>
   {% if result.total %}
     <p class="result-count"><b>{{ result.total }}</b> 件<span class="muted">（{{ result.took_ms }} ミリ秒）</span></p>
     <ol class="results">
@@ -71,6 +77,59 @@
       <p class="muted">別の言い方で検索するか、種類や期間の絞り込みを外してみてください。処理待ちのファイルはまだ検索できません。</p>
     </div>
   {% endif %}
+{% endif %}
+
+{% if not result and (saved or history) %}
+<div class="search-lists">
+  {% if saved %}
+  <section class="panel" aria-label="保存した検索">
+    <h2>{{ icon("bookmark") }} 保存した検索</h2>
+    <ul class="item-list">
+    {% for x in saved %}
+      <li>
+        <a href="{{ x.url }}" title="{{ x.label }}"><span class="item-name">{{ x.name }}</span></a>
+        <span class="muted small">{{ x.label }}</span>
+        <details class="rowmenu">
+          <summary aria-label="「{{ x.name }}」の操作">{{ icon("more_horiz") }}</summary>
+          <div class="rowmenu-panel">
+            <form method="post" action="/search/saved/{{ x.id }}/rename" class="form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <label>名前 <input name="name" value="{{ x.name }}" required maxlength="100"></label>
+              <button class="btn btn-sm">{{ icon("edit") }}名前を変更</button>
+            </form>
+            <form method="post" action="/search/saved/{{ x.id }}/delete">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="danger">{{ icon("delete") }}消す</button>
+            </form>
+          </div>
+        </details>
+      </li>
+    {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+  {% if history %}
+  <section class="panel" aria-label="最近の検索">
+    <h2>{{ icon("history") }} 最近の検索</h2>
+    <ul class="item-list">
+    {% for x in history %}
+      <li>
+        <a href="{{ x.url }}"><span class="item-name">{{ x.label }}</span></a>
+        <span class="muted small">{{ x.searched_at | shortdate }}</span>
+        <form method="post" action="/search/history/{{ x.id }}/delete">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="linkish small" aria-label="「{{ x.label }}」を履歴から消す" title="履歴から消す">{{ icon("close") }}</button>
+        </form>
+      </li>
+    {% endfor %}
+    </ul>
+    <form method="post" action="/search/history/clear" data-confirm="検索の履歴をすべて消しますか？">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-sm">{{ icon("delete_sweep") }}履歴をすべて消す</button>
+    </form>
+  </section>
+  {% endif %}
+</div>
 {% endif %}
 
 <details class="search-help">

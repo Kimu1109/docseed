@@ -39,6 +39,7 @@
 <div class="shell">
   <nav class="side" id="side" aria-label="メイン">
     <a href="/f/{{ root_id }}" data-drop="{{ root_id }}" {% if nav == 'files' %}aria-current="page"{% endif %}>{{ icon("folder") }}マイファイル</a>
+    <a href="/favorites" {% if nav == 'favorites' %}aria-current="page"{% endif %}>{{ icon("star") }}お気に入り</a>
     <a href="/search" {% if nav == 'search' %}aria-current="page"{% endif %}>{{ icon("search") }}検索</a>
     <a href="/shared" {% if nav == 'shared' %}aria-current="page"{% endif %}>{{ icon("folder_shared") }}共有されたフォルダ</a>
     <a href="/tags" {% if nav == 'tags' %}aria-current="page"{% endif %}>{{ icon("label") }}タグ</a>

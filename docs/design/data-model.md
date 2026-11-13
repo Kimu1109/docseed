@@ -341,6 +341,15 @@ CREATE TABLE schema_migrations (
 );
 ```
 
+利用者ごとの記録（0010、[画面設計](ui.md) S11）:
+
+| 表 | 内容 |
+|---|---|
+| `favorites(user_id, target_type, target_id, created_at)` | お気に入り（`document` / `folder`）。対象への外部キーは持たず、読むときに今の権限とゴミ箱を確かめ、消えた対象の行は消す |
+| `recent_documents(user_id, document_id, opened_at)` | 最近開いたファイル。開き直すと消して入れ直す（rowid の順＝開いた順）。利用者ごとに 50 件 |
+| `search_history(id, user_id, params, searched_at)` | 検索の履歴。`params` は条件の JSON（キーの順をそろえる）で、同じ条件は 1 件。利用者ごとに 30 件 |
+| `saved_searches(id, user_id, name, params, created_at)` | 保存した検索。利用者ごとに 100 件まで |
+
 ## 4. 削除とゴミ箱
 
 | 操作 | 処理 |

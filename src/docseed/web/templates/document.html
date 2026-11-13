@@ -9,6 +9,7 @@
   <span class="kind kind-{{ k }} kind-lg" title="{{ kind_label[k] }}"></span>
   {{ icon(kind_icon[k], kind_label[k]) }}
   <h1>{{ doc.filename }}</h1>
+  {% set fav_type, fav_id, small = "document", doc.id, False %}{% include "_fav.html" %}
   <button type="button" class="btn" data-open-dialog="dlg-share" hx-get="/x/share?type=document&id={{ doc.id }}"
           hx-target="#share-body" hx-swap="outerHTML">{{ icon("share") }}共有</button>
   <a class="btn btn-primary" href="/api/v1/documents/{{ doc.id }}/content">{{ icon("download") }}ダウンロード</a>

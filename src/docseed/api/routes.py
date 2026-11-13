@@ -664,6 +664,113 @@ def api_search(request: Request, q: str = "", mode: str = "hybrid", type: str | 
 
 
 # ---------------------------------------------------------------------------
+# お気に入り・最近開いたファイル・検索の履歴・保存した検索（本人のものだけ）
+# ---------------------------------------------------------------------------
+
+def _personal_item(x: dict) -> dict[str, Any]:
+    if x["type"] == "folder":
+        return {"type": "folder", "id": x["id"], "name": x["name"], "updated_at": x["updated_at"],
+                "favorited_at": x.get("favorited_at")}
+    return {"type": "document", "id": x["id"], "filename": x["filename"], "folder_id": x["folder_id"],
+            "mime_type": x["mime_type"], "updated_at": x["updated_at"],
+            **({"favorited_at": x["favorited_at"]} if "favorited_at" in x else {}),
+            **({"opened_at": x["opened_at"]} if "opened_at" in x else {})}
+
+
+@router.get("/me/favorites")
+def api_favorites(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from ..personal import list_favorites
+    return {"favorites": [_personal_item(x) for x in list_favorites(conn, auth.user)]}
+
+
+@router.put("/me/favorites/{target_type}/{target_id}", status_code=204)
+def api_favorite_add(target_type: str, target_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                     auth: Auth = Depends(require_auth)):
+    from ..personal import set_favorite
+    set_favorite(conn, auth.user, target_type, target_id, True)
+
+
+@router.delete("/me/favorites/{target_type}/{target_id}", status_code=204)
+def api_favorite_remove(target_type: str, target_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                        auth: Auth = Depends(require_auth)):
+    from ..personal import set_favorite
+    set_favorite(conn, auth.user, target_type, target_id, False)
+
+
+@router.get("/me/recent")
+def api_recent(limit: int = 20, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    """最近開いたファイル（画面で文書を開いたもの。API での取得は数えない）。"""
+    from ..personal import list_recent
+    return {"documents": [_personal_item(x) for x in list_recent(conn, auth.user, max(1, min(limit, 50)))]}
+
+
+@router.delete("/me/recent", status_code=204)
+def api_recent_clear(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from ..personal import clear_recent
+    clear_recent(conn, auth.user)
+
+
+@router.get("/me/search-history")
+def api_search_history(limit: int = 30, conn: sqlite3.Connection = Depends(get_conn),
+                       auth: Auth = Depends(require_auth)):
+    """画面で検索した条件の履歴（新しい順。API の /search は記録しない）。"""
+    from ..personal import list_history
+    return {"history": list_history(conn, auth.user, max(1, min(limit, 30)))}
+
+
+@router.delete("/me/search-history", status_code=204)
+def api_search_history_clear(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from ..personal import delete_history
+    delete_history(conn, auth.user)
+
+
+@router.delete("/me/search-history/{history_id}", status_code=204)
+def api_search_history_delete(history_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                              auth: Auth = Depends(require_auth)):
+    from ..personal import delete_history
+    if not delete_history(conn, auth.user, history_id):
+        raise NotFound("履歴が見つかりません")
+
+
+class SavedSearchIn(BaseModel):
+    name: str = ""
+    params: dict[str, str] = Field(default_factory=dict)
+
+
+@router.get("/me/saved-searches")
+def api_saved_searches(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from ..personal import list_saved
+    return {"saved_searches": list_saved(conn, auth.user)}
+
+
+@router.post("/me/saved-searches", status_code=201)
+def api_saved_search_create(body: SavedSearchIn, conn: sqlite3.Connection = Depends(get_conn),
+                            auth: Auth = Depends(require_auth)):
+    """params は画面の /search と同じ（q・mode・type・tag・after・before・taken_from・taken_to・folder）。"""
+    from ..personal import list_saved, save_search
+    sid = save_search(conn, auth.user, body.name, body.params)
+    return next(x for x in list_saved(conn, auth.user) if x["id"] == sid)
+
+
+class SavedSearchPatch(BaseModel):
+    name: str
+
+
+@router.patch("/me/saved-searches/{saved_id}", status_code=204)
+def api_saved_search_rename(saved_id: int, body: SavedSearchPatch, conn: sqlite3.Connection = Depends(get_conn),
+                            auth: Auth = Depends(require_auth)):
+    from ..personal import rename_saved
+    rename_saved(conn, auth.user, saved_id, body.name)
+
+
+@router.delete("/me/saved-searches/{saved_id}", status_code=204)
+def api_saved_search_delete(saved_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                            auth: Auth = Depends(require_auth)):
+    from ..personal import delete_saved
+    delete_saved(conn, auth.user, saved_id)
+
+
+# ---------------------------------------------------------------------------
 # ゴミ箱
 # ---------------------------------------------------------------------------
 
