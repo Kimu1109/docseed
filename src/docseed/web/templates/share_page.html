@@ -4,7 +4,7 @@
 <header class="top">
   <span class="brand"><span class="brand-mark" aria-hidden="true"></span>docseed</span>
   <div class="top-right muted small">
-    {{ creator.display_name }} さんが共有{% if share.expires_at %}（{{ share.expires_at | localtime }} まで有効）{% endif %}
+    {{ icon("folder_shared") }} {{ creator.display_name }} さんが共有{% if share.expires_at %}（{{ share.expires_at | localtime }} まで有効）{% endif %}
   </div>
 </header>
 <main class="public">
@@ -29,18 +29,18 @@
   </section>
 
 {% elif upload_to %}
-  <div class="page-head"><h1 class="page-title">ファイルを送る</h1></div>
+  <div class="page-head"><h1 class="page-title">{{ icon("upload_file") }} ファイルを送る</h1></div>
   <p class="note">{{ creator.display_name }} さんの「{{ upload_to.name or "マイファイル" }}」にファイルを送ります。送ったファイルの一覧は、この画面には表示されません。</p>
   {% if results %}
   <ul class="sent">
     {% for r in results %}
-      <li class="{{ 'ok' if r.ok else 'ng' }}">{{ r.name }}<span class="small">{{ "送信しました" if r.ok else r.error }}</span></li>
+      <li class="{{ 'ok' if r.ok else 'ng' }}">{{ r.name }}<span class="small">{{ icon("check_circle" if r.ok else "error") }}{{ "送信しました" if r.ok else r.error }}</span></li>
     {% endfor %}
   </ul>
   {% endif %}
   <form method="post" action="/s/{{ token }}/upload" enctype="multipart/form-data" class="form form-panel upload-form">
     <label>送るファイル（複数選べます。1 ファイル 1GB まで）<input type="file" name="files" multiple required></label>
-    <button type="submit" class="btn btn-primary">送信</button>
+    <button type="submit" class="btn btn-primary">{{ icon("send") }}送信</button>
   </form>
 
 {% else %}
@@ -52,10 +52,10 @@
         {%- else %}<a href="/s/{{ token }}?folder={{ c.id }}">{{ c.name or "共有フォルダ" }}</a>{% endif %}
       {%- endfor %}
     </nav>
-    {% if folders or docs %}<div class="actions"><a class="btn" href="/s/{{ token }}/archive?folder={{ folder.id }}">まとめてダウンロード（ZIP）</a></div>{% endif %}
+    {% if folders or docs %}<div class="actions"><a class="btn" href="/s/{{ token }}/archive?folder={{ folder.id }}">{{ icon("folder_zip") }}まとめてダウンロード（ZIP）</a></div>{% endif %}
   </div>
   {% if not folders and not docs %}
-    <div class="empty"><p>このフォルダは空です。</p></div>
+    <div class="empty">{{ icon("folder_open") }}<p>このフォルダは空です。</p></div>
   {% else %}
   <table class="files">
     <thead><tr><th class="col-kind"><span class="sr">種類</span></th><th class="col-name">名前</th><th class="col-date">更新日</th><th class="col-size">サイズ</th><th class="col-actions"><span class="sr">操作</span></th></tr></thead>

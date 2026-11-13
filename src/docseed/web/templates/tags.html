@@ -2,7 +2,7 @@
 {% block title %}タグ{% endblock %}
 {% block main %}
 <div class="page-head">
-  <h1 class="page-title">タグ</h1>
+  <h1 class="page-title">{{ icon("label") }} タグ</h1>
 </div>
 <p class="note">自分のファイルに付いているタグです。名前を変えると、自分のファイルに付いたそのタグがすべて新しい名前になります（既にある名前にすると、2 つのタグを 1 つにまとめます）。ほかの人のファイルのタグは変わりません。</p>
 
@@ -17,7 +17,7 @@
     {% endfor %}
   </ul>
   {% else %}<p class="muted">このタグが付いたファイルはありません。</p>{% endif %}
-  <p><a href="/tags">すべてのタグに戻る</a></p>
+  <p><a href="/tags">{{ icon("arrow_back") }} すべてのタグに戻る</a></p>
 </section>
 {% endif %}
 
@@ -34,7 +34,7 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="old" value="{{ t.name }}">
         <input name="new" value="{{ t.name }}" list="tag-names" maxlength="50" required aria-label="「{{ t.name }}」の新しい名前">
-        <button class="btn btn-sm">変更</button>
+        <button class="btn btn-sm">{{ icon("check") }}変更</button>
       </form>
     </td>
     <td>

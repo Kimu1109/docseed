@@ -546,3 +546,21 @@ body.has-selection .main { padding-bottom: 96px; }
 .tag-rename input { max-width: 16rem; }
 .tag-docs { list-style: none; margin: 0 0 var(--s3); padding: 0; display: grid; gap: 6px; }
 .tag-docs a { display: inline-flex; align-items: center; gap: 6px; }
+
+/* アイコンを増やした場所の調整 */
+.page-title .icon, .dialog-in > h2 .icon, .dialog h2 .icon, .form-panel h2 .icon, .extracted > h2 .icon,
+.share-sec h3 .icon, .panel h3 .icon { color: var(--muted); }
+.page-title .icon { width: 24px; height: 24px; vertical-align: -4px; }
+.empty > .icon { display: block; width: 40px; height: 40px; margin: 0 auto var(--s2); color: var(--muted); }
+.hero-icon { display: block; width: 44px; height: 44px; margin: var(--s4) auto 0; color: var(--muted); }
+.login-box .hero-icon + .error-title { margin-top: var(--s2); text-align: center; }
+.nopreview .hero-icon { margin-top: 0; margin-bottom: var(--s2); }
+.linkish .icon, .subnav .icon, .link-new summary .icon, .search-help summary .icon { width: 1.1em; height: 1.1em; margin-right: 3px; vertical-align: -0.2em; }
+.subnav a .icon { color: inherit; }
+.link-meta .icon, .result-head .icon, .sent .icon, .state-on .icon, .state-off .icon,
+.ok-text .icon, .err-text .icon, .note .icon, .tag .icon, .facts .icon { width: 1.1em; height: 1.1em; margin-right: 3px; vertical-align: -0.2em; }
+.alert-list .icon { width: 18px; height: 18px; margin-right: 4px; vertical-align: -4px; }
+.alert-list li.alert-error .icon { color: var(--danger); }
+.alert-list li.alert-warning .icon { color: var(--warn); }
+.alert-list li.alert-info .icon { color: var(--muted); }
+.dropzone div .icon { width: 22px; height: 22px; color: var(--accent); vertical-align: -5px; }

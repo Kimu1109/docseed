@@ -15,9 +15,9 @@
 </div>
 <dialog id="dlg-share" class="dialog dialog-wide">
   <div class="dialog-in">
-    <h2>「{{ doc.filename }}」を共有</h2>
+    <h2>{{ icon("share") }} 「{{ doc.filename }}」を共有</h2>
     <div id="share-body"><p class="muted">読み込んでいます…</p></div>
-    <div class="dialog-actions"><button type="button" class="btn" data-close-dialog>閉じる</button></div>
+    <div class="dialog-actions"><button type="button" class="btn" data-close-dialog>{{ icon("close") }}閉じる</button></div>
   </div>
 </dialog>
 
@@ -44,6 +44,7 @@
       {% if truncated %}<p class="muted">先頭の 200 KB だけを表示しています。全体はダウンロードして確認してください。</p>{% endif %}
     {% else %}
       <div class="nopreview">
+        {{ icon("visibility_off", cls="hero-icon") }}
         <p>この形式（{{ kind_label[k] }}）はブラウザで表示できません。</p>
         <p class="muted">ダウンロードして開いてください。</p>
       </div>
@@ -74,7 +75,7 @@
           <textarea name="summary" aria-label="要約" rows="4" maxlength="1000">{{ sugg.summary.summary if sugg.summary else "" }}</textarea>
           <p class="muted small">直した要約はこの文書だけに使い、検索にも使います（同じ内容のほかのファイルの要約は変わりません）。</p>
           <div class="row-actions-in">
-            <button name="action" value="save" class="btn btn-sm btn-primary">保存</button>
+            <button name="action" value="save" class="btn btn-sm btn-primary">{{ icon("save") }}保存</button>
             {% if sugg.summary %}<button name="action" value="hide" class="btn btn-sm" formnovalidate
                     data-confirm="この文書では要約を出さないようにします。よろしいですか？">{{ icon("delete") }}要約を消す</button>{% endif %}
             {% if sugg.summary and sugg.summary.manual or sugg.summary_hidden %}<button name="action" value="restore" class="btn btn-sm" formnovalidate>{{ icon("restore_from_trash") }}自動の要約に戻す</button>{% endif %}
@@ -84,7 +85,7 @@
       {% endif %}
       {% if sugg.summary_pending %}<p class="muted small">{{ icon("schedule") }} 要約とタグを作り直しています。終わると画面が新しくなります。</p>{% endif %}
       {% if sugg.folders %}
-        <h3>フォルダ</h3>
+        <h3>{{ icon("folder") }} フォルダ</h3>
         <ul class="suggest-list">
         {% for f in sugg.folders %}
           <li>
@@ -102,7 +103,7 @@
         </ul>
       {% endif %}
       {% if sugg.tags %}
-        <h3>タグ</h3>
+        <h3>{{ icon("label") }} タグ</h3>
         <ul class="suggest-tags">
         {% for t in sugg.tags %}
           <li class="tag tag-suggest">
@@ -118,7 +119,7 @@
         {% endfor %}
         </ul>
       {% endif %}
-      {% if sugg.rejected %}<p class="small"><a href="/suggestions/rejected?doc={{ doc.id }}">却下した候補 {{ sugg.rejected }} 件</a></p>{% endif %}
+      {% if sugg.rejected %}<p class="small"><a href="/suggestions/rejected?doc={{ doc.id }}">{{ icon("block") }} 却下した候補 {{ sugg.rejected }} 件</a></p>{% endif %}
       {% if can_redo %}
       <form method="post" action="/d/{{ doc.id }}/redo" class="redo-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -147,18 +148,18 @@
       <dt>大きさ</dt><dd>{{ image_meta.width }} × {{ image_meta.height }} px</dd>
       {% if image_meta.taken_at %}<dt>撮影日時</dt><dd>{{ image_meta.taken_at | taken_at }}</dd>{% endif %}
       {% if image_meta.camera %}<dt>カメラ</dt><dd>{{ image_meta.camera }}</dd>{% endif %}
-      {% if image_meta.has_gps %}<dt>位置情報</dt><dd>あり<div class="muted small">原本には撮影場所が含まれます。共有するときは注意してください。</div></dd>{% endif %}
+      {% if image_meta.has_gps %}<dt>位置情報</dt><dd>{{ icon("location_on") }}あり<div class="muted small">原本には撮影場所が含まれます。共有するときは注意してください。</div></dd>{% endif %}
       {% endif %}
       <dt>追加した人</dt><dd>{{ doc.created_by_name }}</dd>
       <dt>追加日時</dt><dd>{{ doc.created_at | localtime }}</dd>
       <dt>更新日時</dt><dd>{{ doc.updated_at | localtime }}</dd>
-      <dt>タグ</dt><dd>{% for t in tags %}<span class="tag">{{ t }}</span>{% else %}<span class="muted">なし</span>{% endfor %}</dd>
+      <dt>タグ</dt><dd>{% for t in tags %}<span class="tag">{{ icon("label") }}{{ t }}</span>{% else %}<span class="muted">なし</span>{% endfor %}</dd>
       <dt>SHA-256</dt><dd class="hash">{{ doc.sha256 }}</dd>
     </dl>
 
     {% if can_edit %}
     <form method="post" action="/d/{{ doc.id }}" class="form form-panel">
-      <h2>編集</h2>
+      <h2>{{ icon("edit") }} 編集</h2>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>ファイル名 <input name="filename" value="{{ doc.filename }}" required maxlength="255"></label>
       <label>フォルダ
@@ -169,11 +170,11 @@
       <label>タグ <span class="muted small">（カンマ区切り）</span>
         <input name="tags" value="{{ tags | join(', ') }}" placeholder="例: 経理, 2026">
       </label>
-      <button type="submit" class="btn btn-primary">保存</button>
+      <button type="submit" class="btn btn-primary">{{ icon("save") }}保存</button>
     </form>
     {% if clip and webclip_enabled %}
     <form method="post" action="/d/{{ doc.id }}/refetch" class="form form-panel">
-      <h2>元のページ</h2>
+      <h2>{{ icon("public") }} 元のページ</h2>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <p class="muted small">元のページの最新の内容で保存し直します。</p>
       <div class="row-actions-in">
@@ -184,7 +185,7 @@
     {% endif %}
     {% if doc.status in ["ready", "failed", "unsupported"] %}
     <form method="post" action="/d/{{ doc.id }}/reprocess" class="form form-panel">
-      <h2>文字の読み取り</h2>
+      <h2>{{ icon("document_scanner") }} 文字の読み取り</h2>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <p class="muted small">読み取り結果がおかしいときは、もう一度処理できます。</p>
       {% if doc.mime_type == "application/pdf" %}<label class="check"><input type="checkbox" name="force_ocr" value="1"> PDF の埋め込みテキストを使わず、画像として読み取る</label>{% endif %}
@@ -201,7 +202,7 @@
 
 {% if pages %}
 <section class="extracted" aria-label="取り出したテキスト">
-  <h2>取り出したテキスト</h2>
+  <h2>{{ icon("text_snippet") }} 取り出したテキスト</h2>
   <p class="muted small">検索にはこのテキストが使われます。{% if doc.page_count and doc.page_count > pages_shown %}全 {{ doc.page_count }} ページのうち先頭 {{ pages_shown }} ページを表示しています。{% endif %}</p>
   {% for pg in pages %}
   <details class="pagetext" id="p{{ pg.page_no }}" {% if loop.first %}open{% endif %}>

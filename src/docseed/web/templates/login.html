@@ -25,7 +25,7 @@
       <button type="button" class="btn btn-block" data-passkey-button>{{ icon("passkey") }}パスキーでログイン</button>
       {% endif %}
       {% for p in oidc_providers %}
-      <a class="btn btn-block" href="/auth/oidc/{{ p.name }}/start?purpose=login{% if next %}&amp;next={{ next | urlencode }}{% endif %}">{{ p.label }} でログイン</a>
+      <a class="btn btn-block" href="/auth/oidc/{{ p.name }}/start?purpose=login{% if next %}&amp;next={{ next | urlencode }}{% endif %}">{{ icon("login") }}{{ p.label }} でログイン</a>
       {% endfor %}
       {% if passkey_reason %}<p class="muted small">{{ passkey_reason }}</p>{% endif %}
     </div>

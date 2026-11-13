@@ -4,7 +4,7 @@
 <form class="search-form" method="get" action="/search" role="search" data-autosubmit>
   <div class="search-main">
     <input type="search" name="q" value="{{ q }}" placeholder="ファイルの中身を検索（例: 振込先 請求書）" aria-label="検索語" autocomplete="off" {% if not q %}autofocus{% endif %}>
-    <button type="submit" class="btn btn-primary">検索</button>
+    <button type="submit" class="btn btn-primary">{{ icon("search") }}検索</button>
   </div>
   <div class="search-filters">
     <label>検索方法
@@ -38,8 +38,8 @@
         <div class="result-body">
           <div class="result-head">
             <a class="result-name" href="/d/{{ d.id }}?q={{ q | urlencode }}">{{ d.filename }}</a>
-            <span class="muted small">{{ paths[d.folder_id] }}</span>
-            <span class="muted small">{{ d.updated_at | shortdate }}</span>
+            <span class="muted small">{{ icon("folder") }}{{ paths[d.folder_id] }}</span>
+            <span class="muted small">{{ icon("schedule") }}{{ d.updated_at | shortdate }}</span>
           </div>
           {% if summaries.get(d.id) %}<p class="result-summary small">{{ icon("wand_stars") }} {{ summaries[d.id] }}</p>{% endif %}
           {% for s in h.snippets %}
@@ -56,13 +56,14 @@
     {% set pages = ((result.total - 1) // per_page) + 1 %}
     {% if pages > 1 %}
     <nav class="pager" aria-label="ページ送り">
-      {% if page > 1 %}<a class="btn" href="/search?{{ dict(params, page=page - 1) | urlencode }}">前へ</a>{% endif %}
+      {% if page > 1 %}<a class="btn" href="/search?{{ dict(params, page=page - 1) | urlencode }}">{{ icon("chevron_left") }}前へ</a>{% endif %}
       <span class="muted">{{ page }} / {{ [pages, 26] | min }}</span>
-      {% if page < pages and page < 26 %}<a class="btn" href="/search?{{ dict(params, page=page + 1) | urlencode }}">次へ</a>{% endif %}
+      {% if page < pages and page < 26 %}<a class="btn" href="/search?{{ dict(params, page=page + 1) | urlencode }}">次へ{{ icon("chevron_right") }}</a>{% endif %}
     </nav>
     {% endif %}
   {% else %}
     <div class="empty">
+      {{ icon("search_off") }}
       <p>「{{ q }}」に一致するファイルは見つかりませんでした。</p>
       <p class="muted">別の言い方で検索するか、種類や期間の絞り込みを外してみてください。処理待ちのファイルはまだ検索できません。</p>
     </div>
@@ -70,7 +71,7 @@
 {% endif %}
 
 <details class="search-help">
-  <summary>検索のしかた</summary>
+  <summary>{{ icon("help") }}検索のしかた</summary>
   <dl>
     <dt>請求書 振込先</dt><dd>空白で区切ると、両方を含む部分と、意味が近い部分を探します</dd>
     <dt>"株式会社サンプル"</dt><dd>ダブルクォートで囲んだ語は必ず含むものだけにします</dd>

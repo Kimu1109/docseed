@@ -1,6 +1,6 @@
 <div id="trash">
 {% if not items %}
-  <div class="empty"><p>ゴミ箱は空です。</p></div>
+  <div class="empty">{{ icon("delete") }}<p>ゴミ箱は空です。</p></div>
 {% else %}
 <table class="files">
   <thead>

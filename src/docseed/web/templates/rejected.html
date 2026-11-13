@@ -2,7 +2,7 @@
 {% block title %}却下した候補{% endblock %}
 {% block main %}
 <div class="page-head">
-  <h1 class="page-title">却下した候補</h1>
+  <h1 class="page-title">{{ icon("block") }} 却下した候補</h1>
 </div>
 <p class="note">却下したフォルダ・タグの候補は、その文書には二度と出しません。取り消すと、また候補に出ます（もうそのフォルダにある・そのタグが付いている場合は、記録だけを消します）。{% if doc_filter %}<br>「{{ doc_filter.filename }}」の候補だけを表示しています。<a href="/suggestions/rejected">すべて表示</a>{% endif %}</p>
 {% if items %}

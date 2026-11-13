@@ -14,7 +14,7 @@
   {% for m in auto_moves %}
     <li>{{ m.filename }} → <a href="/f/{{ m.to_folder }}">移動先</a>（{{ m.at | shortdate }}）
       <button type="button" class="linkish" hx-post="/x/automove/{{ m.id }}/undo" hx-vals='{"current": {{ folder.id }}}'
-              hx-target="#listing" hx-swap="outerHTML">元に戻す</button></li>
+              hx-target="#listing" hx-swap="outerHTML">{{ icon("undo") }}元に戻す</button></li>
   {% endfor %}
   </ul>
 </div>
@@ -22,11 +22,12 @@
 {% if reco %}
 <form id="reco-form" hx-post="/f/{{ folder.id }}/suggestions/apply" hx-target="#listing" hx-swap="outerHTML" class="reco-bar">
   <span class="small">{{ icon("wand_stars") }} おすすめのフォルダがある文書が {{ reco | length }} 件あります。</span>
-  <button type="submit" class="btn btn-sm">チェックした文書をおすすめのフォルダへまとめて移動</button>
+  <button type="submit" class="btn btn-sm">{{ icon("drive_file_move") }}チェックした文書をおすすめのフォルダへまとめて移動</button>
 </form>
 {% endif %}
 {% if not folders and not docs and not clips %}
   <div class="empty">
+    {{ icon("folder_open") }}
     <p>このフォルダは空です。</p>
     {% if can_edit %}<p class="muted">ファイルをこの画面にドラッグ＆ドロップするか、「アップロード」から追加できます。</p>{% endif %}
   </div>
