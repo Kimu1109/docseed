@@ -1,7 +1,7 @@
 <div id="share-body">
 {% if target_type == "folder" %}
 <section class="share-sec">
-  <h3>ユーザー</h3>
+  <h3>{{ icon("group") }} ユーザー</h3>
   <ul class="members">
     {% for m in members %}
     <li>
@@ -19,7 +19,7 @@
           </select>
         </form>
         <button type="button" class="btn btn-sm" hx-post="/x/folders/{{ target_id }}/members/{{ m.user_id }}/remove"
-                hx-target="#share-body" hx-swap="outerHTML">外す</button>
+                hx-target="#share-body" hx-swap="outerHTML">{{ icon("person_remove") }}外す</button>
       {% else %}
         <span class="m-role">{{ role_label[m.role] }}</span>
       {% endif %}
@@ -34,7 +34,7 @@
         {% for u in candidates %}<option value="{{ u.id }}">{{ u.display_name }}（{{ u.username }}）</option>{% endfor %}
       </select>
       <select name="role" aria-label="権限"><option value="viewer">閲覧のみ</option><option value="editor">編集できる</option></select>
-      <button type="submit" class="btn">追加</button>
+      <button type="submit" class="btn">{{ icon("person_add") }}追加</button>
     </form>
     {% else %}
     <p class="muted small">共有できるほかのユーザーがいません（管理画面でユーザーを追加できます）。</p>
@@ -48,24 +48,24 @@
 {% endif %}
 
 <section class="share-sec">
-  <h3>リンク</h3>
-  {% if gps_count %}<p class="note small" role="note">位置情報（撮影場所）を含む写真が {{ gps_count }} 件あります。リンクで共有すると、受け取った人は原本から撮影場所を読み取れます。</p>{% endif %}
+  <h3>{{ icon("link") }} リンク</h3>
+  {% if gps_count %}<p class="note small" role="note">{{ icon("location_on") }} 位置情報（撮影場所）を含む写真が {{ gps_count }} 件あります。リンクで共有すると、受け取った人は原本から撮影場所を読み取れます。</p>{% endif %}
   {% if links %}
   <ul class="links">
     {% for l in links %}
     <li {% if l.id == new_id %}class="new"{% endif %}>
       <div class="link-row">
         <input class="link-url" value="{{ base_url }}/s/{{ l.token }}" readonly aria-label="リンク">
-        <button type="button" class="btn btn-sm" data-copy="{{ base_url }}/s/{{ l.token }}">コピー</button>
+        <button type="button" class="btn btn-sm" data-copy="{{ base_url }}/s/{{ l.token }}">{{ icon("content_copy") }}コピー</button>
       </div>
       <div class="link-meta small">
-        <span>{{ "受け取り用" if l.permission == "upload" else "閲覧・ダウンロード" }}</span>
-        <span>{{ (l.expires_at | localtime ~ " まで") if l.expires_at else "無期限" }}</span>
-        {% if l.password_hash %}<span>パスワードあり</span>{% endif %}
-        <span>{{ l.download_count }}{% if l.max_downloads %} / {{ l.max_downloads }}{% endif %} 回ダウンロード</span>
+        <span>{{ icon("upload_file" if l.permission == "upload" else "visibility") }}{{ "受け取り用" if l.permission == "upload" else "閲覧・ダウンロード" }}</span>
+        <span>{{ icon("schedule") }}{{ (l.expires_at | localtime ~ " まで") if l.expires_at else "無期限" }}</span>
+        {% if l.password_hash %}<span>{{ icon("lock") }}パスワードあり</span>{% endif %}
+        <span>{{ icon("download") }}{{ l.download_count }}{% if l.max_downloads %} / {{ l.max_downloads }}{% endif %} 回ダウンロード</span>
         <button type="button" class="linkish danger-text" hx-post="/x/shares/{{ l.id }}/revoke"
                 hx-vals='{"target_type": "{{ target_type }}", "target_id": {{ target_id }}}'
-                hx-target="#share-body" hx-swap="outerHTML" hx-confirm="このリンクを無効にしますか？ 知っている人も開けなくなります。">無効にする</button>
+                hx-target="#share-body" hx-swap="outerHTML" hx-confirm="このリンクを無効にしますか？ 知っている人も開けなくなります。">{{ icon("link_off") }}無効にする</button>
       </div>
     </li>
     {% endfor %}
@@ -73,7 +73,7 @@
   {% endif %}
   {% if can_link %}
   <details class="link-new" {% if not links %}open{% endif %}>
-    <summary>リンクを作成</summary>
+    <summary>{{ icon("add_link") }}リンクを作成</summary>
     <form class="form" hx-post="/x/shares" hx-target="#share-body" hx-swap="outerHTML">
       <input type="hidden" name="target_type" value="{{ target_type }}">
       <input type="hidden" name="target_id" value="{{ target_id }}">
@@ -94,7 +94,7 @@
       {% if target_type == "folder" %}<p class="muted small">受け取り用のリンクの期限は 30 日までです。</p>{% endif %}
       <label>パスワード <span class="muted small">（任意。4 文字以上）</span><input name="password" type="text" autocomplete="off" minlength="4"></label>
       <label>ダウンロード回数の上限 <span class="muted small">（任意）</span><input name="max_downloads" type="number" min="1" max="100000"></label>
-      <button type="submit" class="btn btn-primary">リンクを作成</button>
+      <button type="submit" class="btn btn-primary">{{ icon("add_link") }}リンクを作成</button>
     </form>
   </details>
   {% else %}

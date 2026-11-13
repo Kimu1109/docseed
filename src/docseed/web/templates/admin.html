@@ -1,22 +1,22 @@
 {% extends "base.html" %}
 {% block title %}管理{% endblock %}
 {% block main %}
-<div class="page-head"><h1 class="page-title">管理</h1></div>
+<div class="page-head"><h1 class="page-title">{{ icon("admin_panel_settings") }} 管理</h1></div>
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 
 {% if sys.alerts %}
 <section class="panel panel-wide" aria-label="確認が必要な項目">
-  <h2>確認が必要な項目</h2>
+  <h2>{{ icon("warning") }} 確認が必要な項目</h2>
   <ul class="alert-list">
   {% for a in sys.alerts %}
-    <li class="alert-{{ a.level }}"><span class="alert-level">{{ {"error": "異常", "warning": "注意", "info": "情報"}[a.level] }}</span> {{ a.message }}</li>
+    <li class="alert-{{ a.level }}">{{ icon({"error": "error", "warning": "warning", "info": "info"}[a.level]) }}<span class="alert-level">{{ {"error": "異常", "warning": "注意", "info": "情報"}[a.level] }}</span> {{ a.message }}</li>
   {% endfor %}
   </ul>
 </section>
 {% endif %}
 
 <section class="panel panel-wide">
-  <h2>システム</h2>
+  <h2>{{ icon("monitoring") }} システム</h2>
   <dl class="stats">
     <div><dt>ファイル</dt><dd>{{ stats.docs }}</dd></div>
     <div><dt>保存している実体</dt><dd>{{ stats.blobs }}<span class="unit">件</span> {{ stats.blob_bytes | filesize }}</dd></div>
@@ -30,9 +30,9 @@
 
 {% if sys.tls %}
 <section class="panel panel-wide">
-  <h2>HTTPS の証明書</h2>
+  <h2>{{ icon("lock") }} HTTPS の証明書</h2>
   <dl class="stats">
-    <div><dt>状態</dt><dd class="small">{% if sys.tls.ok %}<span class="ok-text">有効</span>{% else %}<span class="err-text">確認できません</span><div class="muted small">{{ sys.tls.error }}</div>{% endif %}</dd></div>
+    <div><dt>状態</dt><dd class="small">{% if sys.tls.ok %}<span class="ok-text">{{ icon("check_circle") }}有効</span>{% else %}<span class="err-text">{{ icon("error") }}確認できません</span><div class="muted small">{{ sys.tls.error }}</div>{% endif %}</dd></div>
     <div><dt>期限</dt><dd class="small">{% if sys.tls.not_after %}{{ sys.tls.not_after | localtime }}<div class="muted small">あと {{ sys.tls.days_left | round | int }} 日</div>{% else %}—{% endif %}</dd></div>
     <div><dt>方式・発行者</dt><dd class="small">{{ sys.tls.mode }}<div class="muted small">{{ sys.tls.issuer or "—" }}（{{ sys.tls.server_name }}）</div></dd></div>
   </dl>
@@ -62,12 +62,12 @@
 {% endif %}
 
 <section class="panel panel-wide">
-  <h2>バックアップ</h2>
+  <h2>{{ icon("backup") }} バックアップ</h2>
   <dl class="stats">
     <div><dt>データベースのスナップショット</dt><dd class="small">{% if sys.backup.db_snapshot %}{{ sys.backup.db_snapshot_at | localtime("%m/%d %H:%M") }}<div class="muted small">{{ sys.backup.db_snapshot }}</div>{% else %}まだありません{% endif %}</dd></div>
     <div><dt>別の機器へのバックアップ（restic）</dt><dd class="small">
       {% if sys.backup.restic %}
-        {{ sys.backup.restic_at | localtime("%m/%d %H:%M") }} {% if sys.backup.restic.ok %}<span class="ok-text">成功</span>{% else %}<span class="err-text">失敗</span>{% endif %}
+        {{ sys.backup.restic_at | localtime("%m/%d %H:%M") }} {% if sys.backup.restic.ok %}<span class="ok-text">{{ icon("check_circle") }}成功</span>{% else %}<span class="err-text">{{ icon("error") }}失敗</span>{% endif %}
         {% if sys.backup.restic.snapshot %}<div class="muted small">スナップショット {{ sys.backup.restic.snapshot }}</div>{% endif %}
       {% else %}記録がありません{% endif %}
     </dd></div>
@@ -76,9 +76,9 @@
 </section>
 
 <section class="panel panel-wide">
-  <h2>文字の読み取りと検索の準備</h2>
+  <h2>{{ icon("document_scanner") }} 文字の読み取りと検索の準備</h2>
   {% if worker_alive %}
-    <p class="ok-text">処理（worker）は動いています。最終応答 {{ worker_seen | localtime("%m/%d %H:%M:%S") }}</p>
+    <p class="ok-text">{{ icon("check_circle") }} 処理（worker）は動いています。最終応答 {{ worker_seen | localtime("%m/%d %H:%M:%S") }}</p>
   {% elif worker_seen %}
     <p class="alert">処理（worker）から 2 分以上応答がありません（最終応答 {{ worker_seen | localtime }}）。<code>docker compose logs worker</code> で状態を確認してください。</p>
   {% else %}
@@ -90,7 +90,7 @@
     <div><dt>失敗</dt><dd>{{ job_counts.get("failed", 0) }}</dd></div>
   </dl>
   {% if failed %}
-  <h3>失敗したジョブ</h3>
+  <h3>{{ icon("error") }} 失敗したジョブ</h3>
   <table class="plain">
     <thead><tr><th>ファイル</th><th>エラー</th><th>日時</th><th><span class="sr">操作</span></th></tr></thead>
     <tbody>
@@ -99,7 +99,7 @@
         <td>{{ j.filename or "（削除済み）" }}</td>
         <td class="small err-cell">{{ j.error }}</td>
         <td class="nowrap">{{ j.finished_at | shortdate }}</td>
-        <td><form method="post" action="/admin/jobs/{{ j.id }}/retry"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-sm">やり直す</button></form></td>
+        <td><form method="post" action="/admin/jobs/{{ j.id }}/retry"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-sm">{{ icon("replay") }}やり直す</button></form></td>
       </tr>
     {% endfor %}
     </tbody>
@@ -107,14 +107,14 @@
   {% endif %}
   <form method="post" action="/admin/reprocess" class="row-actions-in">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button name="scope" value="failed" class="btn btn-sm">失敗したファイルをすべて再処理</button>
-    <button name="scope" value="outdated" class="btn btn-sm">古い版で処理したファイルを再処理</button>
-    <button name="scope" value="unsupported" class="btn btn-sm">形式が未対応だったファイルを再処理</button>
+    <button name="scope" value="failed" class="btn btn-sm">{{ icon("refresh") }}失敗したファイルをすべて再処理</button>
+    <button name="scope" value="outdated" class="btn btn-sm">{{ icon("refresh") }}古い版で処理したファイルを再処理</button>
+    <button name="scope" value="unsupported" class="btn btn-sm">{{ icon("refresh") }}形式が未対応だったファイルを再処理</button>
   </form>
 </section>
 
 <section class="panel panel-wide" id="login-settings">
-  <h2>ログイン</h2>
+  <h2>{{ icon("login") }} ログイン</h2>
   <form method="post" action="/admin/auth-settings" class="form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label class="check"><input type="checkbox" name="require_2fa" value="1" {% if auth_settings.require_2fa %}checked{% endif %}>
@@ -126,12 +126,12 @@
     {% else %}
     <input type="hidden" name="oidc_allowed_domains" value="{{ auth_settings.oidc_allowed_domains | join(' ') }}">
     {% endif %}
-    <div><button type="submit" class="btn btn-primary">保存</button></div>
+    <div><button type="submit" class="btn btn-primary">{{ icon("save") }}保存</button></div>
   </form>
 </section>
 
 <section class="panel panel-wide">
-  <h2>ユーザー</h2>
+  <h2>{{ icon("group") }} ユーザー</h2>
   {% if reset_done %}
   <div class="token-new">
     <p><b>{{ reset_done.username }}</b> のログイン方法をリセットしました（パスキー・確認コード・外部アカウントの連携を削除し、すべての端末をログアウト）。次の仮のパスワードを本人に伝え、ログイン後に変更してもらってください。この画面を離れると二度と表示されません。</p>
@@ -150,20 +150,20 @@
           {% if u.id != user.id %}
           <form method="post" action="/admin/users/{{ u.id }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            {% if u.is_active %}<button name="action" value="disable" class="btn btn-sm">無効にする</button>
-            {% else %}<button name="action" value="enable" class="btn btn-sm">有効にする</button>{% endif %}
-            {% if u.is_admin %}<button name="action" value="make_user" class="btn btn-sm">一般にする</button>
-            {% else %}<button name="action" value="make_admin" class="btn btn-sm">管理者にする</button>{% endif %}
+            {% if u.is_active %}<button name="action" value="disable" class="btn btn-sm">{{ icon("person_off") }}無効にする</button>
+            {% else %}<button name="action" value="enable" class="btn btn-sm">{{ icon("person_check") }}有効にする</button>{% endif %}
+            {% if u.is_admin %}<button name="action" value="make_user" class="btn btn-sm">{{ icon("person") }}一般にする</button>
+            {% else %}<button name="action" value="make_admin" class="btn btn-sm">{{ icon("admin_panel_settings") }}管理者にする</button>{% endif %}
           </form>
           <form method="post" action="/admin/users/{{ u.id }}" class="inline-pw">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="action" value="password">
             <input name="password" type="password" minlength="12" placeholder="新しいパスワード" autocomplete="new-password" required aria-label="{{ u.username }} の新しいパスワード">
-            <button class="btn btn-sm">再設定</button>
+            <button class="btn btn-sm">{{ icon("password") }}再設定</button>
           </form>
           <form method="post" action="/admin/users/{{ u.id }}/reset-auth" data-confirm="{{ u.username }} のログイン方法（パスキー・確認コード・外部アカウントの連携）をすべて消し、仮のパスワードを発行しますか？">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button class="btn btn-sm btn-danger">ログイン方法をリセット</button>
+            <button class="btn btn-sm btn-danger">{{ icon("lock_reset") }}ログイン方法をリセット</button>
           </form>
           {% else %}<span class="muted small">あなた</span>{% endif %}
         </div></td>
@@ -172,7 +172,7 @@
     </tbody>
   </table>
 
-  <h3>ユーザーを追加</h3>
+  <h3>{{ icon("person_add") }} ユーザーを追加</h3>
   <form method="post" action="/admin/users" class="form form-row">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>ユーザー名 <input name="username" value="{{ form.username or '' }}" required pattern="[A-Za-z0-9][A-Za-z0-9._\-]{1,31}" autocapitalize="none"></label>
@@ -181,7 +181,7 @@
     <label>ロール
       <select name="role"><option value="user">一般</option><option value="admin" {% if form.role == 'admin' %}selected{% endif %}>管理者</option></select>
     </label>
-    <button type="submit" class="btn btn-primary">追加</button>
+    <button type="submit" class="btn btn-primary">{{ icon("person_add") }}追加</button>
   </form>
 </section>
 {% endblock %}

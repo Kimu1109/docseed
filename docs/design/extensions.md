@@ -211,6 +211,9 @@ src/docseed/web/static/icons.svg    生成したスプライト（リポジト�
 | 状態 | `progress_activity`（処理中）、`check_circle`（完了）、`error`（失敗）、`warning`（警告）、`block`（未対応） |
 | ログイン | `passkey`、`key`（パスワード）、`pin`（確認コード） |
 | 整理の補助 | `auto_awesome`（候補・要約）、`label`（タグ） |
+| 見出し | ページの題（`settings`・`admin_panel_settings`・`delete` など）、設定・管理・ダイアログの各見出し（`person`・`password`・`token`・`devices`・`verified_user`・`monitoring`・`backup`・`document_scanner`・`group` など） |
+| ボタン（追加分） | `add`・`person_add`（追加）、`save`（保存）、`check`（作成・変更・確認）、`close`（閉じる）、`add_link`・`link_off`（リンクの作成・無効化）、`send`、`undo`、`replay`、`chevron_left`・`chevron_right`（ページ送り） |
+| 空・エラーの表示 | `folder_open`（空のフォルダ）、`search_off`（検索結果なし）、`error`・`link_off`・`lock`（エラー・無効なリンク・パスワード付きリンク）、`visibility_off`（プレビューなし） |
 
 一覧の左端の種類ごとの色の縦帯（[画面設計](ui.md) 1.1）はそのまま残し、ファイル名の前に種類のアイコンを足す。今の絵文字（🔍 ⬆ 👤 など）はすべてアイコンに置き換える。
 
