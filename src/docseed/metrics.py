@@ -14,6 +14,7 @@ import threading
 from .config import Settings
 
 SEARCH_BUCKETS = (0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
+BACKUP_HELP = "最後にバックアップが成功した時刻（UNIX 時刻。kind: db_snapshot / restic / restore_drill）"
 JOB_WINDOW_H = 24          # ジョブの所要時間は直近 24 時間に終わったもので出す
 
 
@@ -172,8 +173,15 @@ def render(conn: sqlite3.Connection, settings: Settings) -> str:
                       ("restic", b["restic_at"] if b["restic"] and b["restic"].get("ok") else None)):
         if _ts(ts_):
             o.metric("docseed_backup_last_success_timestamp_seconds", "gauge",
-                     "最後にバックアップが成功した時刻（UNIX 時刻。kind: db_snapshot / restic）", _ts(ts_),
+                     BACKUP_HELP, _ts(ts_),
                      {"kind": kind})
+    if _ts(b.get("drill_ok_at")):
+        o.metric("docseed_backup_last_success_timestamp_seconds", "gauge",
+                 BACKUP_HELP, _ts(b["drill_ok_at"]),
+                 {"kind": "restore_drill"})
+    if b.get("drill"):
+        o.metric("docseed_restore_drill_ok", "gauge", "前回の復旧の練習が成功したか（飛ばした・失敗したら 0）",
+                 b["drill"].get("result") == "ok")
     tls = st.get("tls")
     if tls and tls.get("not_after"):
         o.metric("docseed_tls_cert_expiry_timestamp_seconds", "gauge", "HTTPS の証明書の期限（UNIX 時刻）",

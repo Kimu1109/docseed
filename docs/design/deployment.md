@@ -216,9 +216,14 @@ SSD の故障などで Pi を作り直す場合:
 
 ### 5.3 復旧の練習
 
-`sudo scripts/ops/restore-drill.sh` で、動いている docseed に触れずに 5.2 の 2・3・6 を試せる。restic の最新スナップショットを一時ディレクトリ（`/var/tmp/docseed-drill.*`）に復元し、そこで `restore-db` と `verify-files` を実行し、終わったら消す（`--keep` で残す）。原本と同じだけの空き容量が必要なので、定期実行はせず、設定を変えたときと数か月に 1 度、手で実行する。
+`sudo scripts/ops/restore-drill.sh` で、動いている docseed に触れずに 5.2 の 2・3・6 を試せる。restic の最新スナップショットを一時ディレクトリ（`/var/tmp/docseed-drill.*`）に復元し、そこで `restore-db` と `verify-files` を実行し、終わったら消す（`--keep` で残す）。
 
-Phase 5 では開発環境で、アップロード → `backup.sh`（restic のローカルリポジトリ）→ `restore-drill.sh` が成功すること、復元した原本を 1 件書き換え・1 件削除すると `verify-files` が検出して失敗することを確かめた。Pi 実機（USB ドライブへのバックアップ）での練習は、導入時に利用者の手元で行う。
+- **毎月の自動の練習**（実装で追加）: `docseed-restore-drill.timer`（毎月第 1 日曜 5:30。`install-backup.sh` が入れる）が `restore-drill.sh --auto` を実行する。
+  - 先に `restic stats --mode restore-size` で復元する大きさを調べ、`DOCSEED_DRILL_DIR`（既定 `/var/tmp`）の空きがその `DOCSEED_DRILL_MARGIN`（既定 1.2）倍に足りなければ、練習を飛ばして記録だけを残す（終了コード 0）。これで「原本と同じだけの空きが要る」ために定期実行できなかった問題を避ける。手で実行したとき（`--auto` なし）は、足りなければ失敗にする。
+  - 結果（`ok` / `failed` / `skipped`、スナップショット、復元した大きさ、所要時間、最後に成功した日時（飛ばした・失敗したときも前の記録から引き継ぐ））を `<データディレクトリ>/backup/restore-drill-status.json` に書く（`backup.sh` はこのファイルをバックアップに入れない）。手で実行したときも書く。
+  - 管理画面の「バックアップ」に結果を出し、警告にする: 記録が無い（info）、失敗（error）、空きが足りず飛ばした（warning）、40 日以上成功していない（warning）。警告なので、通知（6.1）が設定されていれば知らせる。指標（6.2）は `docseed_backup_last_success_timestamp_seconds{kind="restore_drill"}` と `docseed_restore_drill_ok`。
+
+Phase 5 では開発環境で、アップロード → `backup.sh`（restic のローカルリポジトリ）→ `restore-drill.sh` が成功すること、復元した原本を 1 件書き換え・1 件削除すると `verify-files` が検出して失敗することを確かめた。Pi 実機（USB ドライブへのバックアップ）での練習は、導入時に利用者の手元で行う。自動の練習は、本物の restic で `backup.sh` → `restore-drill.sh --auto` を動かすテスト（`tests/test_drill.py`。成功・空きが足りず飛ばす・原本の書き換えで失敗・restic の設定が無い）で確かめる（CI に restic を入れている）。
 
 ## 6. 監視・ログ
 
