@@ -713,3 +713,8 @@ kbd:not(.kbd) { display: inline-block; min-width: 1.6em; padding: 0 5px; font: 1
 .keys dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px var(--s3); margin: 0; font-size: 14px; }
 .keys dt { white-space: nowrap; }
 .keys dd { margin: 0; }
+.quota-meter { display: block; width: 100%; height: 6px; margin: 4px 0 6px; }
+.stats-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.quota-cell { min-width: 220px; }
+.quota-form { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+.quota-cell .quota-form input[name=quota_gb] { width: 80px; height: 30px; padding: 0 6px; }

@@ -48,7 +48,14 @@
     <a href="/trash" data-goto="trash" {% if nav == 'trash' %}aria-current="page"{% endif %}>{{ icon("delete") }}ゴミ箱</a>
     {% if user.is_admin %}<a href="/admin" data-goto="admin" {% if nav == 'admin' %}aria-current="page"{% endif %}>{{ icon("admin_panel_settings") }}管理{% if alert_count %} <span class="alert-badge" title="確認が必要な項目が {{ alert_count }} 件あります" aria-label="警告 {{ alert_count }} 件">!{{ alert_count }}</span>{% endif %}</a>{% endif %}
     <div class="side-foot">
+      {% if quota and quota.quota %}
+      <div>使用量 <b>{{ usage | filesize }}</b> / {{ quota.quota | filesize }}</div>
+      <meter class="quota-meter" min="0" max="{{ quota.quota }}" value="{{ [usage, quota.quota] | min }}"
+             low="{{ (quota.quota * 0.7) | int }}" high="{{ (quota.quota * 0.9) | int }}" optimum="0"
+             title="{{ (quota.ratio * 100) | round | int }}%">{{ (quota.ratio * 100) | round | int }}%</meter>
+      {% else %}
       <div>使用量 <b>{{ usage | filesize }}</b></div>
+      {% endif %}
       {% if pending %}<div>処理待ち <b>{{ pending }}</b> 件</div>{% endif %}
     </div>
   </nav>

@@ -56,6 +56,26 @@
     {% endif %}
   </section>
 
+  <section class="panel" id="storage" aria-label="容量とゴミ箱">
+    <h2>{{ icon("folder_zip") }} 容量とゴミ箱</h2>
+    <dl class="stats stats-2">
+      <div><dt>使用量</dt><dd>{{ quota.total | filesize }}{% if quota.quota %}<span class="unit">/ 上限 {{ quota.quota | filesize }}（{{ (quota.ratio * 100) | round | int }}%）</span>{% else %}<span class="unit">（上限なし）</span>{% endif %}</dd></div>
+      <div><dt>内訳</dt><dd class="small">今のファイル {{ quota.current | filesize }}<div>ゴミ箱 {{ quota.trash | filesize }}</div><div>過去の版 {{ quota.versions | filesize }}</div></dd></div>
+    </dl>
+    {% if quota.quota %}<p class="muted small">上限は管理者が決めます。ゴミ箱の中と過去の版も数えます。ゴミ箱を空にするか、使わない過去の版を消すと空きます。</p>{% endif %}
+    <form method="post" action="/settings/trash-retention" class="form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>ゴミ箱に残す日数
+        <select name="days">
+          <option value="" {% if not retention.own %}selected{% endif %}>既定（{{ retention.default }} 日）</option>
+          {% for d in retention.choices %}<option value="{{ d }}" {% if retention.own and retention.days == d %}selected{% endif %}>{{ d }} 日</option>{% endfor %}
+        </select>
+      </label>
+      <p class="muted small">削除した日からこの日数がたつと、ゴミ箱から完全に削除します（自分のファイルとフォルダ）。</p>
+      <button class="btn btn-primary">{{ icon("save") }}保存</button>
+    </form>
+  </section>
+
   <section class="panel" id="theme" aria-label="画面の色">
     <h2>{{ icon("visibility") }} 画面の色</h2>
     <form method="post" action="/settings/theme" class="form">

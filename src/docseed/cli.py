@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import getpass
 import sqlite3
 import sys
@@ -70,10 +69,11 @@ def cmd_purge_trash(args: argparse.Namespace) -> None:
     from .storage import BlobStore
     settings = Settings.from_env()
     conn = _conn(settings)
-    cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(days=settings.trash_retention_days)).strftime(
-        "%Y-%m-%dT%H:%M:%SZ")
-    n = purge_expired(conn, BlobStore(settings.files_dir, settings.tmp_dir), cutoff)
-    print(f"{n} 件を完全に削除しました（{settings.trash_retention_days} 日より前に削除されたもの）")
+    from .limits import retention_cutoffs
+    n = purge_expired(conn, BlobStore(settings.files_dir, settings.tmp_dir),
+                      retention_cutoffs(conn, settings.trash_retention_days))
+    print(f"{n} 件を完全に削除しました（保持日数を過ぎたもの。既定 {settings.trash_retention_days} 日、"
+          "利用者が設定で選んだ日数があればそちら）")
 
 
 def cmd_worker(args: argparse.Namespace) -> None:

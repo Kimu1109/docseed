@@ -141,7 +141,7 @@ FROM python:3.12-slim-bookworm（arm64）
 | `DOCSEED_DATA_DIR` | `/srv/docseed` | データディレクトリ |
 | `DOCSEED_SECRET_KEY` | — | Cookie 署名用。32 バイト以上の乱数（必須） |
 | `DOCSEED_MAX_UPLOAD_MB` | `1024` | 1 ファイルの上限 |
-| `DOCSEED_TRASH_RETENTION_DAYS` | `30` | ゴミ箱の保持日数 |
+| `DOCSEED_TRASH_RETENTION_DAYS` | `30` | ゴミ箱の保持日数の既定（利用者は設定で 7〜365 日から選べる） |
 | `DOCSEED_VERSIONS_KEEP` | `10` | 1 文書あたりに残す過去の版の数（0 なら残さない） |
 | `DOCSEED_OCR_ENGINE` | `ppocrv6_small` | OCR エンジン（`ppocrv6_small` / `ppocrv6_medium`） |
 | `DOCSEED_OCR_DPI` | `200` | PDF のページ画像化の解像度 |
