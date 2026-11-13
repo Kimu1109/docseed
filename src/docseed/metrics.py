@@ -43,6 +43,17 @@ search_seconds: dict[str, _Histogram] = {}
 _search_lock = threading.Lock()
 
 
+ask_seconds: dict[str, _Histogram] = {}
+ASK_BUCKETS = (1.0, 2.5, 5.0, 10.0, 20.0, 40.0, 80.0, 160.0)
+
+
+def observe_ask(result: str, seconds: float) -> None:
+    """質問に答えた時間（result: ok / no_sources / busy / error）。"""
+    with _search_lock:
+        h = ask_seconds.setdefault(result, _Histogram(ASK_BUCKETS))
+    h.observe(seconds)
+
+
 def observe_search(mode: str, seconds: float) -> None:
     with _search_lock:
         h = search_seconds.setdefault(mode, _Histogram(SEARCH_BUCKETS))
@@ -92,6 +103,19 @@ def _ts(iso: str | None) -> float | None:
     except ValueError:
         return None
     return (t if t.tzinfo else t.replace(tzinfo=dt.UTC)).timestamp()
+
+
+def _histograms(o: _Out, name: str, help_: str, label: str, hists: dict[str, _Histogram]) -> None:
+    o.metric(name, "histogram", help_, None)
+    with _search_lock:
+        items = sorted(hists.items())
+    for key, h in items:
+        counts, total, sum_ = h.snapshot()
+        for b_, n in zip(h.buckets, counts, strict=True):
+            o.lines.append(f'{name}_bucket{{{label}="{_esc(key)}",le="{b_}"}} {n}')
+        o.lines.append(f'{name}_bucket{{{label}="{_esc(key)}",le="+Inf"}} {total}')
+        o.lines.append(f'{name}_sum{{{label}="{_esc(key)}"}} {sum_!r}')
+        o.lines.append(f'{name}_count{{{label}="{_esc(key)}"}} {total}')
 
 
 def render(conn: sqlite3.Connection, settings: Settings) -> str:
@@ -205,6 +229,8 @@ def render(conn: sqlite3.Connection, settings: Settings) -> str:
                  {"status": s_})
 
     # ---- 検索の速さ（api の中で数える） ----
+    _histograms(o, "docseed_ask_duration_seconds",
+                "質問に答えた時間（result: ok / no_sources / busy / error。api の中で数える）", "result", ask_seconds)
     o.metric("docseed_search_duration_seconds", "histogram",
              "検索にかかった時間（mode: hybrid / semantic / keyword / filter）", None)
     with _search_lock:

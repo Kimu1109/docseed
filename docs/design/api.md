@@ -193,6 +193,8 @@ files=@領収書.jpg
 
 ### 3.5 検索
 
+（質問に答える `POST /ask` はこの節の最後）
+
 ```
 GET /api/v1/search?q=振込先 請求書&mode=hybrid&type=pdf&tag=経理&folder=10&after=2026-01-01&limit=20&offset=0
 ```
@@ -226,6 +228,18 @@ GET /api/v1/search?q=振込先 請求書&mode=hybrid&type=pdf&tag=経理&folder=
 - `taken`: 写真の撮影日（`2026` / `2026-05` / `2026-05-03` / `2026-05-01..2026-05-10` / `..2025`）。結果の `document.taken_at` に撮影日時（無ければ null）。
 - 検索語が無く `type` `tag` `after` `before` `taken` のどれかがあれば、条件に合う文書を並べる（`mode: "filter"`、`snippets` は空）。
 - `sem_min`（0〜1、省略可）: 意味検索の類似度の下限を一時的に変える。評価スクリプト用で、省略時は設定値（既定 0.80）。
+
+#### 3.5.1 質問に答える（RAG。実装で追加）
+
+```
+POST /api/v1/ask
+{"question": "A社への振込先は？", "filters": {"type": "pdf", "folder": "10"}, "stream": false}
+```
+
+- 見られる文書だけを根拠に、LLM が答える（[検索設計](search.md) 10 章）。`DOCSEED_LLM_ENABLED=false` なら 409 `ask_disabled`。
+- `stream: false`: `{question, answer, sources: [{n, document_id, filename, page_no, path, text}], cited: [n…], model, took_ms, notices}`。資料が見つからなければ `answer` は空（LLM を呼ばない）。
+- `stream: true`: `application/x-ndjson`。`{"type": "sources", …}` → `{"type": "text", "text"}` … → `{"type": "done", "cited", "took_ms"}`（資料が無ければ `"no_sources": true`）。途中の失敗は `{"type": "error", "code", "message"}`。
+- 混んでいる（同時に 2 件）: 429 `ask_busy`。llm サービスの失敗・時間切れ: 503 `ask_failed`。
 - 実装では `total_estimate` ではなく `total`（絞り込み後の文書数）を返す。
 
 ### 3.6 タグ

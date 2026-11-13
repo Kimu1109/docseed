@@ -30,6 +30,18 @@
 
 {% if result %}
   {% for n in result.notices %}<p class="note">{{ n }}</p>{% endfor %}
+  {% if ask_enabled %}
+  <section class="ask" id="ask" data-question="{{ q }}" data-filters='{{ ask_filters | tojson }}' aria-label="質問への答え">
+    <button type="button" class="btn" data-ask>{{ icon("wand_stars") }}この質問に、文書をもとに答える</button>
+    <div class="ask-out" hidden>
+      <h2>{{ icon("wand_stars") }} 答え</h2>
+      <p class="ask-answer" aria-live="polite"></p>
+      <p class="ask-status muted small" role="status"></p>
+      <ol class="ask-sources"></ol>
+      <p class="muted small">見られる文書の中から小型の AI が作った答えです。誤りが含まれることがあるので、番号の資料で確かめてください。</p>
+    </div>
+  </section>
+  {% endif %}
   <div class="result-bar">
     {% if result.total %}<p class="result-count"><b>{{ result.total }}</b> 件<span class="muted">（{{ result.took_ms }} ミリ秒）</span></p>{% else %}<span></span>{% endif %}
     <form class="search-save" method="post" action="/search/saved">

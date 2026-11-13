@@ -99,6 +99,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(api_auth_router)
     app.include_router(api_webclip_router)
     app.include_router(api_suggest_router)
+    from .api.ask import router as api_ask_router
+    app.include_router(api_ask_router)
     app.include_router(public_router)
     app.include_router(auth_router)
     app.include_router(web_router)
