@@ -75,8 +75,18 @@
         {% if sys.backup.restic.snapshot %}<div class="muted small">スナップショット {{ sys.backup.restic.snapshot }}</div>{% endif %}
       {% else %}記録がありません{% endif %}
     </dd></div>
+    <div><dt>復旧の練習</dt><dd class="small">
+      {% set dr = sys.backup.drill %}
+      {% if dr %}
+        {{ dr.time | localtime("%m/%d %H:%M") }}
+        {% if dr.result == "ok" %}<span class="ok-text">{{ icon("check_circle") }}成功</span>
+        {% elif dr.result == "skipped" %}<span class="warn-text">{{ icon("warning") }}空きが足りず飛ばした</span>
+        {% else %}<span class="err-text">{{ icon("error") }}失敗</span>{% endif %}
+        <div class="muted small">{% if dr.snapshot %}スナップショット {{ dr.snapshot }}{% if dr.restore_size %}（{{ dr.restore_size | filesize }}）{% endif %} ・ {% endif %}{{ "毎月の自動" if dr.auto else "手で実行" }}{% if dr.result != "ok" and sys.backup.drill_ok_at %} ・ 最後の成功 {{ sys.backup.drill_ok_at | localtime("%m/%d") }}{% endif %}</div>
+      {% else %}記録がありません{% endif %}
+    </dd></div>
   </dl>
-  <p class="muted small">設定と復旧の手順は README の「バックアップと復旧」を参照してください。</p>
+  <p class="muted small">復旧の練習は、最新のバックアップを一時ディレクトリに復元して、データベースと原本が一致するかを確かめます（毎月第 1 日曜。動いている docseed には触れません）。設定と復旧の手順は README の「バックアップと復旧」を参照してください。</p>
 </section>
 
 <section class="panel panel-wide" id="notify">

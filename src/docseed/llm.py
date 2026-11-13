@@ -350,6 +350,44 @@ class LlmClient:
         summary = fix_copied_kind(summary, title, description, text)
         return Summary(summary, tags, int((time.monotonic() - t) * 1000), attempts)
 
+    def stream_chat(self, system: str, user: str, *, max_tokens: int = 512):
+        """会話を 1 往復して、生成した文字列を少しずつ返す（質問への答え。rag.py）。
+
+        llama-server の /completion を stream で呼ぶ（Server-Sent Events の data: 行）。上限は timeout_s。
+        """
+        deadline = time.monotonic() + self.timeout_s
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        with httpx.Client(transport=self.transport, trust_env=False) as c:
+            prompt = self._post(c, "/apply-template", {"messages": messages}, deadline)["prompt"]
+            body = {"prompt": prompt, "n_predict": max_tokens, "cache_prompt": True, "stream": True,
+                    "temperature": 0.2, "repeat_penalty": 1.1, "repeat_last_n": 128}
+            left = deadline - time.monotonic()
+            try:
+                with c.stream("POST", f"{self.url}/completion", json=body,
+                              timeout=httpx.Timeout(max(left, 1), connect=5)) as r:
+                    if r.status_code == 503:
+                        raise LlmUnavailable("llm サービスがモデルを読み込んでいます")
+                    if r.status_code != 200:
+                        r.read()
+                        raise LlmError(_error_text(r))
+                    for line in r.iter_lines():
+                        if time.monotonic() > deadline:
+                            raise LlmTimeout(f"{self.timeout_s} 秒以内に答えられませんでした")
+                        if not line.startswith("data:"):
+                            continue
+                        try:
+                            ev = json.loads(line[5:].strip())
+                        except ValueError:
+                            continue
+                        if ev.get("content"):
+                            yield ev["content"]
+                        if ev.get("stop"):
+                            return
+            except httpx.TimeoutException:
+                raise LlmTimeout(f"{self.timeout_s} 秒以内に答えられませんでした") from None
+            except httpx.HTTPError as e:
+                raise LlmUnavailable(f"llm サービスに接続できません: {e}") from None
+
     def health(self) -> bool:
         try:
             with httpx.Client(timeout=3, transport=self.transport, trust_env=False) as c:

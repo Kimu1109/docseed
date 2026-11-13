@@ -152,6 +152,117 @@
     }
   });
 
+  // ---- 質問に答える（検索結果の資料をもとに LLM が答える。/api/v1/ask の stream） --------
+  document.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-ask]");
+    if (!btn) return;
+    const box = btn.closest("#ask");
+    const out = $(".ask-out", box), answer = $(".ask-answer", box), status = $(".ask-status", box),
+          list = $(".ask-sources", box);
+    btn.disabled = true;
+    out.hidden = false;
+    answer.textContent = "";
+    list.replaceChildren();
+    status.textContent = "関係する文書を探しています…";
+    let sources = [], text = "", started = Date.now();
+    const tick = setInterval(() => {
+      if (!text) status.textContent = `答えを作っています…（${Math.round((Date.now() - started) / 1000)} 秒）`;
+    }, 1000);
+    const showSources = (cited) => {
+      list.replaceChildren();
+      for (const s of sources) {
+        const li = document.createElement("li");
+        li.id = `ask-src-${s.n}`;
+        li.value = s.n;
+        if (cited && !cited.includes(s.n)) li.classList.add("uncited");
+        const a = document.createElement("a");
+        const q = encodeURIComponent(box.dataset.question);
+        a.href = `/d/${s.document_id}?q=${q}` + (s.page_no ? `#p${s.page_no}` : "");
+        a.textContent = s.filename + (s.page_no ? `（${s.page_no} ページ）` : "");
+        const where = document.createElement("span");
+        where.className = "muted small";
+        where.textContent = " " + s.path;
+        const ex = document.createElement("div");
+        ex.className = "muted small ask-excerpt";
+        ex.textContent = s.text.length > 160 ? s.text.slice(0, 160) + "…" : s.text;
+        li.append(a, where, ex);
+        list.append(li);
+      }
+    };
+    // 答えの [n] を資料へのリンクにする（文字列は textContent で入れ、HTML としては解釈しない）
+    const linkCitations = () => {
+      const frag = document.createDocumentFragment();
+      let last = 0;
+      for (const m of text.matchAll(/\[(\d{1,2})\]/g)) {
+        const n = Number(m[1]);
+        if (!sources.some((s) => s.n === n)) continue;
+        frag.append(text.slice(last, m.index));
+        const a = document.createElement("a");
+        a.href = `#ask-src-${n}`;
+        a.className = "cite";
+        a.textContent = `[${n}]`;
+        frag.append(a);
+        last = m.index + m[0].length;
+      }
+      frag.append(text.slice(last));
+      answer.replaceChildren(frag);
+    };
+    try {
+      const res = await fetch("/api/v1/ask", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
+        body: JSON.stringify({ question: box.dataset.question, filters: JSON.parse(box.dataset.filters || "{}"),
+                               stream: true }),
+      });
+      if (!res.ok) {
+        let msg = `答えを作れませんでした（HTTP ${res.status}）`;
+        try { msg = (await res.json()).detail || msg; } catch { /* JSON でない */ }
+        throw new Error(msg);
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, i).trim();
+          buf = buf.slice(i + 1);
+          if (!line) continue;
+          const ev = JSON.parse(line);
+          if (ev.type === "sources") {
+            sources = ev.sources;
+            showSources(null);
+            status.textContent = sources.length ? "答えを作っています…" : "";
+          } else if (ev.type === "text") {
+            text += ev.text;
+            answer.textContent = text;
+          } else if (ev.type === "done") {
+            if (ev.no_sources) {
+              answer.textContent = "質問に関係しそうな文書が見つかりませんでした。言い方を変えるか、絞り込みを外してみてください。";
+              status.textContent = "";
+            } else {
+              linkCitations();
+              showSources(ev.cited);
+              status.textContent = `${(ev.took_ms / 1000).toFixed(1)} 秒` +
+                (ev.cited.length ? "" : "（答えに資料の番号がありません。内容を資料で確かめてください）");
+            }
+          } else if (ev.type === "error") {
+            throw new Error(ev.message);
+          }
+        }
+      }
+    } catch (err) {
+      status.textContent = err.message || "答えを作れませんでした";
+      status.classList.add("err-text");
+    } finally {
+      clearInterval(tick);
+      btn.disabled = false;
+    }
+  });
+
   // 絞り込みを変えたらすぐ検索し直す
   document.addEventListener("change", (e) => {
     const form = e.target.closest?.("form[data-autosubmit]");

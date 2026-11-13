@@ -14,6 +14,7 @@ import threading
 from .config import Settings
 
 SEARCH_BUCKETS = (0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
+BACKUP_HELP = "最後にバックアップが成功した時刻（UNIX 時刻。kind: db_snapshot / restic / restore_drill）"
 JOB_WINDOW_H = 24          # ジョブの所要時間は直近 24 時間に終わったもので出す
 
 
@@ -40,6 +41,17 @@ class _Histogram:
 
 search_seconds: dict[str, _Histogram] = {}
 _search_lock = threading.Lock()
+
+
+ask_seconds: dict[str, _Histogram] = {}
+ASK_BUCKETS = (1.0, 2.5, 5.0, 10.0, 20.0, 40.0, 80.0, 160.0)
+
+
+def observe_ask(result: str, seconds: float) -> None:
+    """質問に答えた時間（result: ok / no_sources / busy / error）。"""
+    with _search_lock:
+        h = ask_seconds.setdefault(result, _Histogram(ASK_BUCKETS))
+    h.observe(seconds)
 
 
 def observe_search(mode: str, seconds: float) -> None:
@@ -91,6 +103,19 @@ def _ts(iso: str | None) -> float | None:
     except ValueError:
         return None
     return (t if t.tzinfo else t.replace(tzinfo=dt.UTC)).timestamp()
+
+
+def _histograms(o: _Out, name: str, help_: str, label: str, hists: dict[str, _Histogram]) -> None:
+    o.metric(name, "histogram", help_, None)
+    with _search_lock:
+        items = sorted(hists.items())
+    for key, h in items:
+        counts, total, sum_ = h.snapshot()
+        for b_, n in zip(h.buckets, counts, strict=True):
+            o.lines.append(f'{name}_bucket{{{label}="{_esc(key)}",le="{b_}"}} {n}')
+        o.lines.append(f'{name}_bucket{{{label}="{_esc(key)}",le="+Inf"}} {total}')
+        o.lines.append(f'{name}_sum{{{label}="{_esc(key)}"}} {sum_!r}')
+        o.lines.append(f'{name}_count{{{label}="{_esc(key)}"}} {total}')
 
 
 def render(conn: sqlite3.Connection, settings: Settings) -> str:
@@ -172,8 +197,15 @@ def render(conn: sqlite3.Connection, settings: Settings) -> str:
                       ("restic", b["restic_at"] if b["restic"] and b["restic"].get("ok") else None)):
         if _ts(ts_):
             o.metric("docseed_backup_last_success_timestamp_seconds", "gauge",
-                     "最後にバックアップが成功した時刻（UNIX 時刻。kind: db_snapshot / restic）", _ts(ts_),
+                     BACKUP_HELP, _ts(ts_),
                      {"kind": kind})
+    if _ts(b.get("drill_ok_at")):
+        o.metric("docseed_backup_last_success_timestamp_seconds", "gauge",
+                 BACKUP_HELP, _ts(b["drill_ok_at"]),
+                 {"kind": "restore_drill"})
+    if b.get("drill"):
+        o.metric("docseed_restore_drill_ok", "gauge", "前回の復旧の練習が成功したか（飛ばした・失敗したら 0）",
+                 b["drill"].get("result") == "ok")
     tls = st.get("tls")
     if tls and tls.get("not_after"):
         o.metric("docseed_tls_cert_expiry_timestamp_seconds", "gauge", "HTTPS の証明書の期限（UNIX 時刻）",
@@ -197,6 +229,8 @@ def render(conn: sqlite3.Connection, settings: Settings) -> str:
                  {"status": s_})
 
     # ---- 検索の速さ（api の中で数える） ----
+    _histograms(o, "docseed_ask_duration_seconds",
+                "質問に答えた時間（result: ok / no_sources / busy / error。api の中で数える）", "result", ask_seconds)
     o.metric("docseed_search_duration_seconds", "histogram",
              "検索にかかった時間（mode: hybrid / semantic / keyword / filter）", None)
     with _search_lock:

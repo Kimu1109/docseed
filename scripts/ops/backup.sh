@@ -57,7 +57,7 @@ case "$MODE" in
       if [ -f "$DOCSEED_DIR/$f" ]; then paths+=("$DOCSEED_DIR/$f"); fi
     done
     out=$(restic backup --tag docseed --json --exclude "$DOCSEED_DATA_DIR/files/.tmp" --exclude "$STATUS" \
-          --exclude "$STATUS.tmp" "${paths[@]}" | tail -n 1)
+          --exclude "$STATUS.tmp" --exclude "$DOCSEED_DATA_DIR/backup/restore-drill-status.json*" "${paths[@]}" | tail -n 1)
     snap=$(printf '%s' "$out" | grep -o '"snapshot_id":"[0-9a-f]*"' | cut -d'"' -f4 | cut -c1-8 || true)
     log "スナップショット ${snap:-?}"
 

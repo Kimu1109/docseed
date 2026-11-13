@@ -102,6 +102,9 @@ services:
     volumes:
       - ${DOCSEED_DATA_DIR:-/srv/docseed}:/srv/docseed
       - /sys/class/thermal:/host/thermal:ro
+    # default: Caddy から届き、外部（Webhook の通知・OIDC など）へ通信する。
+    # internal: 質問に答えるときに llm サービスを呼ぶ（internal は外部へ出られないネットワーク）
+    networks: [default, internal]
     mem_limit: 1536m
     logging: &logging
       driver: json-file
@@ -149,7 +152,8 @@ services:
     logging: *logging
     restart: unless-stopped
 
-  # 要約と新しいタグの提案（LLM）。worker だけが internal ネットワークで呼ぶ（外部と通信しない）。
+  # 要約と新しいタグの提案（worker が呼ぶ）と、質問への答え（api が呼ぶ）の LLM。internal ネットワークだけ（外部と通信しない）。
+  # 枠（--parallel）を 2 にして、要約の途中でも質問に答えられるようにする（1 つの枠の文脈は -c / 枠の数 = 4096）。
   # .env で DOCSEED_LLM_ENABLED=true と COMPOSE_PROFILES=llm（Web クリップも使うなら webclip,llm）にすると起動する。
   # モデルは docker compose exec api docseed fetch-models --llm <名前> で models/llm/ に置く
   llm:
@@ -159,7 +163,7 @@ services:
     pids_limit: 128
     command: ["-m", "/models/llm/${DOCSEED_LLM_MODEL:-LFM2.5-1.2B-JP-Q4_K_M.gguf}",
               "--host", "0.0.0.0", "--port", "8080", "-t", "${DOCSEED_LLM_THREADS:-3}",
-              "-c", "4096", "--parallel", "1"]
+              "-c", "${DOCSEED_LLM_CTX:-8192}", "--parallel", "${DOCSEED_LLM_PARALLEL:-2}"]
     volumes:
       - ${DOCSEED_DATA_DIR:-/srv/docseed}/models:/models:ro
     mem_limit: 2g

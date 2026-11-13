@@ -10,13 +10,14 @@ import sqlite3
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from .backup import latest_snapshot, restic_status
+from .backup import latest_snapshot, restic_status, restore_drill_status
 from .config import Settings
 
 WORKER_STALE_SECS = 120          # worker の応答がこれ以上無ければ警告
 DISK_WARN_RATIO = 0.10           # 空きが 10% を切ったら警告（5% でアップロードを拒否: storage.MIN_FREE_RATIO）
 DISK_ERROR_RATIO = 0.05
 BACKUP_STALE_HOURS = 36          # 日次のバックアップが 1 回抜けたら気づけるように
+DRILL_STALE_DAYS = 40            # 月 1 回の復旧の練習が 1 回抜けたら気づけるように
 THERMAL_PATHS = [Path("/host/thermal/thermal_zone0/temp"), Path("/sys/class/thermal/thermal_zone0/temp")]
 
 
@@ -128,6 +129,21 @@ def status(conn: sqlite3.Connection, settings: Settings, *, now: dt.datetime | N
         alerts.append(Alert("warning", "restic_stale",
                             "別の機器へのバックアップ（restic）が 36 時間以上成功していません"))
 
+    drill = restore_drill_status(backup_dir)
+    drill_ok_at = _parse(drill.get("last_success")) if drill else None
+    drill_age = _age(drill_ok_at, now)
+    if drill is None:
+        alerts.append(Alert("info", "drill_none", "復旧の練習の記録がありません（sudo scripts/ops/install-backup.sh で"
+                            "毎月の練習を入れるか、sudo scripts/ops/restore-drill.sh を手で実行してください）"))
+    elif drill.get("result") == "failed":
+        alerts.append(Alert("error", "drill_failed", "前回の復旧の練習が失敗しました: "
+                            + str(drill.get("message") or "詳細はホストの journalctl -u docseed-restore-drill")))
+    elif drill.get("result") == "skipped":
+        alerts.append(Alert("warning", "drill_skipped", "空き容量が足りず、復旧の練習を飛ばしました: "
+                            + str(drill.get("message") or "")))
+    elif drill_age is not None and drill_age > DRILL_STALE_DAYS * 86400:
+        alerts.append(Alert("warning", "drill_stale", f"復旧の練習が {DRILL_STALE_DAYS} 日以上成功していません"))
+
     rp_saved = conn.execute("SELECT value FROM settings WHERE key = 'auth.rp_id'").fetchone()
     if rp_saved and rp_saved[0] != settings.rp_id \
             and conn.execute("SELECT 1 FROM webauthn_credentials LIMIT 1").fetchone():
@@ -176,7 +192,8 @@ def status(conn: sqlite3.Connection, settings: Settings, *, now: dt.datetime | N
         "cpu_temp_c": temp,
         "tls": tls,
         "backup": {"db_snapshot": snap.name if snap else None, "db_snapshot_at": iso(snap_time),
-                   "restic": restic, "restic_at": iso(restic_time)},
+                   "restic": restic, "restic_at": iso(restic_time),
+                   "drill": drill, "drill_ok_at": iso(drill_ok_at)},
     }
 
 

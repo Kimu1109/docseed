@@ -718,3 +718,15 @@ kbd:not(.kbd) { display: inline-block; min-width: 1.6em; padding: 0 5px; font: 1
 .quota-cell { min-width: 220px; }
 .quota-form { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
 .quota-cell .quota-form input[name=quota_gb] { width: 80px; height: 30px; padding: 0 6px; }
+
+/* ---- 質問に答える ------------------------------------------------------- */
+.ask { margin: 0 0 var(--s4); }
+.ask-out { margin-top: var(--s3); padding: var(--s4); background: var(--surface); border: 1px solid var(--line);
+           border-left: 3px solid var(--accent); }
+.ask-out h2 { margin-bottom: var(--s2); }
+.ask-answer { white-space: pre-wrap; margin: 0 0 var(--s2); font-size: 15px; line-height: 1.8; }
+.ask-answer:empty { display: none; }
+.ask-answer .cite { font-size: 12px; vertical-align: super; margin: 0 1px; }
+.ask-sources { margin: var(--s2) 0; padding-left: 1.6em; display: grid; gap: var(--s2); font-size: 14px; }
+.ask-sources li.uncited { opacity: .6; }
+.ask-excerpt { margin-top: 2px; }

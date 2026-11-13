@@ -74,6 +74,7 @@ def search_page(request: Request, q: str = "", mode: str = "hybrid", type: str =
         paths=paths, page=page, per_page=PER_PAGE, mode_label=MODE_LABEL, type_options=TYPE_OPTIONS,
         type=type, tag=tag, after=after, before=before, folder=folder, folder_name=folder_name, tags=tags,
         summaries=summaries, taken_from=taken_from, taken_to=taken_to,
+        ask_enabled=settings.llm_enabled and bool(q.strip()), ask_filters=filters,
         saved=ps.list_saved(conn, auth.user), history=ps.list_history(conn, auth.user) if result is None else [],
         current=ps.normalize_params(current),
         params={k: v for k, v in {"q": q, "mode": mode, "taken_from": taken_from, "taken_to": taken_to,

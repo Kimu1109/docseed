@@ -14,8 +14,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
-      # tests/test_deploy.py の fail2ban-regex の確認に使う
-      - run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends fail2ban
+      # tests/test_deploy.py の fail2ban-regex と、tests/test_ops.py の復旧の練習（restic）の確認に使う
+      - run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends fail2ban restic
       - run: ruff check src tests
       - run: pytest
       - run: python scripts/build_icons.py --check

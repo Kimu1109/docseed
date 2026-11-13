@@ -1,0 +1,11 @@
+# 復旧の練習（restic の最新のスナップショットを一時ディレクトリに復元し、DB と原本の対応を確かめる）
+[Unit]
+Description=docseed restore drill
+Wants=network-online.target
+After=network-online.target docseed-backup.service
+
+[Service]
+Type=oneshot
+ExecStart=@DOCSEED_DIR@/scripts/ops/restore-drill.sh --auto
+Nice=10
+IOSchedulingClass=idle

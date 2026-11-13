@@ -18,6 +18,7 @@ from pathlib import Path
 
 SNAPSHOT_GLOB = "docseed-*.sqlite"
 RESTIC_STATUS = "restic-status.json"  # ホストの backup.sh が書く（最後の restic の結果）
+DRILL_STATUS = "restore-drill-status.json"  # ホストの restore-drill.sh が書く（最後の復旧の練習の結果）
 
 
 class BackupError(Exception):
@@ -195,6 +196,19 @@ def restic_status(backup_dir: Path) -> dict | None:
     """ホストの backup.sh が最後に書いた restic の結果（{"time", "ok", "snapshot", "message"}）。"""
     try:
         data = json.loads((backup_dir / RESTIC_STATUS).read_text())
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def restore_drill_status(backup_dir: Path) -> dict | None:
+    """ホストの restore-drill.sh が最後に書いた復旧の練習の結果。
+
+    {"time", "ok", "result": ok / failed / skipped, "last_success", "snapshot", "snapshot_time", "restore_size",
+     "duration_s", "auto", "message", "host"}
+    """
+    try:
+        data = json.loads((backup_dir / DRILL_STATUS).read_text())
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
