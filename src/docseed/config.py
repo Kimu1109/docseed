@@ -29,6 +29,7 @@ class Settings:
     secret_key: str = ""
     max_upload_mb: int = 1024
     trash_retention_days: int = 30
+    versions_keep: int = 10          # DOCSEED_VERSIONS_KEEP（1 文書あたりの過去の版の数。0 なら残さない）
     cookie_secure: bool = True
     session_days: int = 14
     session_hours_short: int = 12
@@ -135,6 +136,7 @@ class Settings:
             secret_key=e.get("DOCSEED_SECRET_KEY", ""),
             max_upload_mb=int(e.get("DOCSEED_MAX_UPLOAD_MB", "1024")),
             trash_retention_days=int(e.get("DOCSEED_TRASH_RETENTION_DAYS", "30")),
+            versions_keep=max(0, int(e.get("DOCSEED_VERSIONS_KEEP", "10"))),
             cookie_secure=_bool(e.get("DOCSEED_COOKIE_SECURE"), True),
             log_level=e.get("DOCSEED_LOG_LEVEL", "INFO"),
             ocr_engine=e.get("DOCSEED_OCR_ENGINE", "ppocrv6_small"),

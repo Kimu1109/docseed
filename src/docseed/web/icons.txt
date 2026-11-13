@@ -58,6 +58,7 @@ link_off
 save
 send
 undo
+history
 replay
 deselect
 delete_sweep

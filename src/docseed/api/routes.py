@@ -221,14 +221,25 @@ def api_folder(folder_id: int, conn: sqlite3.Connection = Depends(get_conn), aut
 
 
 @router.get("/folders/{folder_id}/children")
-def api_children(folder_id: int, sort: str = "name", order: str = "asc",
-                 conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+def api_children(folder_id: int, sort: str = "name", order: str = "asc", limit: int | None = None,
+                 cursor: str | None = None, conn: sqlite3.Connection = Depends(get_conn),
+                 auth: Auth = Depends(require_auth)):
+    """子フォルダと文書。limit を付けるとページ送り（フォルダ → 文書の順に limit 件、続きは next_cursor）。"""
     role = fo.require_folder_role(conn, auth.user, folder_id, "viewer")
-    folders, docs = fo.list_children(conn, folder_id, sort=sort, order=order)
+    if limit is not None and not 1 <= limit <= 1000:
+        raise ValidationFailed("limit は 1〜1000 にしてください")
+    if cursor is not None and not cursor.isdigit():
+        raise ValidationFailed("cursor が正しくありません")
+    offset = int(cursor or 0)
+    folders, docs = fo.list_children(conn, folder_id, sort=sort, order=order, limit=limit, offset=offset)
+    nf, nd = fo.count_children(conn, folder_id)
+    shown = offset + len(folders) + len(docs)
     return {
         "folders": [{"id": f["id"], "name": f["name"], "item_count": f["item_count"],
                      "updated_at": f["updated_at"]} for f in folders],
         "documents": [doc_json(conn, d, role) for d in docs],
+        "total": {"folders": nf, "documents": nd},
+        "next_cursor": str(shown) if limit is not None and shown < nf + nd else None,
     }
 
 
@@ -395,7 +406,7 @@ def api_upload(request: Request, folder_id: int = Form(...), on_conflict: str = 
         try:
             r = dm.upload(conn, store, auth.user, folder_id, f.filename or "無題", f.file,
                           max_bytes=settings.max_upload_bytes, on_conflict=on_conflict, relative_path=rel,
-                          ip=client_ip(request))
+                          ip=client_ip(request), keep_versions=settings.versions_keep)
             d = dm.get_document(conn, auth.user, r.document_id)
             results.append({"filename": f.filename, "status": "replaced" if r.replaced else "created",
                             "deduplicated": r.deduplicated, "document": doc_json(conn, d)})
@@ -469,6 +480,59 @@ def api_doc_copy(doc_id: int, body: CopyIn, conn: sqlite3.Connection = Depends(g
 def api_doc_delete(doc_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
                    auth: Auth = Depends(require_auth)):
     dm.delete_document(conn, auth.user, doc_id, ip=client_ip(request))
+
+
+# ---------------------------------------------------------------------------
+# 過去の版
+# ---------------------------------------------------------------------------
+
+@router.get("/documents/{doc_id}/versions")
+def api_versions(doc_id: int, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+    from ..versions import list_versions, version_json
+    return {"versions": [version_json(r) for r in list_versions(conn, auth.user, doc_id)]}
+
+
+@router.post("/documents/{doc_id}/versions", status_code=201)
+def api_version_upload(doc_id: int, request: Request, file: UploadFile = File(...),
+                       conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth),
+                       store: BlobStore = Depends(get_store), settings: Settings = Depends(get_settings)):
+    """新しい版をアップロードする（名前・フォルダ・タグはそのまま、今の中身は過去の版になる）。"""
+    from ..versions import upload_new_version
+    changed = upload_new_version(conn, store, auth.user, doc_id, file.filename or "無題", file.file,
+                                 max_bytes=settings.max_upload_bytes, keep_versions=settings.versions_keep,
+                                 ip=client_ip(request))
+    return {"changed": changed, "document": api_document(doc_id, conn, auth)}
+
+
+@router.get("/documents/{doc_id}/versions/{version_id}/content")
+def api_version_content(doc_id: int, version_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                        auth: Auth = Depends(require_auth), store: BlobStore = Depends(get_store)):
+    """過去の版のファイル（常にダウンロード）。"""
+    from ..versions import get_version
+    v = get_version(conn, auth.user, doc_id, version_id)
+    if "range" not in request.headers:
+        with Tx(conn):
+            audit(conn, "download", user_id=auth.user.id, target_type="document", target_id=doc_id,
+                  ip=client_ip(request), version_id=version_id)
+    return file_response(store.path(v["storage_path"]), v, inline=False)
+
+
+@router.post("/documents/{doc_id}/versions/{version_id}/restore")
+def api_version_restore(doc_id: int, version_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                        auth: Auth = Depends(require_auth), store: BlobStore = Depends(get_store),
+                        settings: Settings = Depends(get_settings)):
+    """過去の版を今の版に戻す（今の版は過去の版として残る）。"""
+    from ..versions import restore_version
+    restore_version(conn, store, auth.user, doc_id, version_id, keep_versions=settings.versions_keep,
+                    ip=client_ip(request))
+    return api_document(doc_id, conn, auth)
+
+
+@router.delete("/documents/{doc_id}/versions/{version_id}", status_code=204)
+def api_version_delete(doc_id: int, version_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                       auth: Auth = Depends(require_auth), store: BlobStore = Depends(get_store)):
+    from ..versions import delete_version
+    delete_version(conn, store, auth.user, doc_id, version_id, ip=client_ip(request))
 
 
 @router.get("/documents/{doc_id}/text")

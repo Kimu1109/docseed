@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -38,6 +38,7 @@ from ..deps import (
 from ..errors import AppError, NotFound, ValidationFailed
 from ..files import can_preview, image_src
 from ..storage import BlobStore
+from ..versions import list_versions
 from . import helpers as h
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -90,6 +91,10 @@ DONE_MESSAGES = {
     "password_login_off": "パスワードでのログインを止めました",
     "sessions_revoked": "ほかの端末をすべてログアウトしました",
     "auth_settings": "ログインの設定を保存しました",
+    "version_uploaded": "新しい版にしました（前の版は「過去の版」に残しています）",
+    "version_same": "今の版と同じ内容でした（版は増やしていません）",
+    "version_restored": "過去の版に戻しました（戻す前の版も「過去の版」に残しています）",
+    "version_deleted": "過去の版を削除しました",
 }
 
 
@@ -194,33 +199,55 @@ def home(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(requ
     return RedirectResponse(f"/f/{um.root_folder_id(conn, auth.user.id)}", status_code=303)
 
 
+LISTING_PAGE_SIZE = 100   # 1 ページに出す項目（フォルダと文書の合計）
+
+
+def _view_params(request: Request, folder_id: int) -> tuple[str, str, int]:
+    """一覧の並べ方とページ。操作の後に一覧を描き直すときは、今見ている画面（HX-Current-URL）に合わせる。"""
+    q = request.query_params
+    if request.url.path != f"/f/{folder_id}":
+        cur = urlparse(request.headers.get("hx-current-url") or "")
+        q = dict(parse_qsl(cur.query)) if cur.path == f"/f/{folder_id}" else {}
+    sort = q.get("sort") if q.get("sort") in ("name", "updated_at", "size") else "name"
+    order = "desc" if q.get("order") == "desc" else "asc"
+    page = q.get("page") or "1"
+    return sort, order, int(page) if page.isdigit() and int(page) > 0 else 1
+
+
 def listing_context(request: Request, conn: sqlite3.Connection, auth: Auth, folder_id: int,
-                    sort: str = "name", order: str = "asc") -> dict:
+                    sort: str = "name", order: str = "asc", page: int = 1) -> dict:
     role = fo.require_folder_role(conn, auth.user, folder_id, "viewer")
     folder = fo.get_folder_row(conn, folder_id)
-    folders, docs = fo.list_children(conn, folder_id, sort=sort, order=order)
+    n_folders, n_docs = fo.count_children(conn, folder_id)
+    total = n_folders + n_docs
+    pages = max((total - 1) // LISTING_PAGE_SIZE + 1, 1)
+    page = min(max(page, 1), pages)
+    folders, docs = fo.list_children(conn, folder_id, sort=sort, order=order, limit=LISTING_PAGE_SIZE,
+                                     offset=(page - 1) * LISTING_PAGE_SIZE)
     owner = um.get_user(conn, folder["owner_id"])
     from ..webclip.service import error_message, pending_clips
-    clips = [dict(c) | {"error_message": error_message(c)} for c in pending_clips(conn, folder_id)]
+    clips = [dict(c) | {"error_message": error_message(c)} for c in pending_clips(conn, folder_id)] if page == 1 else []
     settings = request.app.state.settings
     reco, auto_moves, in_inbox = {}, [], False
     if settings.suggest_enabled:
         from .. import suggest
         in_inbox = folder_id in suggest.inbox_folder_ids(conn, folder["owner_id"])
         if in_inbox and role in ("editor", "owner"):
-            reco = suggest.recommended_for_folder(conn, folder_id)
-            if folder["owner_id"] == auth.user.id:
+            shown = {d["id"] for d in docs}
+            reco = {k: v for k, v in suggest.recommended_for_folder(conn, folder_id).items() if k in shown}
+            if folder["owner_id"] == auth.user.id and page == 1:
                 auto_moves = suggest.auto_moved(conn, auth.user.id, 5)
     return base_context(request, conn, auth, folder=folder, crumbs=fo.path(conn, folder_id), role=role,
                         can_edit=role in ("editor", "owner"), folders=folders, docs=docs, sort=sort,
                         order=order, owner=owner, nav="files" if owner.id == auth.user.id else "shared",
                         clips=clips, webclip_enabled=settings.webclip_enabled, reco=reco, in_inbox=in_inbox,
-                        auto_moves=auto_moves)
+                        auto_moves=auto_moves, page=page, pages=pages, total=total,
+                        page_size=LISTING_PAGE_SIZE)
 
 
 def render_listing(request: Request, conn: sqlite3.Connection, auth: Auth, folder_id: int,
-                   message: str | None = None, sort: str = "name", order: str = "asc") -> HTMLResponse:
-    ctx = listing_context(request, conn, auth, folder_id, sort, order)
+                   message: str | None = None) -> HTMLResponse:
+    ctx = listing_context(request, conn, auth, folder_id, *_view_params(request, folder_id))
     html = templates.get_template("_listing.html").render(ctx)
     if message:
         html += str(toast(message))
@@ -228,12 +255,13 @@ def render_listing(request: Request, conn: sqlite3.Connection, auth: Auth, folde
 
 
 @router.get("/f/{folder_id}", response_class=HTMLResponse)
-def folder_page(folder_id: int, request: Request, sort: str = "name", order: str = "asc",
-                conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth)):
+def folder_page(folder_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                auth: Auth = Depends(require_auth)):
     if is_htmx(request) and request.headers.get("hx-target") == "listing":
-        return render_listing(request, conn, auth, folder_id, sort=sort, order=order)
+        return render_listing(request, conn, auth, folder_id)
     return templates.TemplateResponse(request, "folder.html",
-                                      listing_context(request, conn, auth, folder_id, sort, order))
+                                      listing_context(request, conn, auth, folder_id,
+                                                      *_view_params(request, folder_id)))
 
 
 @router.post("/f/{folder_id}/folders", response_class=HTMLResponse)
@@ -775,7 +803,42 @@ def document_page(doc_id: int, request: Request, conn: sqlite3.Connection = Depe
         live=_live_state(conn, request.app.state.settings, d),
         llm_enabled=request.app.state.settings.llm_enabled,
         sugg=_suggestions_for(request, conn, d) if role in ("editor", "owner") else None,
+        versions=list_versions(conn, auth.user, doc_id), versions_keep=request.app.state.settings.versions_keep,
         nav="files" if d["owner_id"] == auth.user.id else "shared"))
+
+
+@router.post("/d/{doc_id}/versions")
+async def document_version_upload(doc_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                                  auth: Auth = Depends(require_auth), store: BlobStore = Depends(get_store),
+                                  settings: Settings = Depends(get_settings)):
+    from ..versions import upload_new_version
+    form = await request.form()
+    f = form.get("file")
+    if f is None or isinstance(f, str) or not f.filename:
+        raise ValidationFailed("ファイルを選んでください")
+    changed = upload_new_version(conn, store, auth.user, doc_id, f.filename, f.file,
+                                 max_bytes=settings.max_upload_bytes, keep_versions=settings.versions_keep,
+                                 ip=client_ip(request))
+    return RedirectResponse(f"/d/{doc_id}?done={'version_uploaded' if changed else 'version_same'}", status_code=303)
+
+
+@router.post("/d/{doc_id}/versions/{version_id}/restore")
+def document_version_restore(doc_id: int, version_id: int, request: Request,
+                             conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth),
+                             store: BlobStore = Depends(get_store), settings: Settings = Depends(get_settings)):
+    from ..versions import restore_version
+    restore_version(conn, store, auth.user, doc_id, version_id, keep_versions=settings.versions_keep,
+                    ip=client_ip(request))
+    return RedirectResponse(f"/d/{doc_id}?done=version_restored", status_code=303)
+
+
+@router.post("/d/{doc_id}/versions/{version_id}/delete")
+def document_version_delete(doc_id: int, version_id: int, request: Request,
+                            conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth),
+                            store: BlobStore = Depends(get_store)):
+    from ..versions import delete_version
+    delete_version(conn, store, auth.user, doc_id, version_id, ip=client_ip(request))
+    return RedirectResponse(f"/d/{doc_id}?done=version_deleted", status_code=303)
 
 
 def _suggestions_for(request: Request, conn: sqlite3.Connection, d: sqlite3.Row) -> dict:

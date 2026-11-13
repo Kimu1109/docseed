@@ -13,7 +13,7 @@ import traceback
 from .. import db
 from ..config import Settings
 from ..db import Tx, now
-from ..documents import purge_expired
+from ..documents import gc_blobs, prune_versions, purge_expired
 from ..monitor import cpu_temp
 from ..storage import BlobStore
 from . import queue
@@ -85,6 +85,12 @@ class Worker:
         cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(days=self.settings.trash_retention_days)).strftime(
             "%Y-%m-%dT%H:%M:%SZ")
         n = purge_expired(self.conn, self.store, cutoff)
+        # DOCSEED_VERSIONS_KEEP を減らしたときに、多すぎる過去の版を消す
+        with Tx(self.conn):
+            pruned = prune_versions(self.conn, None, self.settings.versions_keep)
+        if pruned:
+            gc_blobs(self.conn, self.store)
+            log.info("daily: 過去の版を %d 件削除しました", pruned)
         queue.cleanup(self.conn)
         with Tx(self.conn):
             self.conn.execute("INSERT INTO settings(key, value) VALUES ('worker.daily', ?)"

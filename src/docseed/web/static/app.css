@@ -564,3 +564,9 @@ body.has-selection .main { padding-bottom: 96px; }
 .alert-list li.alert-warning .icon { color: var(--warn); }
 .alert-list li.alert-info .icon { color: var(--muted); }
 .dropzone div .icon { width: 22px; height: 22px; color: var(--accent); vertical-align: -5px; }
+
+/* ---- 過去の版 ----------------------------------------------------------- */
+.versions { list-style: none; margin: 0 0 var(--s3); padding: 0; display: grid; gap: var(--s2); }
+.versions li { display: grid; gap: 4px; padding-bottom: var(--s2); border-bottom: 1px solid var(--line); }
+.versions li:last-child { border-bottom: 0; }
+.versions .form-inline { margin-top: 0; }

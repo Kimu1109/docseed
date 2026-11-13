@@ -193,7 +193,7 @@ def test_audit_log(login, conn):
 def test_healthz(app):
     from fastapi.testclient import TestClient
     r = TestClient(app).get("/healthz")
-    assert r.status_code == 200 and r.json()["schema_version"] == 7
+    assert r.status_code == 200 and r.json()["schema_version"] == 8
 
 
 def test_batch_move_and_delete_from_listing(login, conn):

@@ -4,7 +4,10 @@
      hx-target="#listing" hx-swap="outerHTML" hx-push-url="true"
      {% if sort == key %}aria-sort="{{ 'ascending' if order == 'asc' else 'descending' }}"{% endif %}>{{ label }}{% if sort == key %}<span class="sort-dir" aria-hidden="true">{{ "↑" if order == "asc" else "↓" }}</span>{% endif %}</a>
 {%- endmacro %}
-<div id="listing" hx-get="/f/{{ folder.id }}?sort={{ sort }}&order={{ order }}" hx-trigger="refresh" hx-swap="outerHTML"
+{% macro page_url(n) -%}
+  /f/{{ folder.id }}?{% if sort != "name" or order != "asc" %}sort={{ sort }}&order={{ order }}&{% endif %}page={{ n }}
+{%- endmacro %}
+<div id="listing" hx-get="/f/{{ folder.id }}?sort={{ sort }}&order={{ order }}&page={{ page }}" hx-trigger="refresh" hx-swap="outerHTML"
      data-folder-id="{{ folder.id }}" {% if can_edit %}data-can-edit{% endif %}
      {% if docs | selectattr("status", "in", ["pending", "processing"]) | list or clips | selectattr("status", "in", ["pending", "fetching"]) | list %}data-has-pending{% endif %}>
 {% if auto_moves %}
@@ -126,5 +129,14 @@
   {% endfor %}
   </tbody>
 </table>
+{% if pages > 1 %}
+<nav class="pager" aria-label="ページ送り">
+  {% if page > 1 %}<a class="btn" href="{{ page_url(page - 1) }}" hx-get="{{ page_url(page - 1) }}" hx-target="#listing"
+     hx-swap="outerHTML show:window:top" hx-push-url="true" rel="prev">{{ icon("chevron_left") }}前へ</a>{% endif %}
+  <span class="muted">{{ page }} / {{ pages }} ページ（{{ (page - 1) * page_size + 1 }}〜{{ [page * page_size, total] | min }} 件目 / 全 {{ total }} 件）</span>
+  {% if page < pages %}<a class="btn" href="{{ page_url(page + 1) }}" hx-get="{{ page_url(page + 1) }}" hx-target="#listing"
+     hx-swap="outerHTML show:window:top" hx-push-url="true" rel="next">次へ{{ icon("chevron_right") }}</a>{% endif %}
+</nav>
+{% endif %}
 {% endif %}
 </div>

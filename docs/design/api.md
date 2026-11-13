@@ -111,7 +111,7 @@ RFC 9457（`application/problem+json`）形式。
 |---|---|---|
 | GET | `/folders/shared-with-me` | 他のユーザーから共有されたフォルダの一覧 |
 | GET | `/folders/{id}` | フォルダ情報 |
-| GET | `/folders/{id}/children` | 子フォルダと文書の一覧。`?sort=name\|updated_at\|size&order=asc\|desc&cursor=&limit=` |
+| GET | `/folders/{id}/children` | 子フォルダと文書の一覧。`?sort=name\|updated_at\|size&order=asc\|desc&cursor=&limit=`。`limit`（1〜1000）を付けるとページ送り: フォルダ（名前順）→ 文書の順に並べた全体から `limit` 件を返し、続きがあれば `next_cursor` を返す（次は `cursor=<next_cursor>`）。省略時はすべて。応答に `total: {folders, documents}` |
 | POST | `/folders` | `{parent_id, name}` |
 | PATCH | `/folders/{id}` | `{name?, parent_id?}`（名前変更・移動） |
 | DELETE | `/folders/{id}` | 配下ごとゴミ箱へ |
@@ -136,6 +136,11 @@ RFC 9457（`application/problem+json`）形式。
 | POST | `/documents/{id}/copy` | `{folder_id, filename?}` |
 | DELETE | `/documents/{id}` | ゴミ箱へ |
 | POST | `/documents/{id}/reprocess` | `{force_ocr: bool}`（editor 以上） |
+| GET | `/documents/{id}/versions` | 過去の版の一覧（新しい順）。`{versions: [{id, filename, size_bytes, mime_type, sha256, created_by, created_at, archived_by, archived_at}]}` |
+| POST | `/documents/{id}/versions` | 新しい版をアップロード（multipart の `file`、editor 以上）。名前・フォルダ・タグはそのまま、今の中身は過去の版になる。201 `{changed, document}`（中身が今と同じなら `changed: false` で版は増えない）。Web クリップは 422（再取得を使う） |
+| GET | `/documents/{id}/versions/{version_id}/content` | 過去の版のダウンロード（常に attachment） |
+| POST | `/documents/{id}/versions/{version_id}/restore` | 過去の版に戻す（editor 以上）。今の版は過去の版として残る。応答は Document |
+| DELETE | `/documents/{id}/versions/{version_id}` | 過去の版を完全に削除（editor 以上。ゴミ箱には入らない）。204 |
 
 #### 3.3.1 アップロード
 
@@ -162,6 +167,7 @@ files=@領収書.jpg
 ```
 
 - `deduplicated: true` は同じ内容のファイルが既にあり、処理結果を使い回したことを示す。
+- `on_conflict=replace` で置き換えたときは `status: "replaced"`。それまでの中身は過去の版（`/documents/{id}/versions`）に残る。
 - フォルダ構造ごとのアップロード: `files` と同じ順番で `relative_paths`（例 `2026/10/見積書.pdf`）を送ると、`folder_id` の下に必要なフォルダを作成する（空文字のファイルはそのまま `folder_id` に置く）。
 - 大きなファイル: Caddy とアプリの上限は 1GB。分割・再開可能なアップロード（tus 等）は初版では対応しない。
 

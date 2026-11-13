@@ -106,27 +106,47 @@ def path(conn: sqlite3.Connection, folder_id: int) -> list[Crumb]:
     return [Crumb(r["id"], r["name"]) for r in rows]
 
 
-def list_children(conn: sqlite3.Connection, folder_id: int, *, sort: str = "name",
-                  order: str = "asc") -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
-    """(子フォルダ, 文書) を返す。フォルダは常に名前順で先頭。"""
-    folders = conn.execute(
-        "SELECT f.*, (SELECT count(*) FROM documents d WHERE d.folder_id = f.id AND d.deleted_at IS NULL)"
-        " + (SELECT count(*) FROM folders c WHERE c.parent_id = f.id AND c.deleted_at IS NULL) AS item_count,"
-        " (SELECT count(*) FROM folder_members m WHERE m.folder_id = f.id) AS member_count"
-        " FROM folders f WHERE f.parent_id = ? AND f.deleted_at IS NULL ORDER BY f.name COLLATE NOCASE",
-        (folder_id,),
-    ).fetchall()
+def count_children(conn: sqlite3.Connection, folder_id: int) -> tuple[int, int]:
+    """(子フォルダの数, 文書の数)。"""
+    nf = conn.execute("SELECT count(*) FROM folders WHERE parent_id = ? AND deleted_at IS NULL",
+                      (folder_id,)).fetchone()[0]
+    nd = conn.execute("SELECT count(*) FROM documents WHERE folder_id = ? AND deleted_at IS NULL",
+                      (folder_id,)).fetchone()[0]
+    return int(nf), int(nd)
+
+
+def list_children(conn: sqlite3.Connection, folder_id: int, *, sort: str = "name", order: str = "asc",
+                  limit: int | None = None, offset: int = 0) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
+    """(子フォルダ, 文書) を返す。フォルダは常に名前順で先頭。
+
+    limit を渡すと、フォルダ → 文書の順に並べた全体の offset 件目から limit 件だけを返す（ページ送り）。
+    """
     key = {"name": "d.filename COLLATE NOCASE", "updated_at": "d.updated_at", "size": "b.size_bytes"}.get(sort)
     if key is None:
         raise ValidationFailed("sort は name / updated_at / size のいずれかです")
     direction = "DESC" if order == "desc" else "ASC"
+    offset = max(offset, 0)
+    if limit is None:
+        f_lim, f_off, d_lim, d_off = -1, 0, -1, 0
+    else:
+        nf, _ = count_children(conn, folder_id)
+        f_lim, f_off = max(min(limit, nf - offset), 0), offset
+        d_lim, d_off = limit - f_lim, max(offset - nf, 0)
+    folders = conn.execute(
+        "SELECT f.*, (SELECT count(*) FROM documents d WHERE d.folder_id = f.id AND d.deleted_at IS NULL)"
+        " + (SELECT count(*) FROM folders c WHERE c.parent_id = f.id AND c.deleted_at IS NULL) AS item_count,"
+        " (SELECT count(*) FROM folder_members m WHERE m.folder_id = f.id) AS member_count"
+        " FROM folders f WHERE f.parent_id = ? AND f.deleted_at IS NULL ORDER BY f.name COLLATE NOCASE, f.id"
+        " LIMIT ? OFFSET ?",
+        (folder_id, f_lim, f_off),
+    ).fetchall() if f_lim != 0 else []
     docs = conn.execute(
         f"SELECT d.*, b.size_bytes, b.mime_type, b.status, b.sha256, b.page_count,"
         f" b.progress_done, b.progress_total, b.warnings, b.thumb_path, b.view_path"
         f" FROM documents d JOIN blobs b ON b.id = d.blob_id"
-        f" WHERE d.folder_id = ? AND d.deleted_at IS NULL ORDER BY {key} {direction}, d.id",
-        (folder_id,),
-    ).fetchall()
+        f" WHERE d.folder_id = ? AND d.deleted_at IS NULL ORDER BY {key} {direction}, d.id LIMIT ? OFFSET ?",
+        (folder_id, d_lim, d_off),
+    ).fetchall() if d_lim != 0 else []
     return folders, docs
 
 
