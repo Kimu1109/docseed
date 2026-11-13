@@ -228,13 +228,27 @@ Phase 5 では開発環境で、アップロード → `backup.sh`（restic の�
 | 死活 | `/healthz`。Docker の healthcheck に設定（Dockerfile） |
 | worker の生存 | worker が 30 秒ごとに `settings.worker.heartbeat` を更新。2 分以上止まっていたら警告（error） |
 | ジョブの失敗 | 失敗したジョブがあれば警告（warning） |
-| 温度 | 管理画面に表示。`DOCSEED_THERMAL_PAUSE_C`（既定 80℃）以上なら警告。`vcgencmd get_throttled` 相当のスロットリング履歴はホストで確認 |
+| 温度 | 管理画面に表示。`DOCSEED_THERMAL_WARN_C`（既定 75℃）以上で「高め」の警告、`DOCSEED_THERMAL_PAUSE_C`（既定 80℃）以上で一時停止の警告。`vcgencmd get_throttled` 相当のスロットリング履歴はホストで確認 |
+| メモリ | `/proc/meminfo` の MemAvailable が `DOCSEED_MEMORY_WARN_PCT`（既定 10%）を下回ったら警告（warning） |
 | ディスク | 空き容量が 10% を切ったら警告（warning）。5% を切ったら警告（error）し、アップロードを拒否（507） |
 | バックアップ | DB スナップショットが無い・36 時間以上新しくない、restic の記録が無い（info）・失敗（error）・36 時間以上成功していない（warning） |
 | SSD の状態 | `smartctl` / `nvme smart-log` を週 1 回ホストで実行（任意） |
 
 - 警告は `docseed.monitor.status()` で一か所にまとめ、管理画面の「確認が必要な項目」、左メニューの「管理」のバッジ（error と warning の件数）、`GET /api/v1/admin/status`、`docseed status`（error があれば終了コード 1）で同じものを見せる。
-- 外部の監視サービスへの通知は初版では行わない。必要になったら、API トークンで `/api/v1/admin/status` を定期的に取得し、ntfy 等へ送るスクリプトをホストに置く。
+- 管理画面の「システム」と `GET /api/v1/admin/system`（`monitor.system_info()`）に、CPU 温度・負荷（1・5・15 分）・コア数、メモリ（機械全体）、SSD、DB の大きさ、件数（ファイル・ゴミ箱・過去の版・フォルダ・ユーザー・実体・ページ・チャンク）、過去の版だけが使っている容量、モデル、版（docseed・スキーマ・Python）、起動からの時間を出す。
+
+### 6.1 通知
+
+| 項目 | 内容 |
+|---|---|
+| 宛先 | `DOCSEED_NOTIFY_URLS`（Webhook。カンマか空白区切り）と、`DOCSEED_SMTP_HOST` + `DOCSEED_NOTIFY_EMAIL`（メール）。どちらも無ければ通知の仕組みは動かない |
+| Webhook の形式 | `ntfy`（`https://host/topic` を `https://host/` への JSON 発行にする。priority は error 5 / warning 4 / info 3）、`discord`（`{"content"}`、2000 字まで）、`slack`（`{"text"}`）、`json`（`{"source", "level", "title", "message", "text"}`）。`ntfy+https://...` のように形式を前に付けられ、無ければ discord.com / hooks.slack.com / ntfy.sh をホスト名で見分け、それ以外は json |
+| 知らせること | `DOCSEED_NOTIFY_EVENTS`（既定 `alert,share_upload,inbox`）。`alert`: `monitor.status()` の warning 以上。`share_upload`: 受け取り用の共有リンクからの受け取り。`inbox`: 受け取り箱の取り込み・取り込みの失敗 |
+| 警告の知らせ方 | 5 分ごとに `status()` を確かめ、前回の状態（`settings` の `notify.alerts`）と比べる。2 回続けて出たら知らせる（worker の再起動などの一時的なものを除く）。知らせた警告が重くなったら知らせ直し、続いていれば 24 時間ごとに知らせ直す。知らせた警告が消えたら「解消」を知らせる |
+| 送り方 | 知らせることは `notifications` 表（0009）に積み、api の中のスレッドが 1 分ごとに送る。worker（外部と通信しない）は積むだけ。同じ `group_key`（共有リンクごと・受け取り箱のユーザーごと）の送信待ちは 1 通にまとめる。一部の宛先だけ失敗したら送ったことにしてエラーを残し、すべて失敗したら 1 分おきに 5 回まで送り直して `failed` にする。送った記録は 30 日で消す |
+| 確認 | 管理画面の「通知」（宛先は形式とホスト名だけを出す。Webhook の URL は秘密を含むため）、「テスト通知を送る」（`POST /api/v1/admin/notify/test`。積んですぐ送る）、最近の通知（`GET /api/v1/admin/notifications`） |
+
+- ユーザーごとの宛先（自分の共有リンクの受け取りだけを自分に送る）は持たない。宛先は管理者が `.env` で決める。
 
 ## 7. 更新手順
 

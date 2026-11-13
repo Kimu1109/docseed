@@ -46,7 +46,8 @@ templates.env.globals.update(
     version=__version__, kind_of=h.kind_of, kind_label=h.KIND_LABEL, status_label=h.STATUS_LABEL,
     can_preview=can_preview, image_src=image_src, icon=h.icon, kind_icon=h.KIND_ICON, status_icon=h.STATUS_ICON,
 )
-templates.env.filters.update(filesize=h.filesize, localtime=h.localtime, shortdate=h.shortdate, taken_at=h.taken_at)
+templates.env.filters.update(filesize=h.filesize, localtime=h.localtime, shortdate=h.shortdate, taken_at=h.taken_at,
+                             duration=h.duration)
 
 router = APIRouter(include_in_schema=False)
 
@@ -95,6 +96,8 @@ DONE_MESSAGES = {
     "version_same": "今の版と同じ内容でした（版は増やしていません）",
     "version_restored": "過去の版に戻しました（戻す前の版も「過去の版」に残しています）",
     "version_deleted": "過去の版を削除しました",
+    "notify_sent": "テスト通知を送りました。届いたか確かめてください",
+    "notify_failed": "テスト通知を送れませんでした。下の「最近の通知」のエラーを確認してください",
 }
 
 
@@ -1210,15 +1213,35 @@ def admin_context(request: Request, conn: sqlite3.Connection, auth: Auth, settin
     db_bytes = sum(p.stat().st_size for p in settings.db_path.parent.glob(settings.db_path.name + "*"))
     from ..api.routes import failed_jobs, job_counts
     from ..authn import get_auth_settings
-    from ..monitor import status
+    from ..monitor import status, system_info
+    from ..notify import EVENT_LABEL, describe_destination, recent
     st = status(conn, settings)
+    dests = [describe_destination(u) for u in settings.notify_urls]
+    if settings.smtp_host and settings.notify_email:
+        dests.append(f"メール（{', '.join(settings.notify_email)}）")
+    notify = {"enabled": settings.notify_enabled, "destinations": dests, "recent": recent(conn, 10),
+              "events": [EVENT_LABEL[e] for e in sorted(settings.notify_events) if e in EVENT_LABEL],
+              "event_label": EVENT_LABEL}
     return base_context(request, conn, auth, nav="admin", users=um.list_users(conn), stats=stats,
+                        system=system_info(conn, settings), notify=notify,
                         disk=disk, db_bytes=db_bytes, worker_seen=st["worker"]["last_seen"],
                         worker_alive=st["worker"]["alive"], sys=st, thermal_pause_c=settings.thermal_pause_c,
                         job_counts=job_counts(conn), failed=failed_jobs(conn, 20), error=None, form={},
                         llm=_llm_status(conn, settings),
                         **({"reset_done": None, "auth_settings": get_auth_settings(conn),
                             "oidc_enabled": bool(settings.oidc_providers)} | extra))
+
+
+@router.post("/admin/notify/test")
+def admin_notify_test(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_admin),
+                      settings: Settings = Depends(get_settings)):
+    from ..notify import send_test
+    try:
+        r = send_test(conn, settings)
+    except ValueError as e:
+        raise AppError(str(e)) from None
+    return RedirectResponse(f"/admin?done={'notify_sent' if r['status'] == 'sent' else 'notify_failed'}#notify",
+                            status_code=303)
 
 
 @router.post("/admin/jobs/{job_id}/retry")

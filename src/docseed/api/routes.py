@@ -773,6 +773,42 @@ def api_status(request: Request, conn: sqlite3.Connection = Depends(get_conn), a
     return status(conn, request.app.state.settings)
 
 
+@router.get("/admin/system")
+def api_system(request: Request, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_admin)):
+    """機械と docseed の状態（CPU 温度・負荷、メモリ、ディスク、DB、件数、モデル、版）。"""
+    from ..monitor import system_info
+    return system_info(conn, request.app.state.settings)
+
+
+def notification_json(r: sqlite3.Row) -> dict[str, Any]:
+    return {k: r[k] for k in ("id", "kind", "level", "title", "body", "status", "attempts", "error", "created_at",
+                              "sent_at")}
+
+
+@router.get("/admin/notifications")
+def api_notifications(request: Request, limit: int = 50, conn: sqlite3.Connection = Depends(get_conn),
+                      auth: Auth = Depends(require_admin)):
+    """通知の設定（宛先は形式とホスト名だけ）と、最近の通知。"""
+    from ..notify import describe_destination, recent
+    s = request.app.state.settings
+    return {"enabled": s.notify_enabled, "events": sorted(s.notify_events),
+            "destinations": [describe_destination(u) for u in s.notify_urls]
+            + ([f"メール（{len(s.notify_email)} 件の宛先）"] if s.smtp_host and s.notify_email else []),
+            "notifications": [notification_json(r) for r in recent(conn, max(1, min(limit, 200)))]}
+
+
+@router.post("/admin/notify/test")
+def api_notify_test(request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                    auth: Auth = Depends(require_admin)):
+    """テスト通知をすぐに送る。応答の status が sent なら届いている（error は一部の宛先の失敗）。"""
+    from ..notify import send_test
+    try:
+        r = send_test(conn, request.app.state.settings)
+    except ValueError as e:
+        raise ValidationFailed(str(e)) from None
+    return notification_json(r)
+
+
 # ---------------------------------------------------------------------------
 
 health = APIRouter()

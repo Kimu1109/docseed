@@ -600,7 +600,8 @@ def test_migration_adds_existing_summaries_to_search(tmp_path, monkeypatch):
                  " VALUES (1, '料理のレシピの覚え書き。', '[]', 'm', 1, 'x')")
     conn.commit()
     monkeypatch.setattr(db, "_migrations", lambda: allm)
-    assert db.migrate(conn) == ["0006_summary_search.sql", "0007_manual_summaries.sql", "0008_document_versions.sql"]
+    assert db.migrate(conn) == ["0006_summary_search.sql", "0007_manual_summaries.sql",
+        "0008_document_versions.sql", "0009_notifications.sql"]
     assert conn.execute("SELECT c.source FROM chunks_fts f JOIN chunks c ON c.id = f.rowid"
                         " WHERE chunks_fts MATCH 'レシピ'").fetchone()[0] == "summary"
 

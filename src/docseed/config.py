@@ -23,6 +23,11 @@ def _bool(v: str | None, default: bool) -> bool:
     return v.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _list(v: str | None) -> tuple[str, ...]:
+    """カンマ・空白・改行区切りの一覧。"""
+    return tuple(x for x in (v or "").replace(",", " ").split() if x)
+
+
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path = Path("/srv/docseed")
@@ -74,7 +79,24 @@ class Settings:
     share_upload_daily_gb: float = 20.0   # DOCSEED_SHARE_UPLOAD_DAILY_GB（すべてのリンクの 24 時間の合計）
     rate_limit_enabled: bool = True       # DOCSEED_RATE_LIMIT（ログイン以外の流量制限。security.md 9 章）
     share_upload_min_free_pct: float = 10.0   # DOCSEED_SHARE_UPLOAD_MIN_FREE_PCT（空きがこれを下回ったら受け取らない）
+    # 監視のしきい値（docs/design/deployment.md 6 章）
+    thermal_warn_c: float = 75.0          # DOCSEED_THERMAL_WARN_C（これ以上で「温度が高め」の警告）
+    memory_warn_pct: float = 10.0         # DOCSEED_MEMORY_WARN_PCT（使えるメモリがこれを下回ったら警告）
+    # 通知（docs/design/deployment.md 6.1）。宛先が無ければ通知しない
+    notify_urls: tuple[str, ...] = ()     # DOCSEED_NOTIFY_URLS（Webhook。ntfy / Discord / Slack / JSON）
+    notify_email: tuple[str, ...] = ()    # DOCSEED_NOTIFY_EMAIL（メールの宛先）
+    notify_events: frozenset[str] = frozenset({"alert", "share_upload", "inbox"})   # DOCSEED_NOTIFY_EVENTS
+    smtp_host: str = ""                   # DOCSEED_SMTP_HOST
+    smtp_port: int = 587                  # DOCSEED_SMTP_PORT
+    smtp_security: str = "starttls"       # DOCSEED_SMTP_SECURITY（starttls / ssl / none）
+    smtp_user: str = ""                   # DOCSEED_SMTP_USER
+    smtp_password: str = ""               # DOCSEED_SMTP_PASSWORD
+    smtp_from: str = ""                   # DOCSEED_SMTP_FROM（省略時は DOCSEED_SMTP_USER）
     extra: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def notify_enabled(self) -> bool:
+        return bool(self.notify_urls or (self.smtp_host and self.notify_email))
 
     @property
     def rp_id(self) -> str:
@@ -152,6 +174,17 @@ class Settings:
             inbox_enabled=_bool(e.get("DOCSEED_INBOX_ENABLED"), False),
             inbox_keep=_bool(e.get("DOCSEED_INBOX_KEEP"), False),
             thermal_pause_c=float(e.get("DOCSEED_THERMAL_PAUSE_C", "80")),
+            thermal_warn_c=float(e.get("DOCSEED_THERMAL_WARN_C") or "75"),
+            memory_warn_pct=float(e.get("DOCSEED_MEMORY_WARN_PCT") or "10"),
+            notify_urls=_list(e.get("DOCSEED_NOTIFY_URLS")),
+            notify_email=_list(e.get("DOCSEED_NOTIFY_EMAIL")),
+            notify_events=frozenset(_list(e.get("DOCSEED_NOTIFY_EVENTS")) or ("alert", "share_upload", "inbox")),
+            smtp_host=e.get("DOCSEED_SMTP_HOST", "").strip(),
+            smtp_port=int(e.get("DOCSEED_SMTP_PORT") or "587"),
+            smtp_security=(e.get("DOCSEED_SMTP_SECURITY") or "starttls").strip().lower(),
+            smtp_user=e.get("DOCSEED_SMTP_USER", "").strip(),
+            smtp_password=e.get("DOCSEED_SMTP_PASSWORD", ""),
+            smtp_from=e.get("DOCSEED_SMTP_FROM", "").strip(),
             host=e.get("DOCSEED_HOST", ""),
             https_port=int(e.get("DOCSEED_HTTPS_PORT") or "443"),
             rp_id_override=e.get("DOCSEED_RP_ID", "").strip(),

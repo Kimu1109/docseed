@@ -517,7 +517,37 @@ Word（docx）・Excel（xlsx）・PowerPoint（pptx）の文字も検索でき�
 
 ## 状態の確認
 
-管理画面の「確認が必要な項目」に、worker の停止・失敗したジョブ・SSD の空き不足・バックアップの遅れや失敗・CPU の高温をまとめて表示します。項目があると、左メニューの「管理」に赤いバッジが付きます。同じ内容を `docker compose exec api docseed status` や `GET /api/v1/admin/status`（管理者の API トークン）でも確認できます。
+管理画面の「確認が必要な項目」に、worker の停止・失敗したジョブ・SSD の空き不足・バックアップの遅れや失敗・CPU の高温（`DOCSEED_THERMAL_WARN_C`、既定 75℃）・メモリ不足（`DOCSEED_MEMORY_WARN_PCT`、既定 10%）をまとめて表示します。項目があると、左メニューの「管理」に赤いバッジが付きます。同じ内容を `docker compose exec api docseed status` や `GET /api/v1/admin/status`（管理者の API トークン）でも確認できます。
+
+管理画面の「システム」には、CPU の温度・負荷、メモリ、SSD、データベースの大きさ、ファイル・過去の版・検索の索引の件数、使っているモデル、docseed の版を表示します（`GET /api/v1/admin/system` でも取れます）。
+
+### 通知
+
+`.env` に宛先を書くと、次のことを知らせます。
+
+- **監視の警告**（上の「確認が必要な項目」の注意・異常）: 出たとき（一時的なもので鳴らないよう、5 分おきの確認で 2 回続けて出たとき）、重くなったとき、続いていれば 1 日ごと、解消したとき
+- **共有リンクでの受け取り**: 受け取り用のリンクからファイルが届いたとき（続けて届いた分は 1 通にまとめる）
+- **受け取り箱の取り込み**: inbox から取り込んだとき・取り込めなかったとき
+
+```bash
+# .env（例: ntfy.sh と Discord に送る）
+DOCSEED_NOTIFY_URLS=https://ntfy.sh/<推測されにくいトピック名>,https://discord.com/api/webhooks/<ID>/<トークン>
+# メールでも送る場合
+DOCSEED_NOTIFY_EMAIL=me@example.com
+DOCSEED_SMTP_HOST=smtp.example.com
+DOCSEED_SMTP_USER=docseed@example.com
+DOCSEED_SMTP_PASSWORD=...
+```
+
+```bash
+docker compose up -d api      # 設定を読み直す
+```
+
+管理画面の「通知」にある **「テスト通知を送る」** で届くか確かめられます。最近の通知と、送れなかったときのエラーもそこに出ます。
+
+- 送るのは api だけです（worker は外部と通信しないまま。受け取り箱の通知も api が送ります）。送れないときは 1 分おきに 5 回まで送り直します
+- 通知にはファイル名・フォルダ名が入ります。外部のサービス（ntfy.sh・Discord など）に送ってよいかを考えて宛先を選んでください。ntfy.sh のトピックは名前を知っていれば誰でも読めるので、推測されにくい名前にするか、自前の ntfy（`ntfy+https://...`、Basic 認証は `https://ユーザー:パスワード@ホスト/トピック`）を使ってください
+- リンク（管理画面・フォルダ）は `DOCSEED_HOST` から作ります
 
 ## 開発
 

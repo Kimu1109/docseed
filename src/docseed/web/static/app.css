@@ -290,6 +290,8 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .stats dt { font-size: 13px; color: var(--muted); }
 .stats dd { margin: 4px 0 0; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .stats .unit { font-size: 13px; font-weight: 400; color: var(--muted); margin-left: 4px; }
+.stats dd.small { font-size: 14px; font-weight: 400; overflow-wrap: anywhere; }
+.stats dd div.small { font-weight: 400; }
 
 /* ---- ログイン・エラー -------------------------------------------------- */
 .login { min-height: 100vh; display: grid; place-items: center; padding: var(--s4); }

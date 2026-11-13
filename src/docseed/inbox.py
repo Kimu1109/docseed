@@ -19,6 +19,7 @@ from pathlib import Path
 
 from . import documents as dm
 from . import folders as fo
+from .config import Settings
 from .errors import AppError
 from .storage import BlobStore
 from .users import User, root_folder_id
@@ -32,11 +33,13 @@ SKIP_NAMES = {"Thumbs.db", "desktop.ini", ".DS_Store"}
 
 
 class InboxScanner:
-    def __init__(self, inbox_dir: Path, store: BlobStore, *, max_bytes: int, keep: bool = False):
+    def __init__(self, inbox_dir: Path, store: BlobStore, *, max_bytes: int, keep: bool = False,
+                 settings: Settings | None = None):
         self.dir = inbox_dir
         self.store = store
         self.max_bytes = max_bytes
         self.keep = keep
+        self.settings = settings     # 通知（取り込んだ・取り込めなかった）に使う。None なら知らせない
         self._seen: dict[Path, tuple[int, float]] = {}
 
     def ensure_user_dirs(self, conn: sqlite3.Connection) -> None:
@@ -89,13 +92,24 @@ class InboxScanner:
             msg = getattr(e, "detail", None) or str(e)
             log.warning("inbox: %s/%s を取り込めませんでした: %s", user.username, rel, msg)
             self._move(user_dir, path, ".failed", note=msg)
+            self._notify(conn, user, str(rel), ok=False, message=msg)
             return False
         log.info("inbox: %s/%s → %s/%s", user.username, rel, INBOX_FOLDER, r.filename)
+        self._notify(conn, user, f"{rel} → {INBOX_FOLDER}/{r.filename}", ok=True)
         if self.keep:
             self._move(user_dir, path, ".imported")
         else:
             path.unlink(missing_ok=True)
         return True
+
+    def _notify(self, conn: sqlite3.Connection, user: User, path: str, *, ok: bool, message: str = "") -> None:
+        if self.settings is None:
+            return
+        from .notify import inbox_imported
+        try:
+            inbox_imported(conn, self.settings, user.username, path, ok=ok, message=message)
+        except Exception:  # noqa: BLE001 - 通知を積めなくても取り込みは続ける
+            log.exception("inbox: 通知を積めませんでした")
 
     @staticmethod
     def _move(user_dir: Path, path: Path, sub: str, note: str | None = None) -> None:

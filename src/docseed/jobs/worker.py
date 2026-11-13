@@ -45,7 +45,7 @@ class Worker:
         if settings.inbox_enabled:
             from ..inbox import InboxScanner
             self.inbox = InboxScanner(settings.inbox_dir, self.store, max_bytes=settings.max_upload_bytes,
-                                      keep=settings.inbox_keep)
+                                      keep=settings.inbox_keep, settings=settings)
 
     # ---- 合間の処理（ページごと・埋め込みのバッチごと） -------------------
     def _between_pages(self) -> None:
