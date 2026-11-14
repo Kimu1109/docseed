@@ -91,6 +91,8 @@ class Worker:
             gc_blobs(self.conn, self.store)
             log.info("daily: 過去の版を %d 件削除しました", pruned)
         queue.cleanup(self.conn)
+        from ..resumable import expire_stale  # 途中で止まった分割アップロード
+        expire_stale(self.conn, self.store)
         with Tx(self.conn):
             self.conn.execute("INSERT INTO settings(key, value) VALUES ('worker.daily', ?)"
                               " ON CONFLICT(key) DO UPDATE SET value = excluded.value", (today,))

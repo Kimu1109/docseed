@@ -530,25 +530,29 @@
     panel.hidden = false;
     $("[data-uploads-close]").hidden = true;
     $("#uploads-title").textContent = "アップロード中";
-    const queue = items.map((it) => ({ ...it, row: addRow(list, it, toName) }));
+    const queue = items.map((it) => ({ ...it, folderId, row: addRow(list, it, toName) }));
     let next = 0;
-    let failed = 0;
     const worker = async () => {
-      while (next < queue.length) {
-        const job = queue[next++];
-        if (!(await uploadOne(folderId, job))) failed++;
-      }
+      while (next < queue.length) await uploadOne(queue[next++]);
     };
     uploading += queue.length;
     Promise.all([worker(), worker()]).then(() => {
-      const ok = queue.length - failed;
-      $("#uploads-title").textContent = failed
-        ? `${ok} 件をアップロードしました（${failed} 件は失敗）`
-        : `${ok} 件をアップロードしました`;
-      $("[data-uploads-close]").hidden = false;
+      updateUploadsTitle();
       const listing = $("#listing");
       if (listing) htmx.trigger(listing, "refresh");
     });
+  }
+
+  // 一覧の見出し（全部終わったときだけ書き換える。失敗した行を「再試行」したときにも呼ぶ）
+  function updateUploadsTitle() {
+    if (uploading > 0) return;
+    const rows = $$("#uploads-list li");
+    const failed = rows.filter((li) => li.classList.contains("up-error")).length;
+    const ok = rows.filter((li) => li.classList.contains("up-done")).length;
+    $("#uploads-title").textContent = failed
+      ? `${ok} 件をアップロードしました（${failed} 件は失敗）`
+      : `${ok} 件をアップロードしました`;
+    $("[data-uploads-close]").hidden = false;
   }
 
   function addRow(list, it, into) {
@@ -566,57 +570,221 @@
     return li;
   }
 
-  function uploadOne(folderId, job) {
-    return new Promise((resolve) => {
-      const fd = new FormData();
-      fd.append("folder_id", folderId);
-      fd.append("on_conflict", "rename");
-      fd.append("files", job.file, job.file.name);
-      fd.append("relative_paths", job.path || "");
-      const xhr = new XMLHttpRequest();
-      const bar = $("progress", job.row);
-      const state = $(".up-state", job.row);
-      xhr.open("POST", BASE + "/api/v1/documents");
-      xhr.setRequestHeader("X-CSRF-Token", csrfToken());
-      xhr.upload.onprogress = (ev) => {
-        if (ev.lengthComputable) {
-          bar.value = Math.round((ev.loaded / ev.total) * 100);
-          state.textContent = bar.value + "%";
-        }
-      };
-      const fail = (msg) => {
-        job.row.classList.add("up-error");
-        state.textContent = "失敗";
-        const m = document.createElement("span");
-        m.className = "up-msg";
-        m.textContent = msg;
-        job.row.append(m);
-        uploading--;
-        resolve(false);
-      };
-      xhr.onload = () => {
-        let body = null;
-        try { body = JSON.parse(xhr.responseText); } catch { /* 何もしない */ }
-        if (xhr.status === 200 && body?.results?.[0]?.status !== "error") {
-          const r = body.results[0];
-          job.row.classList.add("up-done");
-          bar.value = 100;
-          state.textContent = r.deduplicated ? "完了（同じ内容あり）" : "完了";
-          if (r.document && r.document.filename !== job.file.name && !job.path) {
-            $(".up-name", job.row).textContent = job.file.name + " → " + r.document.filename;
-          }
-          uploading--;
-          resolve(true);
-        } else if (xhr.status === 401) {
-          fail("ログインの有効期限が切れました。再読み込みしてログインしてください");
-        } else {
-          fail(body?.results?.[0]?.error?.detail || body?.detail || `エラー（${xhr.status}）`);
-        }
-      };
-      xhr.onerror = () => fail("サーバーに接続できません");
-      state.textContent = "0%";
-      xhr.send(fd);
+  // 失敗した行の「再試行」。受け取り済みの分はサーバーに残っているので、続きから送る
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-upload-retry]");
+    if (!btn) return;
+    const li = btn.closest("li");
+    const job = li && li._uploadJob;
+    if (!job) return;
+    li.classList.remove("up-error");
+    $$(".up-msg, [data-upload-retry]", li).forEach((el) => el.remove());
+    $("[data-uploads-close]").hidden = true;
+    $("#uploads-title").textContent = "アップロード中";
+    uploading++;
+    uploadOne(job).then(() => {
+      updateUploadsTitle();
+      const listing = $("#listing");
+      if (listing) htmx.trigger(listing, "refresh");
     });
+  });
+
+  // ---- 分割・再開できるアップロード（tus 1.0。docs/design/api.md 3.3.2） ------
+  // 1 ファイルを CHUNK ごとの PATCH で送る。通信が切れたら、待ってから HEAD で受け取り済みの位置を聞いて続きを送る。
+  // 送り先の URL は localStorage に覚えておき、再読み込みのあとに同じファイルを選び直すと続きから送る。
+  const TUS = BASE + "/api/v1/uploads";
+  const CHUNK = 8 * 1024 * 1024;                     // Cloudflare Tunnel など 1 リクエストの上限がある経路でも通る大きさ
+  const RETRY_DELAYS = [1, 2, 4, 8, 15, 30, 30, 60, 60, 60];   // 秒。前に進んだら最初からやり直す
+  const STALL_MS = 60000;                            // この間まったく進まなければ切れたとみなす
+  const SAVE_WAIT_MS = 10 * 60000;                   // 最後まで送ったあと、サーバーが保存し終えるのを待つ上限
+  const RETRYABLE = new Set([0, 408, 423, 429, 500, 502, 503, 504]);
+  const RESUME_KEY = "docseed.upload:";
+
+  const resumeKey = (job) => RESUME_KEY + [job.folderId, job.path || job.file.name, job.file.size,
+    job.file.lastModified, job.file.type].join("|");
+  const remember = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch { /* 覚えられなくても送れる */ } },
+    del(k) { try { localStorage.removeItem(k); } catch { /* 何もしない */ } },
+  };
+
+  function b64(s) {
+    let bin = "";
+    for (const b of new TextEncoder().encode(s)) bin += String.fromCharCode(b);
+    return btoa(bin);
+  }
+
+  class UploadError extends Error {
+    constructor(status, code, detail) { super(detail); this.status = status; this.code = code; }
+  }
+
+  // XMLHttpRequest を Promise にする（fetch では送った量の進み具合を取れない）。
+  // 通信の失敗・止まったままのときは status 0 で返す（例外にしない）。
+  function tusRequest(method, url, { headers = {}, body = null, onProgress, onSent } = {}) {
+    return new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+      let timer = null;
+      const arm = (ms) => { clearTimeout(timer); timer = setTimeout(() => xhr.abort(), ms); };
+      xhr.open(method, url);
+      xhr.setRequestHeader("Tus-Resumable", "1.0.0");
+      if (method !== "HEAD" && method !== "GET") xhr.setRequestHeader("X-CSRF-Token", csrfToken());
+      for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
+      xhr.upload.onprogress = (ev) => { arm(STALL_MS); onProgress?.(ev.loaded); };
+      xhr.upload.onload = () => { arm(SAVE_WAIT_MS); onSent?.(); };
+      const done = (status) => {
+        clearTimeout(timer);
+        let json = null;
+        try { json = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch { /* 本文なし */ }
+        resolve({ status, json, header: (n) => xhr.getResponseHeader(n) });
+      };
+      xhr.onload = () => done(xhr.status);
+      xhr.onerror = xhr.onabort = xhr.ontimeout = () => done(0);
+      arm(STALL_MS);
+      xhr.send(body);
+    });
+  }
+
+  function failure(r) {
+    const e = new UploadError(r.status, r.json?.code || "",
+      r.json?.detail || (r.status ? `エラー（${r.status}）` : "サーバーに接続できません"));
+    e.retryAfter = parseInt(r.header("Retry-After") || "", 10) || 0;
+    return e;
+  }
+
+  // 回線が戻るか、delay 秒たつのを待つ。待っている間は残り秒数を出す
+  function waitToRetry(delay, retryAfter, setState) {
+    return new Promise((resolve) => {
+      let left = Math.max(delay, retryAfter || 0);
+      const finish = () => { clearInterval(tick); window.removeEventListener("online", onOnline); resolve(); };
+      const onOnline = () => setTimeout(finish, 1000);
+      // 状態の欄は狭いので短く出し、説明は title に入れる
+      const show = () => (navigator.onLine === false
+        ? setState("オフライン", "回線が戻ったら、続きから自動で再開します")
+        : setState(`再開まで ${left}秒`, `接続が切れました。${left} 秒後に、届いたところの続きから再開します`));
+      const tick = setInterval(() => {
+        if (navigator.onLine === false) { show(); return; }   // オフラインの間は数えない
+        if (--left <= 0) finish(); else show();
+      }, 1000);
+      window.addEventListener("online", onOnline);
+      show();
+    });
+  }
+
+  async function tusUpload(job, onProgress, setState) {
+    const file = job.file;
+    const key = resumeKey(job);
+    let url = remember.get(key);
+    let offset = null;          // null = サーバーに聞く（HEAD）
+    let attempt = 0;
+    let restarted = false;
+    for (;;) {
+      try {
+        if (!url) {
+          const meta = { filename: file.name, folder_id: String(job.folderId), on_conflict: "rename" };
+          if (job.path) meta.relative_path = job.path;
+          const r = await tusRequest("POST", TUS, { headers: {
+            "Upload-Length": String(file.size),
+            "Upload-Metadata": Object.entries(meta).map(([k, v]) => `${k} ${b64(v)}`).join(","),
+          } });
+          if (r.status !== 201) throw failure(r);
+          url = new URL(r.header("Location"), location.href).href;
+          remember.set(key, url);
+          offset = 0;
+          if (r.json?.result) return r.json.result;          // 0 バイトのファイルは作った時点で保存済み
+        }
+        if (offset === null) {
+          const r = await tusRequest("HEAD", url);
+          if (r.status !== 200) throw failure(r);
+          offset = parseInt(r.header("Upload-Offset"), 10) || 0;
+          onProgress(offset);
+        }
+        for (;;) {
+          const end = Math.min(offset + CHUNK, file.size);
+          setState(null);
+          // 最後まで届いているのに結果を受け取れていない場合は、空の PATCH で結果を聞く
+          const r = await tusRequest("PATCH", url, {
+            headers: { "Content-Type": "application/offset+octet-stream", "Upload-Offset": String(offset) },
+            body: file.slice(offset, end),
+            onProgress: (loaded) => onProgress(offset + loaded),
+            onSent: () => { if (end === file.size) setState("保存中"); },
+          });
+          if (r.status === 200 && r.json?.result) { remember.del(key); return r.json.result; }
+          if (r.status !== 204) throw failure(r);
+          const next = parseInt(r.header("Upload-Offset"), 10);
+          if (next > offset) attempt = 0;                     // 前に進んだので、待ち時間を最初に戻す
+          offset = next;
+          onProgress(offset);
+        }
+      } catch (err) {
+        if (!(err instanceof UploadError)) throw err;
+        if ((err.status === 404 || err.status === 410) && url && !restarted) {
+          remember.del(key);                                 // 期限切れ: 最初から送り直す（1 回だけ）
+          url = null; offset = null; restarted = true;
+          continue;
+        }
+        if (err.code === "offset_mismatch" || RETRYABLE.has(err.status)) {
+          if (attempt >= RETRY_DELAYS.length) throw err;
+          await waitToRetry(RETRY_DELAYS[attempt++], err.retryAfter, setState);
+          offset = null;                                     // 切れた時点で届いていた分は、サーバーに聞き直す
+          continue;
+        }
+        if (err.status !== 401) remember.del(key);           // ログインし直せば続きから送れるよう 401 は覚えておく
+        throw err;
+      }
+    }
+  }
+
+  async function uploadOne(job) {
+    const row = job.row;
+    row._uploadJob = job;
+    const bar = $("progress", row);
+    const state = $(".up-state", row);
+    const size = job.file.size || 1;
+    let waiting = false;
+    const onProgress = (sent) => {
+      bar.value = Math.min(100, Math.round((sent / size) * 100));
+      if (!waiting) state.textContent = bar.value + "%";
+    };
+    const setState = (msg, title = "") => {
+      waiting = !!msg;
+      row.classList.toggle("up-wait", waiting);
+      state.textContent = msg || bar.value + "%";
+      state.title = title;
+    };
+    state.textContent = bar.value + "%";
+    let ok = false;
+    try {
+      const r = await tusUpload(job, onProgress, setState);
+      if (r.status === "error") throw new UploadError(200, r.error?.code, r.error?.detail || "保存できませんでした");
+      row.classList.remove("up-wait");
+      row.classList.add("up-done");
+      bar.value = 100;
+      state.textContent = r.deduplicated ? "完了（同じ内容あり）" : "完了";
+      if (r.document && r.document.filename !== job.file.name && !job.path) {
+        $(".up-name", row).textContent = job.file.name + " → " + r.document.filename;
+      }
+      ok = true;
+    } catch (err) {
+      row.classList.remove("up-wait");
+      row.classList.add("up-error");
+      state.textContent = "失敗";
+      const m = document.createElement("span");
+      m.className = "up-msg";
+      m.textContent = err.status === 401
+        ? "ログインの有効期限が切れました。再読み込みしてログインし、同じファイルを選ぶと続きから送ります"
+        : (err.message || "アップロードできませんでした");
+      row.append(m);
+      if (err.status === 0 || err.status === 401 || RETRYABLE.has(err.status)) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "linkish up-retry";
+        b.dataset.uploadRetry = "";
+        b.textContent = "再試行";
+        m.append(" ", b);
+      }
+    }
+    uploading--;
+    return ok;
   }
 
   // ---- エクスプローラー風の選択と、ドラッグ＆ドロップでの移動 -------------

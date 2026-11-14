@@ -266,7 +266,8 @@ def test_migration_0002_after_0003(tmp_path, monkeypatch):
     assert migrate(conn) == ["0002_derived_files.sql", "0004_web_clips.sql", "0005_suggestions.sql",
                              "0006_summary_search.sql", "0007_manual_summaries.sql",
         "0008_document_versions.sql", "0009_notifications.sql", "0010_favorites_history.sql", "0011_quota.sql",
-        "0012_webclip_render.sql"]
+        "0012_webclip_render.sql",
+        "0013_resumable_uploads.sql"]
     assert conn.execute("SELECT type FROM jobs").fetchone()[0] == "purge_trash"
     conn.execute("INSERT INTO jobs(type, status, run_after, created_at) VALUES ('derive_blob', 'pending', 'x', 'x')")
     cols = {r[1] for r in conn.execute("PRAGMA table_info(blobs)")}

@@ -9,7 +9,7 @@ from typing import BinaryIO
 from . import folders as fo
 from .audit import audit
 from .db import Tx, now
-from .errors import InvalidMove, NameConflict, NotFound, ValidationFailed
+from .errors import FileTooLarge, InvalidMove, NameConflict, NotFound, ValidationFailed
 from .storage import BlobStore, StoredFile
 from .users import User
 
@@ -111,25 +111,40 @@ def _register_blob(conn: sqlite3.Connection, store: BlobStore, f: StoredFile) ->
 
 
 def upload(conn: sqlite3.Connection, store: BlobStore, user: User, folder_id: int, filename: str,
-           src: BinaryIO, *, max_bytes: int, on_conflict: str = "rename", relative_path: str | None = None,
+           src: BinaryIO | StoredFile, *, max_bytes: int, on_conflict: str = "rename", relative_path: str | None = None,
            ip: str | None = None, via_share_id: int | None = None, mime_type: str | None = None,
            kind: str = "file", keep_versions: int = DEFAULT_KEEP_VERSIONS) -> UploadResult:
-    """ファイルを保存する。mime_type は判定を上書きする（Web クリップの HTML）。kind は documents.kind。"""
+    """ファイルを保存する。mime_type は判定を上書きする（Web クリップの HTML）。kind は documents.kind。
+
+    src に StoredFile（分割アップロードで受け取り済みのもの）を渡すと受信を省く。失敗したときはそれも消す。"""
     if on_conflict not in ON_CONFLICT:
         raise ValidationFailed("on_conflict は rename / replace / error のいずれかです")
-    fo.require_folder_role(conn, user, folder_id, "editor")
+    pre = src if isinstance(src, StoredFile) else None
+    try:
+        fo.require_folder_role(conn, user, folder_id, "editor")
+    except BaseException:
+        if pre is not None:
+            store.discard(pre)
+        raise
     # relative_path（フォルダごとのアップロード）: "2026/10/見積書.pdf" → 2026/10 を作る
     parts: list[str] = []
     if relative_path:
         parts = [p for p in relative_path.replace("\\", "/").split("/") if p not in ("", ".", "..")]
         if parts:
             filename = parts.pop()
-    name = fo.clean_name(filename, what="ファイル名")
     from . import limits
-    owner_id = limits.owner_of_folder(conn, folder_id)
-    limits.check(conn, owner_id, 0, owner_is_actor=owner_id == user.id)   # もう上限なら受信の前に断る
-    store.check_free_space()
-    stored = store.receive(src, name, max_bytes)  # 時間のかかる受信はトランザクションの外で行う
+    try:
+        name = fo.clean_name(filename, what="ファイル名")
+        owner_id = limits.owner_of_folder(conn, folder_id)
+        limits.check(conn, owner_id, 0, owner_is_actor=owner_id == user.id)   # もう上限なら受信の前に断る
+        store.check_free_space()
+        if pre is not None and pre.size > max_bytes:
+            raise FileTooLarge(f"1 ファイルの上限（{max_bytes // 1024 // 1024} MB）を超えています")
+    except BaseException:
+        if pre is not None:
+            store.discard(pre)
+        raise
+    stored = pre or store.receive(src, name, max_bytes)  # 時間のかかる受信はトランザクションの外で行う
     if mime_type:
         stored.mime_type = mime_type
     try:

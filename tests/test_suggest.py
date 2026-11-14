@@ -602,7 +602,8 @@ def test_migration_adds_existing_summaries_to_search(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "_migrations", lambda: allm)
     assert db.migrate(conn) == ["0006_summary_search.sql", "0007_manual_summaries.sql",
         "0008_document_versions.sql", "0009_notifications.sql", "0010_favorites_history.sql", "0011_quota.sql",
-        "0012_webclip_render.sql"]
+        "0012_webclip_render.sql",
+        "0013_resumable_uploads.sql"]
     assert conn.execute("SELECT c.source FROM chunks_fts f JOIN chunks c ON c.id = f.rowid"
                         " WHERE chunks_fts MATCH 'レシピ'").fetchone()[0] == "summary"
 
