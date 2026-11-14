@@ -54,20 +54,24 @@ TEXT_PREVIEW_BYTES = 200_000
 PAGES_SHOWN = 30
 
 
+def text_preview_of(store: BlobStore, d: sqlite3.Row) -> tuple[str | None, bool]:
+    """テキストの文書なら先頭 TEXT_PREVIEW_BYTES を（本文, 切り詰めたか）で返す。"""
+    if not (d["mime_type"].startswith("text/") and can_preview(d["mime_type"])):
+        return None, False
+    p = store.path(d["storage_path"])
+    if not p.exists():
+        return None, False
+    with p.open("rb") as fh:
+        raw = fh.read(TEXT_PREVIEW_BYTES + 1)
+    return raw[:TEXT_PREVIEW_BYTES].decode("utf-8", "replace"), len(raw) > TEXT_PREVIEW_BYTES
+
+
 @router.get("/d/{doc_id}", response_class=HTMLResponse)
 def document_page(doc_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
                   auth: Auth = Depends(require_auth), store: BlobStore = Depends(get_store)):
     d = dm.get_document(conn, auth.user, doc_id)
     role = fo.effective_role(conn, auth.user, d["folder_id"])
-    text_preview = None
-    truncated = False
-    if d["mime_type"].startswith("text/") and can_preview(d["mime_type"]):
-        p = store.path(d["storage_path"])
-        if p.exists():
-            with p.open("rb") as fh:
-                raw = fh.read(TEXT_PREVIEW_BYTES + 1)
-            truncated = len(raw) > TEXT_PREVIEW_BYTES
-            text_preview = raw[:TEXT_PREVIEW_BYTES].decode("utf-8", "replace")
+    text_preview, truncated = text_preview_of(store, d)
     targets = [(fid, label) for fid, label in fo.folders_of_owner(conn, d["owner_id"])
                if fo.effective_role(conn, auth.user, fid) in ("editor", "owner")]
     pages = conn.execute("SELECT page_no, source, text, ocr_confidence FROM pages WHERE blob_id = ?"
@@ -78,7 +82,7 @@ def document_page(doc_id: int, request: Request, conn: sqlite3.Connection = Depe
         truncated=truncated, targets=targets, owner=um.get_user(conn, d["owner_id"]),
         pages=pages, pages_shown=PAGES_SHOWN, error=h.problem_message(d["error"]),
         warnings=h.warning_messages(d["warnings"]), image_meta=json.loads(d["image_meta"] or "null"),
-        clip=_clip_for(conn, d), webclip_enabled=request.app.state.settings.webclip_enabled,
+        clip=clip_for(conn, d), webclip_enabled=request.app.state.settings.webclip_enabled,
         suggest_enabled=request.app.state.settings.suggest_enabled,
         live=_live_state(conn, request.app.state.settings, d),
         llm_enabled=request.app.state.settings.llm_enabled,
@@ -137,7 +141,7 @@ def _suggestions_for(request: Request, conn: sqlite3.Connection, d: sqlite3.Row)
                         llm_model=s.llm_model)
 
 
-def _clip_for(conn: sqlite3.Connection, d: sqlite3.Row) -> dict | None:
+def clip_for(conn: sqlite3.Connection, d: sqlite3.Row) -> dict | None:
     from ...webclip.service import clip_for_document, error_message
     c = clip_for_document(conn, d["id"])
     return dict(c) | {"error_message": error_message(c)} if c else None

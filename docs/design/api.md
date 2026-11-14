@@ -187,6 +187,9 @@ files=@領収書.jpg
 | メソッド | パス | 説明 |
 |---|---|---|
 | GET | `/trash` | 自分が owner のフォルダ配下で削除された項目（削除単位でまとめる） |
+| GET | `/trash/folder/{id}` | ゴミ箱の中のフォルダと、一緒に削除された文書 `{id, name, deleted_at, location, folders, documents: [{id, filename, path, size, mime_type}]}`（path はフォルダの中の相対パス） |
+| GET | `/trash/document/{id}/content` | ゴミ箱の中の文書の原本（`?inline=1` でプレビュー用。`/documents/{id}/content` と同じ） |
+| GET | `/trash/document/{id}/thumbnail` ・ `/view` | ゴミ箱の中の文書のサムネイル・表示用のプレビュー |
 | POST | `/trash/{type}/{id}/restore` | 復元（type = folder \| document） |
 | DELETE | `/trash/{type}/{id}` | 完全削除 |
 | DELETE | `/trash` | ゴミ箱を空にする |

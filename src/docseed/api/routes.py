@@ -839,6 +839,46 @@ def api_trash(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends
     return {"items": dm.list_trash(conn, auth.user)}
 
 
+@router.get("/trash/folder/{folder_id}")
+def api_trash_folder(folder_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                     auth: Auth = Depends(require_auth)):
+    """ゴミ箱の中のフォルダに、一緒に削除された文書（path はフォルダの中の相対パス）。"""
+    c = dm.trashed_folder_contents(conn, auth.user, folder_id)
+    f = c["folder"]
+    return {"id": f["id"], "name": f["name"], "deleted_at": f["deleted_at"], "location": c["location"],
+            "folders": c["folders"], "documents": [
+                {"id": d["id"], "filename": d["filename"], "path": d["path"], "size": d["size_bytes"],
+                 "mime_type": d["mime_type"]} for d in c["docs"]]}
+
+
+@router.get("/trash/document/{doc_id}/content")
+def api_trash_content(doc_id: int, request: Request, inline: int = 0, conn: sqlite3.Connection = Depends(get_conn),
+                      auth: Auth = Depends(require_auth), store: BlobStore = Depends(get_store)):
+    """ゴミ箱の中の文書の中身（消してよいかを確かめるためのプレビュー・ダウンロード）。"""
+    d = dm.get_trashed_document(conn, auth.user, doc_id)
+    if not inline and "range" not in request.headers:
+        with Tx(conn):
+            audit(conn, "download", user_id=auth.user.id, target_type="document", target_id=doc_id,
+                  ip=client_ip(request))
+    return file_response(store.path(d["storage_path"]), d, inline=bool(inline))
+
+
+@router.get("/trash/document/{doc_id}/thumbnail")
+def api_trash_thumbnail(doc_id: int, conn: sqlite3.Connection = Depends(get_conn),
+                        auth: Auth = Depends(require_auth), store: BlobStore = Depends(get_store)):
+    d = dm.get_trashed_document(conn, auth.user, doc_id)
+    return derived_response(store.derived_path(d["thumb_path"]) if d["thumb_path"] else None)
+
+
+@router.get("/trash/document/{doc_id}/view")
+def api_trash_view(doc_id: int, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_auth),
+                   store: BlobStore = Depends(get_store)):
+    d = dm.get_trashed_document(conn, auth.user, doc_id)
+    if d["view_path"]:
+        return derived_response(store.derived_path(d["view_path"]))
+    return file_response(store.path(d["storage_path"]), d, inline=True)
+
+
 @router.post("/trash/{item_type}/{item_id}/restore", status_code=204)
 def api_restore(item_type: str, item_id: int, conn: sqlite3.Connection = Depends(get_conn),
                 auth: Auth = Depends(require_auth)):

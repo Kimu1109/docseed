@@ -1,0 +1,30 @@
+{# 文書のプレビュー。呼び出し側が doc・k・file_base（content / view / thumbnail の前の URL）・text_preview・truncated・clip を決めておく #}
+  <section class="preview{% if media_kind(doc.mime_type) == 'audio' %} preview-audio{% endif %}" aria-label="プレビュー">
+    {% if doc.mime_type == "application/pdf" %}
+      <iframe src="{{ file_base }}/content?inline=1" title="{{ doc.filename }} のプレビュー"></iframe>
+    {% elif clip and doc.kind == "webclip" %}
+      <div class="clip-card">
+        {% if doc.thumb_path %}<img class="clip-image" src="{{ file_base }}/thumbnail" alt="">{% endif %}
+        <div class="clip-body">
+          <p class="clip-site">{{ clip.site_name or "" }}</p>
+          <h2 class="clip-title">{{ clip.title or doc.filename }}</h2>
+          {% if clip.description %}<p class="clip-desc">{{ clip.description }}</p>{% endif %}
+          <p class="small"><a href="{{ clip.final_url or clip.url }}" target="_blank" rel="noopener noreferrer">{{ icon("link") }} {{ clip.final_url or clip.url }}</a></p>
+          <p class="muted small">安全のため HTML は表示しません。本文は下の「取り出したテキスト」で読めます。</p>
+        </div>
+      </div>
+    {% elif image_src(doc, file_base) %}
+      <img src="{{ image_src(doc, file_base) }}" alt="{{ doc.filename }}">
+    {% elif media_kind(doc.mime_type) %}
+      {% set media_kind_now, media_src, media_name = media_kind(doc.mime_type), file_base ~ "/view", doc.filename %}
+      {% include "_media.html" %}
+    {% elif text_preview is not none %}
+      <pre class="textview">{{ text_preview }}</pre>
+      {% if truncated %}<p class="muted">先頭の 200 KB だけを表示しています。</p>{% endif %}
+    {% else %}
+      <div class="nopreview">
+        {{ icon("visibility_off", cls="hero-icon") }}
+        <p>この形式（{{ kind_label[k] }}）はブラウザで表示できません。</p>
+      </div>
+    {% endif %}
+  </section>

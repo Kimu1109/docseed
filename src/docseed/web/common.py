@@ -91,6 +91,8 @@ DONE_MESSAGES = {
     "recent_cleared": "最近開いたファイルの記録を消しました",
     "theme": "画面の色を変えました",
     "trash_retention": "ゴミ箱の保持日数を保存しました",
+    "restored": "ゴミ箱から元に戻しました",
+    "purged": "完全に削除しました",
     "quota": "容量の上限を保存しました",
     "search_saved": "検索を保存しました",
     "search_deleted": "保存した検索を消しました",
