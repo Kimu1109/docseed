@@ -65,6 +65,7 @@ python scripts/build_icons.py --check
 | `src/docseed/monitor.py`・`metrics.py`・`notify.py`・`tlscheck.py`・`backup.py` | 監視・指標・通知・証明書・バックアップ | [配置・運用](../design/deployment.md) 5〜6 章 |
 | `src/docseed/migrations/` | DB のマイグレーション（`NNNN_名前.sql`。番号順に適用） | [データモデル](../design/data-model.md) |
 | `compose.yaml`・`docker/` | コンテナ・Caddyfile | [配置・運用](../design/deployment.md) 2 章 |
+| `scripts/wiki_sync.py`・`.github/workflows/wiki.yml` | `docs/` を GitHub の Wiki に写す | [文書の書き方と更新の手順](docs-guide.md#github-の-wiki読むための写し) |
 | `scripts/ops/`・`deploy/` | Pi 本体で使う運用スクリプト・systemd・fail2ban | [配置・運用](../design/deployment.md) 5 章 |
 | `tests/` | テスト（ファイルの先頭の docstring に、対応する設計書の章を書く） | — |
 

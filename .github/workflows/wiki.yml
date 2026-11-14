@@ -1,0 +1,50 @@
+# docs/ を GitHub の Wiki に写す（一方向: リポジトリ → Wiki）。docs/dev/docs-guide.md「GitHub の Wiki」。
+# 変換は scripts/wiki_sync.py。Wiki は読むための写しで、Wiki で直した内容は次の同期で消える。
+# 初回だけ: リポジトリの Settings → Features で Wikis を有効にし、Wiki の画面で最初の 1 ページを作っておく
+# （Wiki のリポジトリは、最初のページを作るまで存在しないため）。
+name: Wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "scripts/wiki_sync.py"
+      - ".github/workflows/wiki.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # Wiki のリポジトリへの push に使う（GITHUB_TOKEN）
+
+# 続けて push されたときは、順に（後のものが最後に）反映する
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wiki のリポジトリを取ってくる
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}.wiki
+          path: wiki
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: docs/ を Wiki の形に変換する
+        run: python scripts/wiki_sync.py --docs docs --out wiki --repo "${{ github.repository }}" --ref "${{ github.ref_name }}"
+      - name: Wiki に push する
+        working-directory: wiki
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Wiki に変更はありません"
+            exit 0
+          fi
+          git commit -q -m "docs/ から同期（${GITHUB_SHA::7}）"
+          git push

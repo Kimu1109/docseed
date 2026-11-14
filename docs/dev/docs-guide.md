@@ -19,6 +19,24 @@
 - 画像は使わない（今は画面に出せない）
 - `tests/test_help.py` が、すべての文書が画面に出て、中のリンクが画面の中の見出しまで届くことを確かめる
 
+## GitHub の Wiki（読むための写し）
+
+main に push されると、`.github/workflows/wiki.yml` が `docs/` を GitHub の Wiki に写します（一方向。変換は `scripts/wiki_sync.py`）。
+
+- **編集の元は常に `docs/`。** Wiki で直した内容・Wiki だけに作ったページは、次の同期で消えます
+- ページ名は `docs/` のパスから作ります: `docs/README.md` → `Home`、`docs/user/README.md` → `user`、`docs/user/files.md` → `user-files`。名前がぶつかるファイル名（例 `user/files.md` と `user-files.md`）は作らない（同期が止まる）
+- 相対リンクは Wiki のページ名に、`docs/` の外へのリンクはリポジトリのファイルの URL に書き換わります
+- サイドバー（`_Sidebar.md`）は、各ガイドの目次に出てくる順にページを並べます。新しいページは目次に載せる（[何をどこに書くか](#何をどこに書くか)）
+- `tests/test_wiki_sync.py` が、変換した Wiki の中のリンクがすべて届くことを確かめます
+
+初回だけ必要なこと（リポジトリの管理者）:
+
+1. リポジトリの Settings → General → Features で **Wikis** を有効にする
+2. Wiki の画面で最初の 1 ページを作る（中身は何でもよい。Wiki のリポジトリは最初のページを作るまで存在しない。次の同期で置き換わる）
+3. Actions の画面で「Wiki」のワークフローを手で実行する（Run workflow）か、`docs/` を変えて main に push する
+
+Wiki を誰でも編集できる設定のままだと、同期までの間に書き換えられることがあります。Settings → General → Features の Wikis にある、編集をリポジトリに書き込める人だけに絞る設定（個人のリポジトリでは「Restrict editing to collaborators only」）をオンにしてください。
+
 ## 何をどこに書くか
 
 | 変えたもの | 直す文書 |
@@ -87,4 +105,5 @@ PR の説明にも同じものがあります（`.github/pull_request_template.m
 | `cli.py` のコマンドが、すべて [コマンドの一覧](../admin/cli.md) にある | コマンドの一覧に行を足す |
 | `docs/user/`・`docs/admin/` のページが、そのガイドの `README.md` から張られている | ガイドの `README.md` の表に足す |
 | （`tests/test_help.py`）すべての文書が画面のヘルプに出て、中のリンクが届く | 相対リンクの先・見出しを直す |
+| （`tests/test_wiki_sync.py`）Wiki に写したときに、中のリンクがすべて届く | 同上。ページ名がぶつかるなら、ファイル名を変える |
 | 利用者ガイドに `.env`・`docker compose`・`DOCSEED_` が出てこない | 管理者ガイドに移して、リンクにする |
