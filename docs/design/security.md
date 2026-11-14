@@ -150,7 +150,7 @@ SELECT folder_id FROM accessible_folders;
 | 項目 | 内容 |
 |---|---|
 | ダウンロード | 常に `Content-Disposition: attachment; filename*=UTF-8''...` |
-| プレビュー（inline 表示） | 許可した形式のみ: PDF、PNG、JPEG、WebP、GIF、プレーンテキスト（`text/plain; charset=utf-8` で返す）。HTML・SVG・XML はプレビューしない |
+| プレビュー（inline 表示） | 許可した形式のみ: PDF、PNG、JPEG、WebP、GIF、プレーンテキスト（`text/plain; charset=utf-8` で返す）、音声・動画（MP4・WebM・MOV・MP3・M4A・AAC・OGG・WAV・FLAC。`files.PLAYABLE_MEDIA` の一覧のもの。画面の `<video>`・`<audio>` で再生し、範囲指定（Range）に応える）。HTML・SVG・XML はプレビューしない |
 | 共通ヘッダ | `X-Content-Type-Options: nosniff`、`Content-Security-Policy: default-src 'none'; sandbox`（ファイル配信のレスポンス）、`Cross-Origin-Resource-Policy: same-origin` |
 | アプリの画面 | `Content-Security-Policy: default-src 'self'; img-src 'self' data: blob:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'`、`X-Frame-Options: DENY`（PDF プレビュー用の iframe は同一オリジンのみ許可）、`Referrer-Policy: same-origin` |
 | ファイル名 | 保存時にパス区切り文字・制御文字を除去し、255 バイトまでに切り詰める。実体のパスには使わない |
