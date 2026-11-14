@@ -157,6 +157,31 @@ services:
   # 枠（--parallel）を 2 にして、要約の途中でも質問に答えられるようにする（1 つの枠の文脈は -c / 枠の数 = 4096）。
   # .env で DOCSEED_LLM_ENABLED=true と COMPOSE_PROFILES=llm（Web クリップも使うなら webclip,llm）にすると起動する。
   # モデルは docker compose exec api docseed fetch-models --llm <名前> で models/llm/ に置く
+  # JavaScript で描くページの描画（任意）。使うときは COMPOSE_PROFILES に webclip-render を足し、
+  # .env に DOCSEED_WEBCLIP_RENDER_URL=http://webclip-browser:8080 を書く（docs/design/extensions.md 6.10）
+  webclip-browser:
+    profiles: ["webclip-render"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: render
+    image: docseed-render:latest
+    <<: *hardening
+    # Chromium が使う一時領域。共有メモリ（/dev/shm）は既定の 64MB では足りない
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+      - /home/pwuser:size=256m,mode=0755
+    shm_size: 256m
+    environment:
+      DOCSEED_WEBCLIP_PROXY: ${DOCSEED_WEBCLIP_PROXY:-}
+      DOCSEED_RENDER_NO_SANDBOX: ${DOCSEED_RENDER_NO_SANDBOX:-0}
+    pids_limit: 256
+    mem_limit: 1g
+    logging: *logging
+    restart: unless-stopped
+    # 外へは出る（描画のため）。LAN への出口は Pi のルーターや Docker 側で止めること（README）
+    networks: [default]
+
   llm:
     profiles: ["llm"]
     image: ${DOCSEED_LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}

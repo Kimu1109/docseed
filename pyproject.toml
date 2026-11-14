@@ -43,6 +43,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# JavaScript で描くページの描画（別コンテナの描画サービスだけで使う。docker/Dockerfile の render）
+render = [
+  "playwright>=1.55",
+]
 # モデルの取得と ONNX への変換（docseed fetch-models）だけで使う。初回に 1 度だけ必要
 tools = [
   "torch>=2.4",

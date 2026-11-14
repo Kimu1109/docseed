@@ -533,6 +533,7 @@ CREATE TABLE auth_challenges (
 
 [fetcher] fetch_url（fetch_* のジョブだけを取る）
   ① 安全な取得（6.3）。HTML 以外（PDF・画像）は、そのファイルを普通のアップロードと同じに保存して終わる
+  ②′ 本文が短ければ（JavaScript で描くページ）、描画サービスで描いた HTML に置き換える（6.10。失敗したら取得したまま）
   ② メタデータの解析（6.4）。oEmbed があれば取得する
   ③ og:image を取得（6.3 の同じ確認。5MB まで。画像でなければ捨てる）
   ④ HTML と og:image を blob として保存し（重複は使い回す）、document を作る / 差し替える
@@ -562,7 +563,7 @@ LAN の機器（ルーターの管理画面・NAS など）や、Pi 自身のサ
 | 文字コード | HTTP ヘッダ → `<meta charset>` → 推定（charset-normalizer）の順で決め、UTF-8 にして保存する |
 
 - プロキシを使う環境のために `DOCSEED_WEBCLIP_PROXY` を用意する。設定したときは名前の解決をプロキシに任せることになるので、プロキシ側で LAN への通信を止めること（README に書く）。
-- fetcher は DB と `files/` 以外を開かない。HTML の中のスクリプトは実行しない。
+- fetcher は DB と `files/` 以外を開かない。HTML の中のスクリプトは実行しない。JavaScript を動かすのは描画サービス（6.10）だけで、そこでも描いた結果は docseed の画面に出さない。
 
 ### 6.4 メタデータ
 
@@ -653,6 +654,27 @@ CREATE INDEX idx_web_clips_canonical ON web_clips(canonical_url);
 | `DOCSEED_WEBCLIP_ENABLED` | `false` | Web クリップを使う（fetcher を起動する） |
 | `DOCSEED_WEBCLIP_MAX_MB` | `5` | HTML の大きさの上限 |
 | `DOCSEED_WEBCLIP_PROXY` | 空 | 取得に使うプロキシ |
+| `DOCSEED_WEBCLIP_RENDER_URL` | 空 | 描画サービスの URL（例 `http://webclip-browser:8080`）。空なら描画しない（6.10） |
+| `DOCSEED_RENDER_NO_SANDBOX` | `0` | 描画サービス: Chromium のサンドボックスを使わない（コンテナの制限を緩める。動かないときだけ） |
+
+### 6.10 JavaScript で描くページの描画
+
+HTML を取得しただけでは本文が無い（JavaScript で組み立てるページ）は、描画サービスで描いてから保存する。
+
+```
+[fetcher] 取得（6.3）→ 本文が 200 字未満（extract と同じ基準）かつ DOCSEED_WEBCLIP_RENDER_URL が空でない
+  └ POST {描画サービス}/render {"url": 取得後の URL, "max_bytes": HTML の上限}
+       ├ 成功: 描画後の HTML と最後の URL を受け取る（最後の URL も 6.3 の形式の確認をする）→ 以後は同じ処理（6.4 以降）
+       └ 失敗（接続・時間切れ・通信の拒否・例外）: 取得したままの HTML で保存する。web_clips.rendered = 0
+```
+
+- **描画サービス**（`src/docseed/webclip/browser.py`。`docker/Dockerfile` の `render` 段、compose の `webclip-browser`・profile `webclip-render`）は、Playwright の Chromium で 1 件ずつ描く。fetcher と同じイメージにはしない（fetcher の上限は 384MB で、Chromium は入らない）。
+- 描画サービスへの通信は、内部のネットワークだけで行う。プロキシの設定は使わない（`trust_env=False`）。描画サービスには保存領域（docseed のデータ）を渡さない。
+- **ページが出す通信の確認**: 描画中のすべての要求（画像・スクリプト・リダイレクトの先を含む）を、6.3 と同じ基準で確かめる（http / https・許可したポート・名前を引いて返ったすべての IP がグローバル）。確かめられない・拒否するものは止める。ホストごとに結果を覚える。1 ページの要求は 300 件まで。
+- **制限**: 最初の読み込みは 20 秒まで、通信が落ち着くのは 5 秒まで待つ（来なくても、その時点の HTML を保存する）。全体は fetcher の描画の待ち（45 秒）より短く収める。Cookie・Service Worker・ダウンロードは使わず、描画のたびに新しい文脈（context）を作って捨てる。
+- **既知の制限**: Chromium の WebSocket は要求の割り込みの対象にならない。そのため、LAN への出口は Pi のルーターや Docker のネットワークの側でも止めること（README）。名前の解決と接続の間に答えが変わる攻撃（DNS リバインディング）は、描画では IP の固定ができないため完全には防げない。上の出口の制限が、その保険になる。
+- 描画したかどうかは `web_clips.rendered`（マイグレーション `0012_webclip_render.sql`）に保存し、API の `rendered` で返す。
+- 既定では無効。`DOCSEED_WEBCLIP_RENDER_URL` を設定し、`COMPOSE_PROFILES` に `webclip-render` を足したときだけ使う。
 
 ---
 
@@ -961,4 +983,4 @@ Document の表現に `kind` と、Web クリップなら `webclip: {url, canoni
 | RAM 8GB での LLM | 1B のモデルでメモリが足りるか。足りなければ 0.6B にするか、llm サービスを処理待ちがあるときだけ起動する | Phase 9（未計測。README では 8GB なら `qwen3-0.6b` を案内している） |
 | `llama-server` の arm64 イメージ | 公式のイメージが arm64 を配布しているか | **解決**: `ghcr.io/ggml-org/llama.cpp:server` は linux/arm64 を配布している |
 | Google の OAuth の規則 | テストの状態で使える人数・期限など、実装時の Google の規則 | **Phase 7 で対応**: テストの状態ではテストユーザー（最大 100 人）だけが使える。範囲は `openid email profile` だけなので本番にも公開できる。トークンは保存しないので、テストの状態のリフレッシュトークンの期限（7 日）は関係しない。手順は README |
-| JavaScript で描くサイト | oEmbed も無いサイトの本文。必要なら、ヘッドレスブラウザを別のサービスとして任意で足す | Phase 8 の後 |
+| JavaScript で描くサイト | oEmbed も無いサイトの本文 | **解決**: 6.10 の描画サービス（別コンテナ・任意・本文が 200 字未満のときだけ描く） |
