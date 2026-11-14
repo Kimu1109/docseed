@@ -19,7 +19,8 @@ def test_tabbar_and_drawer(login):
     assert "data-nav-toggle" in tabbar and 'class="side-backdrop"' in page
     # 今いる画面のタブに印が付く
     assert re.search(r'href="/f/\d+" aria-current="page"', tabbar)
-    assert 'aria-current="page"' in login("bob").get("/search").text.split('<nav class="tabbar"')[1].split('href="/search"')[1][:40]
+    search = login("bob").get("/search").text.split('<nav class="tabbar"')[1]
+    assert 'aria-current="page"' in search.split('href="/search"')[1][:40]
 
 
 def test_folder_mobile_parts_only_for_editors(login, users):
@@ -43,7 +44,9 @@ def test_mobile_css_and_script_hooks():
     assert ".tabbar, .fab, .m-only, .m-meta" in CSS
     mobile = CSS[CSS.index("@media (max-width: 860px) {\n  :root { --side-w: 0px; }"):]
     for s in (".pc-only { display: none !important; }", ".tabbar {", ".rowmenu-panel {", ".fab {",
-              ".search-form:not(.filters-open) .search-filters", ".plain { position: relative; display: block; overflow-x: auto;"):
+              ".search-form:not(.filters-open) .search-filters",
+              ".plain { position: relative; display: block; overflow-x: auto;"):
         assert s in mobile, s
-    for s in ('"[data-filters-toggle]"', '"[data-camera-pick]"', '"[data-select-row]"', '"#camera-input"', "pointerdown"):
+    for s in ('"[data-filters-toggle]"', '"[data-camera-pick]"', '"[data-select-row]"', '"#camera-input"',
+              "pointerdown"):
         assert s in JS, s
