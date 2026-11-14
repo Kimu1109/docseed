@@ -1,12 +1,15 @@
 {% extends "base.html" %}
 {% block title %}{{ ("「" ~ q ~ "」の検索結果") if q else "検索" }}{% endblock %}
 {% block main %}
+{% set n_filters = [type, tag, after, before, taken_from, taken_to, folder] | select | list | length %}
 <form class="search-form" method="get" action="/search" role="search" data-autosubmit>
-  <div class="search-main">
-    <input type="search" name="q" value="{{ q }}" placeholder="ファイルの中身を検索（例: 振込先 請求書）" aria-label="検索語" autocomplete="off" {% if not q %}autofocus{% endif %}>
-    <button type="submit" class="btn btn-primary">{{ icon("search") }}検索</button>
+  <div class="search-main m-ic">
+    <input type="search" name="q" value="{{ q }}" placeholder="ファイルの中身を検索（例: 振込先 請求書）" aria-label="検索語" autocomplete="off" enterkeyhint="search" {% if not q %}autofocus{% endif %}>
+    <button type="button" class="btn m-only filters-toggle{% if n_filters %} is-on{% endif %}" data-filters-toggle aria-controls="search-filters" aria-expanded="false"
+            title="絞り込み">{{ icon("tune") }}<span class="lbl">絞り込み</span>{% if n_filters %}<span class="count">{{ n_filters }}</span>{% endif %}</button>
+    <button type="submit" class="btn btn-primary">{{ icon("search") }}<span class="lbl">検索</span></button>
   </div>
-  <div class="search-filters">
+  <div class="search-filters" id="search-filters">
     <label>検索方法
       <select name="mode">{% for k, v in mode_label.items() %}<option value="{{ k }}" {% if k == mode %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
     </label>

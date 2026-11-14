@@ -3,15 +3,15 @@
 {% block main %}
 <div class="page-head">
   {% set link_last = False %}{% include "_crumbs.html" %}
-  <div class="actions">
+  <div class="actions m-ic">
     {% set fav, fav_type, fav_id, small = folder.id in favs.folder, "folder", folder.id, False %}{% include "_fav.html" %}
-    <a class="btn" href="/api/v1/folders/{{ folder.id }}/archive" title="このフォルダをまとめてダウンロード">{{ icon("folder_zip") }}ZIP</a>
+    <a class="btn" href="/api/v1/folders/{{ folder.id }}/archive" title="このフォルダをまとめてダウンロード">{{ icon("folder_zip") }}<span class="lbl">ZIP</span></a>
     <button type="button" class="btn" data-open-dialog="dlg-share" hx-get="/x/share?type=folder&id={{ folder.id }}"
-            hx-target="#share-body" hx-swap="outerHTML">{{ icon("share") }}共有</button>
+            hx-target="#share-body" hx-swap="outerHTML">{{ icon("share") }}<span class="lbl">共有</span></button>
     {% if can_edit %}
-    <button type="button" class="btn" data-open-dialog="dlg-folder">{{ icon("create_new_folder") }}新しいフォルダ</button>
-    {% if webclip_enabled %}<button type="button" class="btn" data-open-dialog="dlg-webclip">{{ icon("link") }}URL を追加</button>{% endif %}
-    <button type="button" class="btn btn-primary" data-upload-pick>{{ icon("upload") }}アップロード</button>
+    <button type="button" class="btn pc-only" data-open-dialog="dlg-folder">{{ icon("create_new_folder") }}新しいフォルダ</button>
+    {% if webclip_enabled %}<button type="button" class="btn pc-only" data-open-dialog="dlg-webclip">{{ icon("link") }}URL を追加</button>{% endif %}
+    <button type="button" class="btn btn-primary pc-only" data-upload-pick>{{ icon("upload") }}アップロード</button>
     {% endif %}
   </div>
 </div>
@@ -21,6 +21,19 @@
 
 {% if can_edit %}
 <input type="file" id="upload-input" multiple hidden data-folder-id="{{ folder.id }}">
+<input type="file" id="camera-input" accept="image/*" capture="environment" hidden>
+{#- スマホ: 右下の「＋」から、アップロード・撮影・新しいフォルダ・URL の追加を選ぶ -#}
+<button type="button" class="fab" data-open-dialog="dlg-add" aria-label="追加（アップロード・撮影・新しいフォルダ）">{{ icon("add") }}</button>
+<dialog id="dlg-add" class="dialog sheet-menu" aria-label="追加">
+  <div class="dialog-in">
+    <h2>{{ icon("add") }} 「{{ folder.name or "マイファイル" }}」に追加</h2>
+    <button type="button" class="sheet-item" data-close-dialog data-upload-pick>{{ icon("upload") }}ファイルをアップロード</button>
+    <button type="button" class="sheet-item" data-close-dialog data-camera-pick>{{ icon("photo_camera") }}カメラで撮ってアップロード</button>
+    <button type="button" class="sheet-item" data-close-dialog data-open-dialog="dlg-folder">{{ icon("create_new_folder") }}新しいフォルダ</button>
+    {% if webclip_enabled %}<button type="button" class="sheet-item" data-close-dialog data-open-dialog="dlg-webclip">{{ icon("link") }}URL を追加</button>{% endif %}
+    <div class="dialog-actions"><button type="button" class="btn" data-close-dialog>キャンセル</button></div>
+  </div>
+</dialog>
 <section class="uploads" id="uploads" hidden aria-live="polite">
   <div class="uploads-head"><span id="uploads-title">アップロード中</span>
     <button type="button" class="linkish" data-uploads-close hidden>{{ icon("close") }}閉じる</button></div>

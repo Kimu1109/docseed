@@ -35,6 +35,7 @@
     {% if can_edit %}<p class="muted">ファイルをこの画面にドラッグ＆ドロップするか、「アップロード」から追加できます。</p>{% endif %}
   </div>
 {% else %}
+<nav class="m-sort" aria-label="並べ替え">{{ icon("sort") }}{{ sort_link("name", "名前") }}{{ sort_link("updated_at", "更新日") }}{{ sort_link("size", "サイズ") }}</nav>
 <table class="files">
   <thead>
     <tr>
@@ -50,7 +51,8 @@
   {% for f in folders %}
     <tr data-item="folder:{{ f.id }}" data-name="{{ f.name }}" {% if can_edit %}draggable="true" data-drop="{{ f.id }}"{% endif %}>
       <td class="col-kind"><span class="kind kind-folder" title="フォルダ"></span></td>
-      <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon("folder_shared" if f.member_count else "folder") }}</span><a class="name" href="/f/{{ f.id }}">{{ f.name }}{% if f.id in favs.folder %}<span class="fav-mark" title="お気に入り">{{ icon("star") }}</span>{% endif %}{% if f.member_count %}<span class="flag">共有中</span>{% endif %}</a></div></td>
+      <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon("folder_shared" if f.member_count else "folder") }}</span><a class="name" href="/f/{{ f.id }}">{{ f.name }}{% if f.id in favs.folder %}<span class="fav-mark" title="お気に入り">{{ icon("star") }}</span>{% endif %}{% if f.member_count %}<span class="flag">共有中</span>{% endif %}</a></div>
+        <div class="m-meta">{{ f.updated_at | shortdate }} ・ {{ f.item_count }} 項目</div></td>
       <td class="col-date">{{ f.updated_at | shortdate }}</td>
       <td class="col-size muted">{{ f.item_count }} 項目</td>
       <td class="col-status"></td>
@@ -59,6 +61,9 @@
         <details class="rowmenu">
           <summary aria-label="「{{ f.name }}」の操作">{{ icon("more_horiz") }}</summary>
           <div class="rowmenu-panel">
+            <div class="sheet-title">{{ icon("folder") }}<span>{{ f.name }}</span></div>
+            <a class="m-only" href="/f/{{ f.id }}">{{ icon("folder_open") }}開く</a>
+            <button type="button" class="m-only" data-select-row>{{ icon("checklist") }}選択</button>
             <button type="button" data-rename="/x/folders/{{ f.id }}/rename" data-name="{{ f.name }}">{{ icon("edit") }}名前を変更</button>
             <button type="button" data-move="/x/folders/{{ f.id }}/move" data-name="{{ f.name }}">{{ icon("drive_file_move") }}移動</button>
             <button type="button" class="danger" hx-post="/x/folders/{{ f.id }}/delete" hx-vals='{"current": {{ folder.id }}}'
@@ -75,6 +80,7 @@
       <td class="col-kind"><span class="kind kind-webclip" title="Web クリップ"></span></td>
       <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon("link") }}</span>
         <span class="name" title="{{ c.url }}">{{ c.url }}</span></div>
+        <div class="m-meta">{% if c.status == "failed" %}<span class="err-text">取得に失敗</span>{% else %}取得中…{% endif %}</div>
         {% if c.status == "failed" and c.error_message %}<div class="small err-text clip-error">{{ c.error_message }}</div>{% endif %}</td>
       <td class="col-date">{{ c.created_at | shortdate }}</td>
       <td class="col-size muted">—</td>
@@ -85,6 +91,7 @@
         <details class="rowmenu">
           <summary aria-label="「{{ c.url }}」の操作">{{ icon("more_horiz") }}</summary>
           <div class="rowmenu-panel">
+            <div class="sheet-title">{{ icon("link") }}<span>{{ c.url }}</span></div>
             {% if c.status == "failed" %}<button type="button" hx-post="/x/webclips/{{ c.id }}/retry" hx-vals='{"current": {{ folder.id }}}'
                     hx-target="#listing" hx-swap="outerHTML">{{ icon("refresh") }}もう一度取得</button>{% endif %}
             <button type="button" class="danger" hx-post="/x/webclips/{{ c.id }}/delete" hx-vals='{"current": {{ folder.id }}}'
@@ -100,6 +107,7 @@
     <tr data-item="document:{{ d.id }}" data-name="{{ d.filename }}" {% if can_edit %}draggable="true"{% endif %}>
       <td class="col-kind"><span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span></td>
       <td class="col-name"><div class="cell-name">{% if d.thumb_path %}<img class="thumb" draggable="false" src="/api/v1/documents/{{ d.id }}/thumbnail" alt="" loading="lazy">{% else %}<span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span>{% endif %}<a class="name" href="/d/{{ d.id }}">{{ d.filename }}{% if d.id in favs.document %}<span class="fav-mark" title="お気に入り">{{ icon("star") }}</span>{% endif %}{% if d.uploaded_via_share_id %}<span class="flag">リンクで受け取り</span>{% endif %}</a></div>
+        <div class="m-meta">{{ d.updated_at | shortdate }} ・ {{ d.size_bytes | filesize }}{% if d.status != "ready" %} ・ <span class="m-status status-{{ d.status }}">{{ status_label[d.status] }}{% if d.status == "processing" and d.progress_total %} {{ d.progress_done }}/{{ d.progress_total }}{% endif %}</span>{% endif %}</div>
         {% if reco.get(d.id) %}{% set r = reco[d.id] %}
         <div class="reco small">
           <label><input type="checkbox" name="doc" value="{{ d.id }}" form="reco-form" aria-label="「{{ d.filename }}」をまとめて移動する"> おすすめ: {{ r.path }}</label>
@@ -114,8 +122,11 @@
         <details class="rowmenu">
           <summary aria-label="「{{ d.filename }}」の操作">{{ icon("more_horiz") }}</summary>
           <div class="rowmenu-panel">
+            <div class="sheet-title">{{ icon(kind_icon[k]) }}<span>{{ d.filename }}</span></div>
+            <a class="m-only" href="/d/{{ d.id }}">{{ icon("visibility") }}開く</a>
             <a href="/api/v1/documents/{{ d.id }}/content">{{ icon("download") }}ダウンロード</a>
             {% if can_edit %}
+            <button type="button" class="m-only" data-select-row>{{ icon("checklist") }}選択</button>
             <button type="button" data-rename="/x/documents/{{ d.id }}/rename" data-name="{{ d.filename }}">{{ icon("edit") }}名前を変更</button>
             <button type="button" data-move="/x/documents/{{ d.id }}/move" data-name="{{ d.filename }}">{{ icon("drive_file_move") }}移動</button>
             <button type="button" class="danger" hx-post="/x/documents/{{ d.id }}/delete" hx-vals='{"current": {{ folder.id }}}'

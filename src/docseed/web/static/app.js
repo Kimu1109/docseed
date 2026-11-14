@@ -76,12 +76,29 @@
     }
 
     const toggle = e.target.closest("[data-nav-toggle]");
-    if (toggle) {
-      const side = $("#side");
-      side.classList.toggle("open");
-      toggle.setAttribute("aria-expanded", side.classList.contains("open"));
+    if (toggle) setNav(!$("#side")?.classList.contains("open"));
+    else if (e.target.closest("[data-nav-close]") || ($("#side.open") && e.target.closest("#side a"))) setNav(false);
+
+    // スマホ: 検索の絞り込みを開く・閉じる
+    const ft = e.target.closest("[data-filters-toggle]");
+    if (ft) {
+      const form = ft.closest("form");
+      form.classList.toggle("filters-open");
+      ft.setAttribute("aria-expanded", form.classList.contains("filters-open"));
     }
   });
+
+  // サイドバー（スマホでは引き出し）の開閉。開いている間は後ろを暗くし、外側・Esc で閉じる
+  function setNav(open) {
+    const side = $("#side");
+    if (!side) return;
+    side.classList.toggle("open", open);
+    $$("[data-nav-toggle]").forEach((b) => b.setAttribute("aria-expanded", open));
+    const bd = $(".side-backdrop");
+    if (bd) bd.hidden = !open;
+    document.body.classList.toggle("nav-open", open);
+  }
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("#side.open")) setNav(false); });
 
   function openItemDialog(id, url, name, setup) {
     const dlg = document.getElementById(id);
@@ -436,13 +453,14 @@
 
   document.addEventListener("click", (e) => {
     if (e.target.closest("[data-upload-pick]")) $("#upload-input")?.click();
+    if (e.target.closest("[data-camera-pick]")) $("#camera-input")?.click();
     if (e.target.closest("[data-uploads-close]")) {
       $("#uploads").hidden = true;
       $("#uploads-list").replaceChildren();
     }
   });
   document.addEventListener("change", (e) => {
-    if (e.target.id === "upload-input" && e.target.files.length) {
+    if ((e.target.id === "upload-input" || e.target.id === "camera-input") && e.target.files.length) {
       startUploads(Array.from(e.target.files).map((f) => ({ file: f, path: "" })));
       e.target.value = "";
     }
@@ -761,6 +779,77 @@
     if (control) e.preventDefault(); // Ctrl/Shift + 名前のクリックは選択に使う
     selectItem(row.dataset.item, { toggle: mod, range: e.shiftKey });
   });
+
+  // ---- タッチ操作（スマホ）での選択 ----------------------------------------
+  // 行を長押しすると選択を始める。選択中は行のタップで選択に足す・外す（名前のリンクも開かずに選ぶ）。
+  // 行のメニューの「選択」からも始められる。タッチではドラッグでの移動を使わない（長押しと重なるため）
+  const coarse = window.matchMedia?.("(pointer: coarse)");
+  let lastPointer = "mouse";
+  let pressTimer = null, pressStart = null, suppressClick = false;
+  const touchSelecting = () => lastPointer !== "mouse" && selected.size > 0;
+
+  function syncTouchDrag() {
+    if (!coarse?.matches) return;
+    $$("#listing tr[data-item][draggable]").forEach((r) => r.removeAttribute("draggable"));
+  }
+  document.addEventListener("DOMContentLoaded", syncTouchDrag);
+  document.addEventListener("htmx:afterSettle", syncTouchDrag);
+
+  document.addEventListener("pointerdown", (e) => {
+    lastPointer = e.pointerType || "mouse";
+    clearTimeout(pressTimer);
+    if (e.pointerType !== "touch" || !editable()) return;
+    const row = e.target.closest("#listing tr[data-item]");
+    if (!row || e.target.closest("details, button, input, select, textarea, label")) return;
+    pressStart = [e.clientX, e.clientY];
+    pressTimer = setTimeout(() => {
+      pressTimer = null;
+      suppressClick = true;                // 指を離したときのクリック（リンクを開く）を止める
+      const first = selected.size === 0;
+      selectItem(row.dataset.item, { toggle: true });
+      navigator.vibrate?.(15);
+      if (first) showToast("ほかの行をタップすると選択に足せます");
+    }, 450);
+  }, { passive: true });
+  const cancelPress = () => { clearTimeout(pressTimer); pressTimer = null; };
+  document.addEventListener("pointermove", (e) => {
+    if (pressTimer && pressStart && Math.hypot(e.clientX - pressStart[0], e.clientY - pressStart[1]) > 10) cancelPress();
+  }, { passive: true });
+  document.addEventListener("pointerup", cancelPress, { passive: true });
+  document.addEventListener("pointercancel", cancelPress, { passive: true });
+  // 長押しで出る端末のメニュー（リンクを開く・画像を保存など）は、選択の邪魔になるので出さない
+  document.addEventListener("contextmenu", (e) => {
+    if (lastPointer === "touch" && editable() && e.target.closest("#listing tr[data-item]")) e.preventDefault();
+  });
+
+  // キャプチャ段階で受け、選択中のタップをリンクやメニューより先に選択の切り替えに使う
+  document.addEventListener("click", (e) => {
+    const sel = e.target.closest("[data-select-row]");
+    if (sel) {
+      const row = sel.closest("tr[data-item]");
+      sel.closest("details").open = false;
+      if (row) selectItem(row.dataset.item, { toggle: true });
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    if (suppressClick) {
+      suppressClick = false;
+      if (e.target.closest("#listing tr[data-item]")) { e.preventDefault(); e.stopPropagation(); }
+      return;
+    }
+    if (lastPointer === "mouse") return;
+    const row = e.target.closest("#listing tr[data-item]");
+    if (!row || e.target.closest("details, button, input, select, textarea, .reco")) return;
+    if (!touchSelecting()) {
+      // 選択していないときの行のタップは、名前の外でも開く（PC の「クリックで選択」はタッチでは使わない）
+      if (!e.target.closest("a")) { e.stopPropagation(); openRow(row); }
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    selectItem(row.dataset.item, { toggle: true });
+  }, true);
 
   document.addEventListener("dblclick", (e) => {
     const row = e.target.closest("#listing tr[data-item]");
