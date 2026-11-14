@@ -92,6 +92,8 @@ FROM python:3.12-slim-bookworm（arm64）
 - 依存は当面 `pip install .`（`pyproject.toml` の下限指定）で入れる。Phase 2 で依存が増えた時点で `uv` のロックファイル（`uv.lock`）に切り替えて再現性を保つ。
 - ビルドで取り直す量を減らすため、依存（`pyproject.toml` の `dependencies`）を入れる層と、本体（`src`・`README.md`）を入れる層を分ける。コードや文書だけの変更では依存の層をキャッシュから使う。
 - pip は BuildKit のキャッシュマウント（`--mount=type=cache,target=/root/.cache/pip`）を使う。`pyproject.toml` を変えても、前に取った wheel は取り直さない。キャッシュはイメージには入らず、`docker builder prune` で消える。BuildKit は Docker Engine 23 以降の既定。
+- ビルドに送るファイルは `.dockerignore` で `pyproject.toml`・`README.md`・`src` だけにする（`.env` や `.git` を送らない）。
+- CI の compose ジョブは、api のイメージの層を GitHub Actions のキャッシュ（`type=gha`）に置いて使い回す。
 - モデルはイメージに含めない（大きいため。`/srv/docseed/models` に置く）。
 - Pi 上で直接ビルドするか、GitHub Actions の arm64 ランナーでビルドして GHCR に置く（Phase 1 で決める）。
 
