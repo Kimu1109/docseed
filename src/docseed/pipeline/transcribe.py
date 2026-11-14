@@ -61,7 +61,8 @@ def _run(args: list[str], timeout: int, what: str) -> subprocess.CompletedProces
     try:
         return subprocess.run(args, capture_output=True, timeout=timeout, check=False)
     except FileNotFoundError as e:
-        raise RuntimeError(f"{what} が見つかりません（{args[0]}）。Docker イメージの作り方は README を参照") from e
+        raise RuntimeError(f"{what} が見つかりません（{args[0]}）。"
+                           "Docker イメージの作り方は docs/admin/asr.md を参照") from e
     except subprocess.TimeoutExpired as e:
         raise RuntimeError(f"{what} が {timeout} 秒以内に終わりませんでした") from e
 

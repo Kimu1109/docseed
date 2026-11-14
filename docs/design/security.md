@@ -179,13 +179,13 @@ Tailscale や LAN の中だけでなく、ポートを開けて公開する場�
 | 項目 | 内容 |
 |---|---|
 | 内側の範囲 | `DOCSEED_TRUSTED_NETS`（既定 `private_ranges 100.64.0.0/10`: RFC 1918・ループバック・`fd00::/8`・Tailscale）。接続元は `client_ip` で判定する（10 章） |
-| 外側から隠すパス | `/admin`、`/admin/*`、`/api/v1/admin`、`/api/v1/admin/*`、`/api/docs`、`/api/docs/*`、`/api/v1/openapi.json`、`/healthz` → 404（存在を知らせない。3.3 と同じ方針）。`%61dmin` や `%2F` のような符号化は Caddy が戻してから照合する。URL の接頭辞（`DOCSEED_BASE_PATH`、deployment.md 3.1）の下の同じパス（`/docseed/admin` など）も、接頭辞の中身を問わない `path_regexp` で 404 にする。外側に別のリバースプロキシを置くと接続元がそのプロキシに見えるため、そのプロキシの側でも止める（README） |
+| 外側から隠すパス | `/admin`、`/admin/*`、`/api/v1/admin`、`/api/v1/admin/*`、`/api/docs`、`/api/docs/*`、`/api/v1/openapi.json`、`/healthz` → 404（存在を知らせない。3.3 と同じ方針）。`%61dmin` や `%2F` のような符号化は Caddy が戻してから照合する。URL の接頭辞（`DOCSEED_BASE_PATH`、deployment.md 3.1）の下の同じパス（`/docseed/admin` など）も、接頭辞の中身を問わない `path_regexp` で 404 にする。外側に別のリバースプロキシを置くと接続元がそのプロキシに見えるため、そのプロキシの側でも止める（[パスの下で動かす](../admin/exposure.md#パスの下で動かす)） |
 | IP アドレスで開くサイト | `DOCSEED_LAN_IP` のサイトは内側からだけ。外側からは応答せずに接続を切る（`abort`） |
 | 追加するヘッダ | `Cross-Origin-Opener-Policy: same-origin`、`Permissions-Policy`（カメラ・マイク・位置情報・決済・USB などを無効）。アプリが同じヘッダを付けたときはアプリの値を優先する |
 | 外すヘッダ | `Server`、`Via`、`X-Powered-By` |
 
 - Docker の `healthcheck` は api に直接（`127.0.0.1:8000/healthz`）問い合わせるので、Caddy の制限の影響を受けない。
-- 注意: Docker のポート公開では、IPv6 の接続やホスト自身からの接続は docker-proxy を通り、接続元が Docker のゲートウェイ（`172.16.0.0/12` 内）に見える。IPv6 で外部に公開する場合はこの範囲を内側に含めないこと（README）。
+- 注意: Docker のポート公開では、IPv6 の接続やホスト自身からの接続は docker-proxy を通り、接続元が Docker のゲートウェイ（`172.16.0.0/12` 内）に見える。IPv6 で外部に公開する場合はこの範囲を内側に含めないこと（[インターネットに公開する](../admin/exposure.md#ルーターでポートを開けて公開する)）。
 
 ## 9. ログイン以外の流量の制限とセキュリティログ
 
@@ -237,7 +237,7 @@ compose の `cloudflared`（profile `tunnel`）が Cloudflare へ外向きにつ
 | アプリへ渡す接続元 | Caddy が `X-Forwarded-For` を判定済みの接続元 1 つで上書きする（`header_up X-Forwarded-For {client_ip}`）。クライアントが送った `X-Forwarded-For` は届かない |
 | コンテナ | ほかと同じ `x-hardening`（読み取り専用・特権なし）。トークンは `.env` の `DOCSEED_TUNNEL_TOKEN`（`TUNNEL_TOKEN` として渡す） |
 
-- Cloudflare が HTTPS を終端するので、通信の中身を Cloudflare が見られる。気になる場合は使わない（README）。
+- Cloudflare が HTTPS を終端するので、通信の中身を Cloudflare が見られる。気になる場合は使わない（[Cloudflare Tunnel](../admin/exposure.md#ポートを開けずに公開するcloudflare-tunnel)）。
 - Cloudflare Access で公開する名前を保護し、共有リンク（`/s/*`）だけ Bypass にするのを推奨する。
 - fail2ban（9.1）はトンネル経由の通信を止められない（ファイアウォールを通らないため）。アプリの中の制限（2.4・9 章）は本当の接続元で数えるので効く。
 - 確認済み（ローカルの Docker でトンネルのネットワークから再現）: トンネル経由は `CF-Connecting-IP` が公開・プライベート・無しのいずれでも管理系が 404、アプリには `CF-Connecting-IP` の値が届き、クライアントが送った `X-Forwarded-For` は無視されること。トンネル以外から送った `CF-Connecting-IP` は無視されること。cloudflared が強化した設定のまま起動すること。

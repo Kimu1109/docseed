@@ -61,7 +61,7 @@ services:
     depends_on: [api]
     restart: unless-stopped
 
-  # Cloudflare Tunnel（任意。docs/design/security.md 10 章、README の「ポートを開けずに公開する」）。
+  # Cloudflare Tunnel（任意。docs/design/security.md 10 章、docs/admin/exposure.md）。
   # ルーターのポートを開けずに、Cloudflare 経由でインターネットに公開する。Cloudflare の管理画面で作った
   # トンネルのトークンを .env の DOCSEED_TUNNEL_TOKEN に入れ、COMPOSE_PROFILES に tunnel を足すと起動する。
   # 転送先（Public hostname の Service）は https://caddy:<DOCSEED_HTTPS_PORT>
@@ -179,7 +179,7 @@ services:
     mem_limit: 1g
     logging: *logging
     restart: unless-stopped
-    # 外へは出る（描画のため）。LAN への出口は Pi のルーターや Docker 側で止めること（README）
+    # 外へは出る（描画のため）。LAN への出口は Pi のルーターや Docker 側で止めること（docs/admin/webclip.md）
     networks: [default]
 
   llm:

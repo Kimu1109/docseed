@@ -127,7 +127,7 @@ docker/
 
 - Caddyfile の環境変数（`{$...}`）は読み込みの最初に置き換わるので、`import` のパスにも使える。実装時に `caddy adapt` で 3 方式とも展開を確かめる。
 - `tailscale`: compose で `/var/run/tailscale/tailscaled.sock` を Caddy のコンテナに読み取り専用でマウントする。Caddy のコンテナは root で動くので、`TS_PERMIT_CERT_UID` の設定は要らない。サイトの名前が `*.ts.net` なら Caddy は自動で tailscaled に問い合わせるが、意図をはっきりさせるため `get_certificate tailscale` を明示する。
-- `acme_dns`: `docker/caddy/Dockerfile` で `caddy:2-builder` から `xcaddy build --with github.com/caddy-dns/cloudflare` を作り、compose の `caddy.build` に使う（方式が `acme_dns` のときだけ `--profile acme` で切り替える）。他の DNS 事業者はプラグインと `tls-acme_dns.caddy` を書き換えて使う（README に手順を書く）。トークンは `.env` の `DOCSEED_ACME_DNS_TOKEN`（Zone:DNS:Edit の権限だけ）に置く。
+- `acme_dns`: `docker/caddy/Dockerfile` で `caddy:2-builder` から `xcaddy build --with github.com/caddy-dns/cloudflare` を作り、compose の `caddy.build` に使う（方式が `acme_dns` のときだけ `--profile acme` で切り替える）。他の DNS 事業者はプラグインと `tls-acme_dns.caddy` を書き換えて使う（手順は [HTTPS の証明書](../admin/https.md#自分のドメインの証明書を-dns-01-で取る)）。トークンは `.env` の `DOCSEED_ACME_DNS_TOKEN`（Zone:DNS:Edit の権限だけ）に置く。
 - `DOCSEED_ACME_EMAIL` を設定すると、Let's Encrypt に連絡先として登録する。
 - 初回の確認のため `DOCSEED_ACME_STAGING=true` で Let's Encrypt の試験用の環境を使えるようにする（回数の制限に当たらないように）。
 
@@ -389,7 +389,7 @@ DOCSEED_OIDC_GOOGLE_LABEL=Google                      # ボタンの表示名
 
 - 提供者は `issuer` の `/.well-known/openid-configuration` から設定を読む（起動後の最初の利用時に読み、24 時間キャッシュ）。Google 以外（Pocket ID・Authelia・Keycloak など）も同じ書き方で足せる。
 - リダイレクト URI は `https://<DOCSEED_HOST>[:ポート]/auth/oidc/<提供者>/callback`。Google はリダイレクト URI に **HTTPS と、Public Suffix List に載ったドメイン**を求めるので、`*.ts.net` か自分のドメインで使う（`.local` と IP アドレスでは使えない）。Pi がインターネットから届かなくても使える（リダイレクトはブラウザの中で起きるため）。
-- Google Cloud の OAuth の同意画面は「外部」で、範囲は `openid email profile` だけにする。公開の状態が「テスト」のままなら、使う人をテストユーザーに登録する（実装時に Google の今の規則を確かめ、README に手順を書く）。
+- Google Cloud の OAuth の同意画面は「外部」で、範囲は `openid email profile` だけにする。公開の状態が「テスト」のままなら、使う人をテストユーザーに登録する（実装時に Google の今の規則を確かめ、手順は [ユーザーとログイン](../admin/users.md#google-などでログインするoidc)）。
 - api から提供者（Google なら `accounts.google.com`, `oauth2.googleapis.com`, `www.googleapis.com`）へ通信する。worker と違い api は default ネットワークなので通信できる。
 
 **流れ**
@@ -562,7 +562,7 @@ LAN の機器（ルーターの管理画面・NAS など）や、Pi 自身のサ
 | 受け取る種類 | HTML（`text/html`, `application/xhtml+xml`）、PDF、画像、テキスト。それ以外は保存しない |
 | 文字コード | HTTP ヘッダ → `<meta charset>` → 推定（charset-normalizer）の順で決め、UTF-8 にして保存する |
 
-- プロキシを使う環境のために `DOCSEED_WEBCLIP_PROXY` を用意する。設定したときは名前の解決をプロキシに任せることになるので、プロキシ側で LAN への通信を止めること（README に書く）。
+- プロキシを使う環境のために `DOCSEED_WEBCLIP_PROXY` を用意する。設定したときは名前の解決をプロキシに任せることになるので、プロキシ側で LAN への通信を止めること（[Web クリップ](../admin/webclip.md)）。
 - fetcher は DB と `files/` 以外を開かない。HTML の中のスクリプトは実行しない。JavaScript を動かすのは描画サービス（6.10）だけで、そこでも描いた結果は docseed の画面に出さない。
 
 ### 6.4 メタデータ
@@ -672,7 +672,7 @@ HTML を取得しただけでは本文が無い（JavaScript で組み立てる�
 - 描画サービスへの通信は、内部のネットワークだけで行う。プロキシの設定は使わない（`trust_env=False`）。描画サービスには保存領域（docseed のデータ）を渡さない。
 - **ページが出す通信の確認**: 描画中のすべての要求（画像・スクリプト・リダイレクトの先を含む）を、6.3 と同じ基準で確かめる（http / https・許可したポート・名前を引いて返ったすべての IP がグローバル）。確かめられない・拒否するものは止める。ホストごとに結果を覚える。1 ページの要求は 300 件まで。
 - **制限**: 最初の読み込みは 20 秒まで、通信が落ち着くのは 5 秒まで待つ（来なくても、その時点の HTML を保存する）。全体は fetcher の描画の待ち（45 秒）より短く収める。Cookie・Service Worker・ダウンロードは使わず、描画のたびに新しい文脈（context）を作って捨てる。
-- **既知の制限**: Chromium の WebSocket は要求の割り込みの対象にならない。そのため、LAN への出口は Pi のルーターや Docker のネットワークの側でも止めること（README）。名前の解決と接続の間に答えが変わる攻撃（DNS リバインディング）は、描画では IP の固定ができないため完全には防げない。上の出口の制限が、その保険になる。
+- **既知の制限**: Chromium の WebSocket は要求の割り込みの対象にならない。そのため、LAN への出口は Pi のルーターや Docker のネットワークの側でも止めること（[Web クリップ](../admin/webclip.md#javascript-で描くページ任意)）。名前の解決と接続の間に答えが変わる攻撃（DNS リバインディング）は、描画では IP の固定ができないため完全には防げない。上の出口の制限が、その保険になる。
 - 描画したかどうかは `web_clips.rendered`（マイグレーション `0012_webclip_render.sql`）に保存し、API の `rendered` で返す。
 - 既定では無効。`DOCSEED_WEBCLIP_RENDER_URL` を設定し、`COMPOSE_PROFILES` に `webclip-render` を足したときだけ使う。
 
@@ -795,7 +795,7 @@ Phase 9 の最初に、次の候補を Pi 5 で計測して決める（`scripts/
 | 候補 | ライセンス | 量子化 | 備考 |
 |---|---|---|---|
 | sarashina2.2-1b-instruct | MIT | Q4_K_M / Q8_0 | 第一候補。日本語の学習が中心 |
-| LFM2.5-1.2B-JP-202606 | LFM Open License v1.0 | Q4_K_M | CPU 向けの設計。ライセンスの条件（年間売上 1,000 万ドル未満なら商用も無料）を README に書く |
+| LFM2.5-1.2B-JP-202606 | LFM Open License v1.0 | Q4_K_M | CPU 向けの設計。ライセンスの条件（年間売上 1,000 万ドル未満なら商用も無料）を [小型の LLM](../admin/llm.md) に書く |
 | Qwen3-1.7B | Apache-2.0 | Q4_K_M | 思考モードを切る（`/no_think`） |
 | Qwen3-0.6B | Apache-2.0 | Q8_0 | RAM 8GB 向けの予備 |
 
@@ -980,7 +980,7 @@ Document の表現に `kind` と、Web クリップなら `webclip: {url, canoni
 |---|---|---|
 | LLM のモデル | 7.4 の候補から、Pi 5 での速さと要約の出来で決める | **解決**: Pi 5 での比較（12 件・3 モデル）で lfm2.5-1.2b-jp（Q4_K_M）に決めた（7 章の「2 回目の比較」） |
 | 候補のしきい値 | 7.2・7.3 の仮の値を `eval_suggest.py` で決める | Phase 9（**実装時点では仮の値のまま**。実データがたまったら `docseed eval-suggest` で決める） |
-| RAM 8GB での LLM | 1B のモデルでメモリが足りるか。足りなければ 0.6B にするか、llm サービスを処理待ちがあるときだけ起動する | Phase 9（未計測。README では 8GB なら `qwen3-0.6b` を案内している） |
+| RAM 8GB での LLM | 1B のモデルでメモリが足りるか。足りなければ 0.6B にするか、llm サービスを処理待ちがあるときだけ起動する | Phase 9（未計測。[小型の LLM](../admin/llm.md) では 8GB なら `qwen3-0.6b` を案内している） |
 | `llama-server` の arm64 イメージ | 公式のイメージが arm64 を配布しているか | **解決**: `ghcr.io/ggml-org/llama.cpp:server` は linux/arm64 を配布している |
-| Google の OAuth の規則 | テストの状態で使える人数・期限など、実装時の Google の規則 | **Phase 7 で対応**: テストの状態ではテストユーザー（最大 100 人）だけが使える。範囲は `openid email profile` だけなので本番にも公開できる。トークンは保存しないので、テストの状態のリフレッシュトークンの期限（7 日）は関係しない。手順は README |
+| Google の OAuth の規則 | テストの状態で使える人数・期限など、実装時の Google の規則 | **Phase 7 で対応**: テストの状態ではテストユーザー（最大 100 人）だけが使える。範囲は `openid email profile` だけなので本番にも公開できる。トークンは保存しないので、テストの状態のリフレッシュトークンの期限（7 日）は関係しない。手順は [ユーザーとログイン](../admin/users.md#google-などでログインするoidc) |
 | JavaScript で描くサイト | oEmbed も無いサイトの本文 | **解決**: 6.10 の描画サービス（別コンテナ・任意・本文が 200 字未満のときだけ描く） |
