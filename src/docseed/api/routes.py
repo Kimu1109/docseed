@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import sqlite3
 from typing import Any
@@ -940,9 +941,64 @@ def failed_jobs(conn: sqlite3.Connection, limit: int = 50) -> list[sqlite3.Row]:
         " FROM jobs j WHERE j.status = 'failed' ORDER BY j.finished_at DESC LIMIT ?", (limit,)).fetchall()
 
 
+JOB_LABEL = {
+    "process_blob": "文字の読み取り・検索の準備",
+    "reembed_blob": "検索の索引の作り直し",
+    "derive_blob": "プレビューの作成",
+    "summarize_blob": "要約",
+    "suggest_document": "フォルダ・タグの候補",
+    "purge_trash": "ゴミ箱の掃除",
+    "fetch_url": "Web クリップの取り込み",
+}
+
+
+def _iso_seconds_ago(ts: str | None) -> int | None:
+    if not ts:
+        return None
+    t = dt.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.UTC)
+    return max(0, int((dt.datetime.now(dt.UTC) - t).total_seconds()))
+
+
+def job_rows(conn: sqlite3.Connection, status: str, limit: int = 30) -> list[dict]:
+    """状態が status（running / pending）のジョブの一覧。処理中は開始の古い順、待ちは取られる順。
+
+    画面と API で同じものを使う。ファイル名は文書から、Web クリップは取り込む URL（またはタイトル）から引く。
+    """
+    order = "j.locked_at, j.id" if status == "running" else "j.priority, j.id"
+    rows = conn.execute(
+        "SELECT j.id, j.type, j.blob_id, j.attempts, j.run_after, j.locked_at, j.created_at, j.error,"
+        " b.status AS blob_status, b.progress_done, b.progress_total,"
+        " (SELECT d.filename FROM documents d WHERE d.blob_id = j.blob_id"
+        "   ORDER BY (d.deleted_at IS NULL) DESC, d.id LIMIT 1) AS filename,"
+        " (SELECT count(*) FROM documents d WHERE d.blob_id = j.blob_id AND d.deleted_at IS NULL) AS copies,"
+        " CASE WHEN j.type = 'fetch_url' THEN"
+        "   (SELECT coalesce(w.title, w.url) FROM web_clips w WHERE w.id = json_extract(j.payload, '$.clip_id'))"
+        " END AS clip_title"
+        f" FROM jobs j LEFT JOIN blobs b ON b.id = j.blob_id WHERE j.status = ? ORDER BY {order} LIMIT ?",
+        (status, limit)).fetchall()
+    out = []
+    for i, r in enumerate(rows, 1):
+        title = r["filename"] or r["clip_title"]
+        if title is None and (r["blob_id"] is not None or r["type"] == "fetch_url"):
+            title = "（削除済み）"
+        out.append({
+            "id": r["id"], "type": r["type"], "label": JOB_LABEL.get(r["type"], r["type"]),
+            "title": title, "copies": r["copies"] or 0, "attempts": r["attempts"],
+            "position": i if status == "pending" else None,
+            "locked_at": r["locked_at"], "elapsed_s": _iso_seconds_ago(r["locked_at"]) if status == "running" else None,
+            "created_at": r["created_at"], "run_after": r["run_after"], "error": r["error"],
+            # 文字の読み取りだけページ数を数える（埋め込み・要約などは進み具合を持たない）
+            "progress": ({"done": r["progress_done"], "total": r["progress_total"]}
+                         if r["type"] == "process_blob" and r["progress_total"] else None),
+        })
+    return out
+
+
 @router.get("/admin/jobs")
 def api_jobs(conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_admin)):
     return {"counts": job_counts(conn),
+            "running": job_rows(conn, "running"),
+            "waiting": job_rows(conn, "pending"),
             "failed": [{"id": r["id"], "type": r["type"], "blob_id": r["blob_id"], "filename": r["filename"],
                         "attempts": r["attempts"], "error": r["error"], "finished_at": r["finished_at"]}
                        for r in failed_jobs(conn)]}

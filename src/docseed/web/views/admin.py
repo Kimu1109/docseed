@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import sqlite3
 
 from fastapi import Depends, Form, Request
@@ -44,6 +45,23 @@ def _llm_status(conn: sqlite3.Connection, settings: Settings) -> dict | None:
     return llm_stats(conn, settings.llm_model) | {"model": settings.llm_model}
 
 
+def jobs_panel(conn: sqlite3.Connection) -> dict:
+    """ジョブの状況（件数・処理中・待ち・失敗）。管理画面と、5 秒ごとの再読み込みで同じものを使う。"""
+    from ...api.routes import failed_jobs, job_counts, job_rows
+    from ...monitor import WORKER_STALE_SECS, _age, _parse
+    hb = conn.execute("SELECT value FROM settings WHERE key = 'worker.heartbeat'").fetchone()
+    seen = _parse(hb[0]) if hb else None
+    age = _age(seen, dt.datetime.now(dt.UTC))
+    return {
+        "job_counts": job_counts(conn),
+        "running": job_rows(conn, "running", 30),
+        "waiting": job_rows(conn, "pending", 50),
+        "failed": failed_jobs(conn, 20),
+        "worker_alive": age is not None and age < WORKER_STALE_SECS,
+        "worker_seen": hb[0] if hb else None,
+    }
+
+
 def admin_context(request: Request, conn: sqlite3.Connection, auth: Auth, settings: Settings, **extra) -> dict:
     import shutil
     disk = shutil.disk_usage(settings.data_dir)
@@ -54,7 +72,6 @@ def admin_context(request: Request, conn: sqlite3.Connection, auth: Auth, settin
         " (SELECT count(*) FROM jobs WHERE status IN ('pending', 'running')) AS jobs_waiting,"
         " (SELECT count(*) FROM jobs WHERE status = 'failed') AS jobs_failed").fetchone()
     db_bytes = sum(p.stat().st_size for p in settings.db_path.parent.glob(settings.db_path.name + "*"))
-    from ...api.routes import failed_jobs, job_counts
     from ...authn import get_auth_settings
     from ...monitor import status, system_info
     from ...notify import EVENT_LABEL, describe_destination, recent
@@ -70,9 +87,8 @@ def admin_context(request: Request, conn: sqlite3.Connection, auth: Auth, settin
     return base_context(request, conn, auth, nav="admin", users=um.list_users(conn), stats=stats,
                         quotas=quotas, default_quota=limits.default_quota(conn),
                         system=system_info(conn, settings), notify=notify,
-                        disk=disk, db_bytes=db_bytes, worker_seen=st["worker"]["last_seen"],
-                        worker_alive=st["worker"]["alive"], sys=st, thermal_pause_c=settings.thermal_pause_c,
-                        job_counts=job_counts(conn), failed=failed_jobs(conn, 20), error=None, form={},
+                        disk=disk, db_bytes=db_bytes, sys=st, thermal_pause_c=settings.thermal_pause_c,
+                        **jobs_panel(conn), error=None, form={},
                         llm=_llm_status(conn, settings),
                         **({"reset_done": None, "auth_settings": get_auth_settings(conn),
                             "oidc_enabled": bool(settings.oidc_providers)} | extra))
@@ -113,6 +129,14 @@ def admin_reprocess(scope: str = Form(...), conn: sqlite3.Connection = Depends(g
         raise AppError("不明な範囲です")
     reprocess(conn, scope)
     return RedirectResponse("/admin?done=reprocess", status_code=303)
+
+
+@router.get("/admin/jobs/panel", response_class=HTMLResponse)
+def admin_jobs_panel(request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                     auth: Auth = Depends(require_admin), settings: Settings = Depends(get_settings)):
+    """ジョブの状況の部分だけ（管理画面が 5 秒ごとに読み直す）。"""
+    return templates.TemplateResponse(request, "_admin_jobs.html",
+                                      base_context(request, conn, auth, **jobs_panel(conn)))
 
 
 @router.get("/admin", response_class=HTMLResponse)

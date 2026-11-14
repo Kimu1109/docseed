@@ -735,3 +735,7 @@ kbd:not(.kbd) { display: inline-block; min-width: 1.6em; padding: 0 5px; font: 1
 .ask-sources { margin: var(--s2) 0; padding-left: 1.6em; display: grid; gap: var(--s2); font-size: 14px; }
 .ask-sources li.uncited { opacity: .6; }
 .ask-excerpt { margin-top: 2px; }
+
+/* 管理画面: ジョブの一覧（処理中・待ち） */
+.jobs-table td.job-title { overflow-wrap: anywhere; max-width: 28em; }
+.jobs-table progress { width: 6em; vertical-align: middle; }
