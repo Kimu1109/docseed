@@ -13,11 +13,11 @@
   <ul class="tag-docs">
     {% for d in docs %}
     {% set k = kind_of(d.mime_type, d.filename, d.kind) %}
-    <li><a href="/d/{{ d.id }}">{{ icon(kind_icon[k], kind_label[k]) }}{{ d.filename }}</a> <span class="muted small">{{ d.updated_at | localtime }}</span></li>
+    <li><a href="{{ base }}/d/{{ d.id }}">{{ icon(kind_icon[k], kind_label[k]) }}{{ d.filename }}</a> <span class="muted small">{{ d.updated_at | localtime }}</span></li>
     {% endfor %}
   </ul>
   {% else %}<p class="muted">このタグが付いたファイルはありません。</p>{% endif %}
-  <p><a href="/tags">{{ icon("arrow_back") }} すべてのタグに戻る</a></p>
+  <p><a href="{{ base }}/tags">{{ icon("arrow_back") }} すべてのタグに戻る</a></p>
 </section>
 {% endif %}
 
@@ -27,10 +27,10 @@
   <tbody>
   {% for t in tags %}
   <tr>
-    <td><a class="tag" href="/tags?tag={{ t.name | urlencode }}">{{ icon("label") }}{{ t.name }}</a></td>
+    <td><a class="tag" href="{{ base }}/tags?tag={{ t.name | urlencode }}">{{ icon("label") }}{{ t.name }}</a></td>
     <td class="num">{{ t.count }}</td>
     <td>
-      <form method="post" action="/tags/rename" class="tag-rename">
+      <form method="post" action="{{ base }}/tags/rename" class="tag-rename">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="old" value="{{ t.name }}">
         <input name="new" value="{{ t.name }}" list="tag-names" maxlength="50" required aria-label="「{{ t.name }}」の新しい名前">
@@ -38,7 +38,7 @@
       </form>
     </td>
     <td>
-      <form method="post" action="/tags/delete" data-confirm="自分のファイル {{ t.count }} 件から「{{ t.name }}」を外します（ファイルは消えません）。よろしいですか？">
+      <form method="post" action="{{ base }}/tags/delete" data-confirm="自分のファイル {{ t.count }} 件から「{{ t.name }}」を外します（ファイルは消えません）。よろしいですか？">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="name" value="{{ t.name }}">
         <button class="btn btn-sm btn-danger-ghost" aria-label="「{{ t.name }}」を外す">{{ icon("delete") }}外す</button>

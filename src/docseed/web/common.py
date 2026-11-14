@@ -22,6 +22,7 @@ from ..deps import (
 )
 from ..errors import AppError
 from ..files import can_preview, image_src, media_kind
+from ..urls import BASE_GLOBAL, href, is_local_path, to_browser
 from . import helpers as h
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -30,7 +31,7 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 templates.env.globals.update(
     version=__version__, kind_of=h.kind_of, kind_label=h.KIND_LABEL, status_label=h.STATUS_LABEL,
     can_preview=can_preview, image_src=image_src, media_kind=media_kind, icon=h.icon, kind_icon=h.KIND_ICON,
-    status_icon=h.STATUS_ICON,
+    status_icon=h.STATUS_ICON, base=BASE_GLOBAL,
 )
 
 
@@ -144,9 +145,10 @@ def render_error(request: Request, status: int, detail: str) -> Response:
 
 
 def _safe_next(nxt: str | None) -> str:
-    if nxt and nxt.startswith("/") and not nxt.startswith("//"):
-        return nxt
-    return "/"
+    """ログイン後の戻り先。このアプリの中のパス（接頭辞を含む）だけを受け付ける。"""
+    if is_local_path(nxt):
+        return to_browser(nxt)
+    return href("/")
 
 
 def _check_origin(request: Request) -> None:

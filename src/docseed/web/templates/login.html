@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block title %}ログイン{% endblock %}
-{% block head %}<script src="/static/passkey.js?v={{ version }}" defer></script>{% endblock %}
+{% block head %}<script src="{{ base }}/static/passkey.js?v={{ version }}" defer></script>{% endblock %}
 {% block bare %}
 <main class="login">
   <div class="login-box">
     <div class="brand brand-lg"><span class="brand-mark" aria-hidden="true"></span>docseed</div>
     {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
     <p class="alert" role="alert" data-passkey-error hidden></p>
-    <form method="post" action="/login" class="form" data-passkey-login data-next="{{ next or '' }}"
+    <form method="post" action="{{ base }}/login" class="form" data-passkey-login data-next="{{ next or '' }}"
           data-passkey-available="{{ '0' if passkey_reason else '1' }}">
       {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
       <label>ユーザー名
@@ -24,7 +24,7 @@
       <button type="button" class="btn btn-block" data-passkey-button>{{ icon("passkey") }}パスキーでログイン</button>
       {% endif %}
       {% for p in oidc_providers %}
-      <a class="btn btn-block" href="/auth/oidc/{{ p.name }}/start?purpose=login{% if next %}&amp;next={{ next | urlencode }}{% endif %}">{{ icon("login") }}{{ p.label }} でログイン</a>
+      <a class="btn btn-block" href="{{ base }}/auth/oidc/{{ p.name }}/start?purpose=login{% if next %}&amp;next={{ next | urlencode }}{% endif %}">{{ icon("login") }}{{ p.label }} でログイン</a>
       {% endfor %}
       {% if passkey_reason %}<p class="muted small">{{ passkey_reason }}</p>{% endif %}
     </div>

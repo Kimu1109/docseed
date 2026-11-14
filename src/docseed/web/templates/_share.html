@@ -11,14 +11,14 @@
       {% elif m.inherited_from is not none %}
         <span class="m-role">{{ role_label[m.role] }}<span class="muted small">（「{{ m.inherited_from }}」で共有）</span></span>
       {% elif my_role == "owner" %}
-        <form class="m-role" hx-post="/x/folders/{{ target_id }}/members" hx-target="#share-body" hx-swap="outerHTML" hx-trigger="change">
+        <form class="m-role" hx-post="{{ base }}/x/folders/{{ target_id }}/members" hx-target="#share-body" hx-swap="outerHTML" hx-trigger="change">
           <input type="hidden" name="user_id" value="{{ m.user_id }}">
           <select name="role" aria-label="{{ m.display_name }} の権限">
             <option value="viewer" {% if m.role == "viewer" %}selected{% endif %}>閲覧のみ</option>
             <option value="editor" {% if m.role == "editor" %}selected{% endif %}>編集できる</option>
           </select>
         </form>
-        <button type="button" class="btn btn-sm" hx-post="/x/folders/{{ target_id }}/members/{{ m.user_id }}/remove"
+        <button type="button" class="btn btn-sm" hx-post="{{ base }}/x/folders/{{ target_id }}/members/{{ m.user_id }}/remove"
                 hx-target="#share-body" hx-swap="outerHTML">{{ icon("person_remove") }}外す</button>
       {% else %}
         <span class="m-role">{{ role_label[m.role] }}</span>
@@ -28,7 +28,7 @@
   </ul>
   {% if my_role == "owner" %}
     {% if candidates %}
-    <form class="share-add" hx-post="/x/folders/{{ target_id }}/members" hx-target="#share-body" hx-swap="outerHTML">
+    <form class="share-add" hx-post="{{ base }}/x/folders/{{ target_id }}/members" hx-target="#share-body" hx-swap="outerHTML">
       <select name="user_id" aria-label="追加するユーザー" required>
         <option value="">ユーザーを選ぶ</option>
         {% for u in candidates %}<option value="{{ u.id }}">{{ u.display_name }}（{{ u.username }}）</option>{% endfor %}
@@ -63,7 +63,7 @@
         <span>{{ icon("schedule") }}{{ (l.expires_at | localtime ~ " まで") if l.expires_at else "無期限" }}</span>
         {% if l.password_hash %}<span>{{ icon("lock") }}パスワードあり</span>{% endif %}
         <span>{{ icon("download") }}{{ l.download_count }}{% if l.max_downloads %} / {{ l.max_downloads }}{% endif %} 回ダウンロード</span>
-        <button type="button" class="linkish danger-text" hx-post="/x/shares/{{ l.id }}/revoke"
+        <button type="button" class="linkish danger-text" hx-post="{{ base }}/x/shares/{{ l.id }}/revoke"
                 hx-vals='{"target_type": "{{ target_type }}", "target_id": {{ target_id }}}'
                 hx-target="#share-body" hx-swap="outerHTML" hx-confirm="このリンクを無効にしますか？ 知っている人も開けなくなります。">{{ icon("link_off") }}無効にする</button>
       </div>
@@ -74,7 +74,7 @@
   {% if can_link %}
   <details class="link-new" {% if not links %}open{% endif %}>
     <summary>{{ icon("add_link") }}リンクを作成</summary>
-    <form class="form" hx-post="/x/shares" hx-target="#share-body" hx-swap="outerHTML">
+    <form class="form" hx-post="{{ base }}/x/shares" hx-target="#share-body" hx-swap="outerHTML">
       <input type="hidden" name="target_type" value="{{ target_type }}">
       <input type="hidden" name="target_id" value="{{ target_id }}">
       {% if target_type == "folder" %}

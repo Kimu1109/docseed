@@ -56,7 +56,7 @@
   {% if llm.other_models %}
   <p class="muted small">旧モデルで作った要約: {% for m in llm.other_models %}{{ m.model }}（{{ m.count }} 件）{% if not loop.last %}、{% endif %}{% endfor %}</p>
   {% endif %}
-  <form method="post" action="/admin/summaries/rebuild" class="row-actions-in">
+  <form method="post" action="{{ base }}/admin/summaries/rebuild" class="row-actions-in">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button name="scope" value="version" class="btn btn-sm" {% if not llm.outdated %}disabled{% endif %}>{{ icon("refresh") }}古い要約を作り直す</button>
     <button name="scope" value="model" class="btn btn-sm" {% if not llm.old_model %}disabled{% endif %}
@@ -96,7 +96,7 @@
     <div><dt>宛先</dt><dd class="small">{% for d in notify.destinations %}<div>{{ d }}</div>{% endfor %}</dd></div>
     <div><dt>知らせること</dt><dd class="small">{% for e in notify.events %}<div>{{ e }}</div>{% endfor %}</dd></div>
   </dl>
-  <form method="post" action="/admin/notify/test" class="row-actions-in">
+  <form method="post" action="{{ base }}/admin/notify/test" class="row-actions-in">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button class="btn btn-sm">{{ icon("send") }}テスト通知を送る</button>
   </form>
@@ -127,7 +127,7 @@
 <section class="panel panel-wide">
   <h2>{{ icon("document_scanner") }} 文字の読み取りと検索の準備</h2>
   {% include "_admin_jobs.html" %}
-  <form method="post" action="/admin/reprocess" class="row-actions-in">
+  <form method="post" action="{{ base }}/admin/reprocess" class="row-actions-in">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button name="scope" value="failed" class="btn btn-sm">{{ icon("refresh") }}失敗したファイルをすべて再処理</button>
     <button name="scope" value="outdated" class="btn btn-sm">{{ icon("refresh") }}古い版で処理したファイルを再処理</button>
@@ -137,7 +137,7 @@
 
 <section class="panel panel-wide" id="login-settings">
   <h2>{{ icon("login") }} ログイン</h2>
-  <form method="post" action="/admin/auth-settings" class="form">
+  <form method="post" action="{{ base }}/admin/auth-settings" class="form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label class="check"><input type="checkbox" name="require_2fa" value="1" {% if auth_settings.require_2fa %}checked{% endif %}>
       パスワードでログインする人に 2 段階認証（確認コード）を必須にする</label>
@@ -172,7 +172,7 @@
         <td class="quota-cell">
           <div class="small">{{ q.total | filesize }} / {% if q.quota %}{{ q.quota | filesize }}{% else %}上限なし{% endif %}{% if not q.custom %} <span class="muted">（既定）</span>{% endif %}</div>
           {% if q.quota %}<meter class="quota-meter" min="0" max="{{ q.quota }}" value="{{ [q.total, q.quota] | min }}" low="{{ (q.quota * 0.7) | int }}" high="{{ (q.quota * 0.9) | int }}" optimum="0">{{ (q.ratio * 100) | round | int }}%</meter>{% endif %}
-          <form method="post" action="/admin/users/{{ u.id }}" class="quota-form">
+          <form method="post" action="{{ base }}/admin/users/{{ u.id }}" class="quota-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="action" value="quota">
             <input name="quota_gb" inputmode="decimal" placeholder="既定" value="{{ ('%g' | format(q.quota / 1073741824)) if q.custom else '' }}" aria-label="{{ u.username }} の容量の上限（GB）">
@@ -182,20 +182,20 @@
         </td>
         <td class="row-actions"><div class="row-actions-in">
           {% if u.id != user.id %}
-          <form method="post" action="/admin/users/{{ u.id }}">
+          <form method="post" action="{{ base }}/admin/users/{{ u.id }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             {% if u.is_active %}<button name="action" value="disable" class="btn btn-sm">{{ icon("person_off") }}無効にする</button>
             {% else %}<button name="action" value="enable" class="btn btn-sm">{{ icon("person_check") }}有効にする</button>{% endif %}
             {% if u.is_admin %}<button name="action" value="make_user" class="btn btn-sm">{{ icon("person") }}一般にする</button>
             {% else %}<button name="action" value="make_admin" class="btn btn-sm">{{ icon("admin_panel_settings") }}管理者にする</button>{% endif %}
           </form>
-          <form method="post" action="/admin/users/{{ u.id }}" class="inline-pw">
+          <form method="post" action="{{ base }}/admin/users/{{ u.id }}" class="inline-pw">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="action" value="password">
             <input name="password" type="password" minlength="12" placeholder="新しいパスワード" autocomplete="new-password" required aria-label="{{ u.username }} の新しいパスワード">
             <button class="btn btn-sm">{{ icon("password") }}再設定</button>
           </form>
-          <form method="post" action="/admin/users/{{ u.id }}/reset-auth" data-confirm="{{ u.username }} のログイン方法（パスキー・確認コード・外部アカウントの連携）をすべて消し、仮のパスワードを発行しますか？">
+          <form method="post" action="{{ base }}/admin/users/{{ u.id }}/reset-auth" data-confirm="{{ u.username }} のログイン方法（パスキー・確認コード・外部アカウントの連携）をすべて消し、仮のパスワードを発行しますか？">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button class="btn btn-sm btn-danger">{{ icon("lock_reset") }}ログイン方法をリセット</button>
           </form>
@@ -206,7 +206,7 @@
     </tbody>
   </table>
 
-  <form method="post" action="/admin/quota" class="form form-row" id="quota">
+  <form method="post" action="{{ base }}/admin/quota" class="form form-row" id="quota">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>容量の上限の全体の既定 <span class="muted small">（GB。空か 0 で上限なし）</span>
       <input name="quota_gb" inputmode="decimal" value="{{ ('%g' | format(default_quota / 1073741824)) if default_quota else '' }}" placeholder="上限なし"></label>
@@ -215,7 +215,7 @@
   <p class="muted small">ユーザーごとの上限は上の表で決めます（空にすると全体の既定、0 で上限なし）。ゴミ箱の中と過去の版も数えます。共有されたフォルダや受け取り用のリンクに置かれたファイルは、フォルダの持ち主の分として数えます。</p>
 
   <h3>{{ icon("person_add") }} ユーザーを追加</h3>
-  <form method="post" action="/admin/users" class="form form-row">
+  <form method="post" action="{{ base }}/admin/users" class="form form-row">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>ユーザー名 <input name="username" value="{{ form.username or '' }}" required pattern="[A-Za-z0-9][A-Za-z0-9._\-]{1,31}" autocapitalize="none"></label>
     <label>表示名 <input name="display_name" value="{{ form.display_name or '' }}" maxlength="50"></label>

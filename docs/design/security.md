@@ -179,7 +179,7 @@ Tailscale や LAN の中だけでなく、ポートを開けて公開する場�
 | 項目 | 内容 |
 |---|---|
 | 内側の範囲 | `DOCSEED_TRUSTED_NETS`（既定 `private_ranges 100.64.0.0/10`: RFC 1918・ループバック・`fd00::/8`・Tailscale）。接続元は `client_ip` で判定する（10 章） |
-| 外側から隠すパス | `/admin`、`/admin/*`、`/api/v1/admin`、`/api/v1/admin/*`、`/api/docs`、`/api/docs/*`、`/api/v1/openapi.json`、`/healthz` → 404（存在を知らせない。3.3 と同じ方針）。`%61dmin` や `%2F` のような符号化は Caddy が戻してから照合する |
+| 外側から隠すパス | `/admin`、`/admin/*`、`/api/v1/admin`、`/api/v1/admin/*`、`/api/docs`、`/api/docs/*`、`/api/v1/openapi.json`、`/healthz` → 404（存在を知らせない。3.3 と同じ方針）。`%61dmin` や `%2F` のような符号化は Caddy が戻してから照合する。URL の接頭辞（`DOCSEED_BASE_PATH`、deployment.md 3.1）の下の同じパス（`/docseed/admin` など）も、接頭辞の中身を問わない `path_regexp` で 404 にする。外側に別のリバースプロキシを置くと接続元がそのプロキシに見えるため、そのプロキシの側でも止める（README） |
 | IP アドレスで開くサイト | `DOCSEED_LAN_IP` のサイトは内側からだけ。外側からは応答せずに接続を切る（`abort`） |
 | 追加するヘッダ | `Cross-Origin-Opener-Policy: same-origin`、`Permissions-Policy`（カメラ・マイク・位置情報・決済・USB などを無効）。アプリが同じヘッダを付けたときはアプリの値を優先する |
 | 外すヘッダ | `Server`、`Via`、`X-Powered-By` |

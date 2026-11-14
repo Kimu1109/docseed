@@ -1,4 +1,4 @@
-<div id="admin-jobs" hx-get="/admin/jobs/panel" hx-trigger="every 5s" hx-swap="outerHTML">
+<div id="admin-jobs" hx-get="{{ base }}/admin/jobs/panel" hx-trigger="every 5s" hx-swap="outerHTML">
   {% if worker_alive %}
     <p class="ok-text">{{ icon("check_circle") }} 処理（worker）は動いています。最終応答 {{ worker_seen | localtime("%m/%d %H:%M:%S") }}</p>
   {% elif worker_seen %}
@@ -66,7 +66,7 @@
         <td>{{ j.filename or "（削除済み）" }}</td>
         <td class="small err-cell">{{ j.error }}</td>
         <td class="nowrap">{{ j.finished_at | shortdate }}</td>
-        <td><form method="post" action="/admin/jobs/{{ j.id }}/retry"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-sm">{{ icon("replay") }}やり直す</button></form></td>
+        <td><form method="post" action="{{ base }}/admin/jobs/{{ j.id }}/retry"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-sm">{{ icon("replay") }}やり直す</button></form></td>
       </tr>
     {% endfor %}
     </tbody>

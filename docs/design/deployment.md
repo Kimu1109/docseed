@@ -138,6 +138,7 @@ FROM python:3.12-slim-bookworm（arm64）
 | 変数 | 既定値 | 説明 |
 |---|---|---|
 | `DOCSEED_HOST` | — | 公開ホスト名（例 `docseed.tailxxxx.ts.net`） |
+| `DOCSEED_BASE_PATH` | （空） | URL の接頭辞（例 `/docseed` で `https://<名前>/docseed/` に置く）。下の 3.1 |
 | `DOCSEED_DATA_DIR` | `/srv/docseed` | データディレクトリ |
 | `DOCSEED_SECRET_KEY` | — | Cookie 署名用。32 バイト以上の乱数（必須） |
 | `DOCSEED_MAX_UPLOAD_MB` | `1024` | 1 ファイルの上限 |
@@ -152,6 +153,17 @@ FROM python:3.12-slim-bookworm（arm64）
 | `DOCSEED_THERMAL_PAUSE_C` | `80` | worker が一時停止する CPU 温度 |
 | `DOCSEED_INBOX_ENABLED` | `false` | inbox 取り込みの有効化 |
 | `DOCSEED_LOG_LEVEL` | `INFO` | |
+
+### 3.1 パスの下で動かす（`DOCSEED_BASE_PATH`）
+
+- アプリの中のパスは接頭辞なし（`/d/1`）のまま。一番外側の ASGI ミドルウェア（`docseed/urls.py` の `BasePathMiddleware`）が、届いた `/docseed/…` から接頭辞を外す。外側のプロキシが先に外して送ってきた場合も、そのまま受け付ける
+- `scope["root_path"]` は使わない。Starlette は `path` が `root_path` で始まる前提で `Mount`（`/static`）を扱うため、外した `path` と組み合わせられない。接頭辞はリクエストごとの `ContextVar` に入れ、URL を作る側が読む
+  - テンプレート: `{{ base }}/d/{{ id }}`。JS: `<meta name="docseed-base">` を読んだ `BASE`。Python: `urls.href()`・`urls.public_root()`
+  - リダイレクト（`Location`・`HX-Redirect` など）と `Set-Cookie` の `Path` は、ミドルウェアが応答のヘッダにまとめて接頭辞を付ける（アプリは今まで通り `/d/1` や `Path=/` を書く）
+- 外から開く URL: `public_url` はオリジンだけ（パスキーの origin）、`public_base` は接頭辞まで（OIDC のリダイレクト URI・通知のリンク・ブックマークレット）
+- 接頭辞の最初の部分がアプリのパス（`/s`・`/api` など）と重なる値は、起動時に止める（外して送られたときに区別できないため）
+- Caddy の「外側からは 404」（security.md 8 章）は、接頭辞の中身を問わず末尾で合わせる `path_regexp` でも行う（`.env` の書き方に左右されないように）
+- 接頭辞を付けたときに、画面のリンク・フォーム・htmx・画像がすべて接頭辞の下を指し、たどれることは `tests/test_base_path.py` で確かめる
 
 ## 4. 初期セットアップ手順
 

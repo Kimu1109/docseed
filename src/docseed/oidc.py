@@ -99,7 +99,7 @@ def clear_cache() -> None:
 
 
 def redirect_uri(settings: Settings, p: OidcProvider) -> str:
-    return f"{settings.public_url}/auth/oidc/{p.name}/callback"
+    return f"{settings.public_base}/auth/oidc/{p.name}/callback"
 
 
 def _b64(b: bytes) -> str:

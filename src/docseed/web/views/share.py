@@ -16,6 +16,7 @@ from ...deps import (
     require_session,
 )
 from ...errors import AppError
+from ...urls import public_root
 from ..common import (
     router,
     templates,
@@ -59,7 +60,7 @@ def render_share(request: Request, conn: sqlite3.Connection, auth: Auth, target_
     html = templates.get_template("_share.html").render(
         request=request, target_type=target_type, target_id=target_id, members=members, candidates=candidates,
         my_role=my_role, links=links, can_link=can_link, role_label=ROLE_LABEL, new_id=new_id, gps_count=gps_count,
-        base_url=str(request.base_url).rstrip("/"))
+        base_url=public_root(request))
     if message:
         html += str(toast(message))
     return HTMLResponse(html)

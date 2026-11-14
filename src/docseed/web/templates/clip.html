@@ -7,7 +7,7 @@
 {% else %}
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 <section class="panel">
-  <form method="post" action="/clip" class="form">
+  <form method="post" action="{{ base }}/clip" class="form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>URL <input name="url" type="url" value="{{ url }}" required maxlength="2048" inputmode="url"></label>
     <label>保存先

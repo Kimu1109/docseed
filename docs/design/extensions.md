@@ -314,7 +314,7 @@ ALTER TABLE blobs ADD COLUMN image_meta TEXT;   -- JSON（4.3）
 > - **API でのログイン**: 確認コードを設定したユーザーは、`POST /api/v1/auth/login` が `{"second_factor_required": true, "methods": ["totp", "recovery"]}` を返す。続けて `POST /auth/second-factor` に `{"code": ...}` を送るとセッションができる。`/auth/*` に JSON で送ったリクエストのエラーは problem+json で返す。
 > - **パスキーの失敗の数え方**: ユーザー名が分からないので、IP アドレスごとにだけ数える。
 > - **画面**: 設定画面を「一般」と「セキュリティ（ログイン方法）」（`/settings/security`）に分けた。ログイン中の端末の一覧に「ほかの端末をすべてログアウト」を付けた。
-> - **公開 URL**: パスキーの origin と OIDC のリダイレクト URI は `https://<DOCSEED_HOST の最初の名前>[:DOCSEED_HTTPS_PORT]`。リバースプロキシを別に置くなど特殊な場合だけ `DOCSEED_PUBLIC_URL` で上書きできる。
+> - **公開 URL**: パスキーの origin と OIDC のリダイレクト URI は `https://<DOCSEED_HOST の最初の名前>[:DOCSEED_HTTPS_PORT]`。リバースプロキシを別に置くなど特殊な場合だけ `DOCSEED_PUBLIC_URL` で上書きできる。`DOCSEED_BASE_PATH`（例 `/docseed`）でパスの下に置いた場合、OIDC のリダイレクト URI は接頭辞を含む（`https://<名前>/docseed/auth/oidc/<提供者>/callback`）。パスキーの origin はパスを含まないので変わらない。
 > - **確認**: テストは py_webauthn の値ではなく、テストの中のソフトウェアの認証器（P-256 の鍵で attestation `none` と署名を作る）と、`httpx.MockTransport` の偽の OIDC 提供者で行う。パスキーは Chromium の仮想認証器（CDP）で、画面からの登録・自動入力でのログインまで確かめた。
 
 ### 5.1 ログインの方法

@@ -12,6 +12,8 @@ from zoneinfo import ZoneInfo
 
 from markupsafe import Markup, escape
 
+from ..urls import base
+
 TZ = ZoneInfo(os.environ.get("DOCSEED_TIMEZONE", "Asia/Tokyo"))
 
 STATUS_LABEL = {
@@ -174,4 +176,4 @@ def icon(name: str, label: str | None = None, cls: str = "") -> Markup:
                          " scripts/build_icons.py を実行）")
     a11y = f' role="img" aria-label="{escape(label)}"' if label else ' aria-hidden="true" focusable="false"'
     extra = f" {escape(cls)}" if cls else ""
-    return Markup(f'<svg class="icon{extra}"{a11y}><use href="{ICONS_URL}#i-{name}"/></svg>')
+    return Markup(f'<svg class="icon{extra}"{a11y}><use href="{base()}{ICONS_URL}#i-{name}"/></svg>')

@@ -38,6 +38,7 @@ jobs:
               # 外側からの管理系のパスの 404 と、IP のサイトの切断（docs/design/security.md 8 章）
               grep -q '"100.64.0.0/10"' /tmp/out.json
               grep -q '"/api/v1/admin/\*"' /tmp/out.json
+              grep -q '"path_regexp"' /tmp/out.json   # 接頭辞つきの /docseed/admin なども隠す
               grep -q '"abort":true' /tmp/out.json
               grep -q 'Permissions-Policy' /tmp/out.json
               grep -q '"install_trust":false' /tmp/out.json
@@ -63,10 +64,13 @@ jobs:
             done
           }
           probe "10.99.0.0/16" "/ 200" "/s/x 200" "/api/v1/folders 200" "/admin 404" "/admin/users 404" \
-            "/api/v1/admin/users 404" "/api/v1/%61dmin/users 404" "/api/docs 404" "/api/v1/openapi.json 404" "/healthz 404"
+            "/api/v1/admin/users 404" "/api/v1/%61dmin/users 404" "/api/docs 404" "/api/v1/openapi.json 404" "/healthz 404" \
+            "/docseed/ 200" "/docseed/d/1 200" "/docseed/admin 404" "/docseed/Admin/users 404" \
+            "/docseed/api/v1/%61dmin/users 404" "/docseed/api/docs 404" "/docseed/api/v1/openapi.json 404" \
+            "/docseed/healthz 404"
           got=$(docker run --rm --network ct curlimages/curl:8.10.1 -sk -o /dev/null -w '%{http_code}' https://c1/ || true)
           echo "IP site from outside -> $got"; [ "$got" = "000" ]
-          probe "private_ranges 100.64.0.0/10" "/admin 200" "/api/docs 200" "/healthz 200"
+          probe "private_ranges 100.64.0.0/10" "/admin 200" "/api/docs 200" "/healthz 200" "/docseed/admin 200"
           h=$(docker run --rm --network ct curlimages/curl:8.10.1 -skI https://c1/)
           echo "$h"
           echo "$h" | grep -qi '^permissions-policy:'
@@ -96,6 +100,8 @@ jobs:
           check "tunnel CF=public /admin"  "$(code tun $tun_ip /admin -H 'CF-Connecting-IP: 203.0.113.9')" 404
           check "tunnel CF=private /admin" "$(code tun $tun_ip /admin -H 'CF-Connecting-IP: 192.168.1.5')" 404
           check "tunnel no CF /healthz"    "$(code tun $tun_ip /healthz)" 404
+          check "tunnel CF=private /docseed/admin" \
+            "$(code tun $tun_ip /docseed/admin -H 'CF-Connecting-IP: 192.168.1.5')" 404
           check "tunnel xff" "$(req tun $tun_ip / -H 'CF-Connecting-IP: 203.0.113.9' -H 'X-Forwarded-For: 6.6.6.6')" \
             "xff=203.0.113.9"
           check "tunnel IP site" "$(docker run --rm --network tun curlimages/curl:8.10.1 -sk -o /dev/null \

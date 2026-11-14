@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 @dataclass(frozen=True)
@@ -15,6 +17,26 @@ class OidcProvider:
     client_id: str
     client_secret: str
     label: str
+
+
+def normalize_base_path(v: str | None) -> str:
+    """URL の接頭辞を「/docseed」の形にそろえる（空や「/」なら ""）。使える文字は英数字と - _ . / だけ。"""
+    v = (v or "").strip().strip("/")
+    if not v:
+        return ""
+    if not re.fullmatch(r"[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*", v) or any(x in (".", "..") for x in v.split("/")):
+        raise ValueError(f"DOCSEED_BASE_PATH の形が正しくありません: {v!r}（例 /docseed）")
+    return "/" + v
+
+
+def _origin(url: str) -> str:
+    u = urlsplit(url.strip())
+    return f"{u.scheme}://{u.netloc}" if u.scheme and u.netloc else url.strip().rstrip("/")
+
+
+def _url_path(url: str) -> str:
+    """DOCSEED_PUBLIC_URL に https://example.com/docseed のようにパスまで書いた場合、それを接頭辞として使う。"""
+    return urlsplit(url).path if url else ""
 
 
 def _bool(v: str | None, default: bool) -> bool:
@@ -59,6 +81,7 @@ class Settings:
     https_port: int = 443
     rp_id_override: str = ""          # DOCSEED_RP_ID
     public_url_override: str = ""     # DOCSEED_PUBLIC_URL（通常は空。DOCSEED_HOST とポートから作る）
+    base_path: str = ""               # DOCSEED_BASE_PATH（例 /docseed。https://example.com/docseed/ で開く場合）
     oidc_providers: tuple[OidcProvider, ...] = ()
     # 証明書（Phase 6、docs/design/extensions.md 2 章）
     tls_mode: str = "internal"        # DOCSEED_TLS_MODE
@@ -114,13 +137,22 @@ class Settings:
 
     @property
     def public_url(self) -> str:
-        """外から開くときの URL（https://<名前>[:ポート]）。OIDC のリダイレクト URI とパスキーの origin に使う。"""
+        """外から開くときのオリジン（https://<名前>[:ポート]。パスは含まない）。パスキーの origin に使う。
+
+        DOCSEED_BASE_PATH の分を含めた URL は public_base。"""
         if self.public_url_override:
-            return self.public_url_override.rstrip("/")
+            return _origin(self.public_url_override)
         host = self.rp_id or _first_host(self.host)
         if not host:
             return ""
         return f"https://{host}" + ("" if self.https_port == 443 else f":{self.https_port}")
+
+    @property
+    def public_base(self) -> str:
+        """外から開くときのアプリの起点（https://<名前>[:ポート][/<接頭辞>]）。
+
+        OIDC のリダイレクト URI・通知のリンク・ブックマークレットに使う。"""
+        return self.public_url + self.base_path if self.public_url else ""
 
     def oidc_provider(self, name: str) -> OidcProvider | None:
         return next((p for p in self.oidc_providers if p.name == name), None)
@@ -201,6 +233,8 @@ class Settings:
             https_port=int(e.get("DOCSEED_HTTPS_PORT") or "443"),
             rp_id_override=e.get("DOCSEED_RP_ID", "").strip(),
             public_url_override=e.get("DOCSEED_PUBLIC_URL", "").strip(),
+            base_path=normalize_base_path(e.get("DOCSEED_BASE_PATH")
+                                          or _url_path(e.get("DOCSEED_PUBLIC_URL", "").strip())),
             oidc_providers=_oidc_from_env(e),
             tls_mode=e.get("DOCSEED_TLS_MODE", "internal").strip() or "internal",
             tls_check_addr=e.get("DOCSEED_TLS_CHECK_ADDR", "").strip(),

@@ -3,6 +3,9 @@
 (() => {
   "use strict";
 
+  // URL の起点（DOCSEED_BASE_PATH。例 "/docseed"）。base.html の <meta name="docseed-base"> から読む
+  const BASE = (document.querySelector('meta[name="docseed-base"]') || {}).content || "";
+
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
@@ -194,7 +197,7 @@
         if (cited && !cited.includes(s.n)) li.classList.add("uncited");
         const a = document.createElement("a");
         const q = encodeURIComponent(box.dataset.question);
-        a.href = `/d/${s.document_id}?q=${q}` + (s.page_no ? `#p${s.page_no}` : "");
+        a.href = BASE + `/d/${s.document_id}?q=${q}` + (s.page_no ? `#p${s.page_no}` : "");
         a.textContent = s.filename + (s.page_no ? `（${s.page_no} ページ）` : "");
         const where = document.createElement("span");
         where.className = "muted small";
@@ -225,7 +228,7 @@
       answer.replaceChildren(frag);
     };
     try {
-      const res = await fetch("/api/v1/ask", {
+      const res = await fetch(BASE + "/api/v1/ask", {
         method: "POST", credentials: "same-origin",
         headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
         body: JSON.stringify({ question: box.dataset.question, filters: JSON.parse(box.dataset.filters || "{}"),
@@ -348,7 +351,7 @@
     btn.setAttribute("aria-expanded", "true");
     if (box.dataset.loaded) return;
     box.textContent = "読み込んでいます…";
-    const base = `/api/v1/documents/${btn.dataset.doc}`;
+    const base = BASE + `/api/v1/documents/${btn.dataset.doc}`;
     let data;
     try {
       const r = await fetch(`${base}/ocr?page=${btn.dataset.page}`, { headers: { Accept: "application/json" } });
@@ -573,7 +576,7 @@
       const xhr = new XMLHttpRequest();
       const bar = $("progress", job.row);
       const state = $(".up-state", job.row);
-      xhr.open("POST", "/api/v1/documents");
+      xhr.open("POST", BASE + "/api/v1/documents");
       xhr.setRequestHeader("X-CSRF-Token", csrfToken());
       xhr.upload.onprogress = (ev) => {
         if (ev.lengthComputable) {
@@ -721,7 +724,7 @@
     if (!rows.length) return;
     const hasFolder = rows.some((r) => r.dataset.item.startsWith("folder:"));
     if (!confirm(describe(rows) + "をゴミ箱に移動しますか？" + (hasFolder ? "（フォルダは中身ごと移動します）" : ""))) return;
-    submitBatch("/x/items/delete", rows.map((r) => r.dataset.item));
+    submitBatch(BASE + "/x/items/delete", rows.map((r) => r.dataset.item));
   }
 
   document.addEventListener("htmx:afterSettle", renderSelection);
@@ -732,7 +735,7 @@
     const docRows = () => selectedRows().filter((r) => r.dataset.item.startsWith("document:"));
     if (e.target.closest("[data-sel-tags]")) {
       const rows = docRows();
-      if (rows.length) openItemDialog("dlg-tags", "/x/items/tags", "", (form) => {
+      if (rows.length) openItemDialog("dlg-tags", BASE + "/x/items/tags", "", (form) => {
         form.reset();
         setItemInputs(form, rows.map((r) => r.dataset.item));
         $("[data-tags-name]", form).textContent = describe(rows) + "のタグを変更します";
@@ -743,20 +746,20 @@
     if (e.target.closest("[data-sel-reprocess]")) {
       const rows = docRows();
       if (rows.length && confirm(describe(rows) + "の文字の読み取りをやり直しますか？")) {
-        submitBatch("/x/items/reprocess", rows.map((r) => r.dataset.item));
+        submitBatch(BASE + "/x/items/reprocess", rows.map((r) => r.dataset.item));
       }
       return;
     }
     if (e.target.closest("[data-sel-redo]")) {
       const rows = docRows();
       if (rows.length && confirm(describe(rows) + "の要約とタグの候補を作り直しますか？（今の要約は上書きされます）")) {
-        submitBatch("/x/items/redo", rows.map((r) => r.dataset.item));
+        submitBatch(BASE + "/x/items/redo", rows.map((r) => r.dataset.item));
       }
       return;
     }
     if (e.target.closest("[data-sel-move]")) {
       const rows = selectedRows();
-      if (rows.length) openItemDialog("dlg-move", "/x/items/move", "", (form) => {
+      if (rows.length) openItemDialog("dlg-move", BASE + "/x/items/move", "", (form) => {
         setItemInputs(form, rows.map((r) => r.dataset.item));
         $("[data-move-name]", form).textContent = describe(rows) + "を移動します";
         htmx.trigger($("select[name=target]", form), "load-targets");
@@ -957,7 +960,7 @@
     clearDropTarget();
     if (!el) return;
     e.preventDefault();
-    submitBatch("/x/items/move", dragItems, el.dataset.drop);
+    submitBatch(BASE + "/x/items/move", dragItems, el.dataset.drop);
   });
   document.addEventListener("dragend", () => {
     dragItems = null;

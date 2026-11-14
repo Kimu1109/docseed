@@ -11,10 +11,10 @@
   <h1>{{ doc.filename }}</h1>
   <div class="doc-actions m-ic">
   {% set fav_type, fav_id, small = "document", doc.id, False %}{% include "_fav.html" %}
-  <button type="button" class="btn" data-open-dialog="dlg-share" hx-get="/x/share?type=document&id={{ doc.id }}"
+  <button type="button" class="btn" data-open-dialog="dlg-share" hx-get="{{ base }}/x/share?type=document&id={{ doc.id }}"
           hx-target="#share-body" hx-swap="outerHTML">{{ icon("share") }}<span class="lbl">共有</span></button>
-  {% if doc.mime_type == "application/pdf" %}<a class="btn m-only" href="/api/v1/documents/{{ doc.id }}/content?inline=1" target="_blank" rel="noopener">{{ icon("open_in_new") }}<span class="lbl">全画面で開く</span></a>{% endif %}
-  <a class="btn btn-primary" href="/api/v1/documents/{{ doc.id }}/content">{{ icon("download") }}<span class="lbl">ダウンロード</span></a>
+  {% if doc.mime_type == "application/pdf" %}<a class="btn m-only" href="{{ base }}/api/v1/documents/{{ doc.id }}/content?inline=1" target="_blank" rel="noopener">{{ icon("open_in_new") }}<span class="lbl">全画面で開く</span></a>{% endif %}
+  <a class="btn btn-primary" href="{{ base }}/api/v1/documents/{{ doc.id }}/content">{{ icon("download") }}<span class="lbl">ダウンロード</span></a>
   </div>
 </div>
 <dialog id="dlg-share" class="dialog dialog-wide">
@@ -25,14 +25,14 @@
   </div>
 </dialog>
 
-{% if live.busy %}<div hidden data-live-url="/x/d/{{ doc.id }}/state" data-live-key="{{ live.key }}"></div>{% endif %}
+{% if live.busy %}<div hidden data-live-url="{{ base }}/x/d/{{ doc.id }}/state" data-live-key="{{ live.key }}"></div>{% endif %}
 <div class="doc-layout">
   <section class="preview{% if media_kind(doc.mime_type) == 'audio' %} preview-audio{% endif %}" aria-label="プレビュー">
     {% if doc.mime_type == "application/pdf" %}
-      <iframe src="/api/v1/documents/{{ doc.id }}/content?inline=1" title="{{ doc.filename }} のプレビュー"></iframe>
+      <iframe src="{{ base }}/api/v1/documents/{{ doc.id }}/content?inline=1" title="{{ doc.filename }} のプレビュー"></iframe>
     {% elif clip and doc.kind == "webclip" %}
       <div class="clip-card">
-        {% if doc.thumb_path %}<img class="clip-image" src="/api/v1/documents/{{ doc.id }}/thumbnail" alt="">{% endif %}
+        {% if doc.thumb_path %}<img class="clip-image" src="{{ base }}/api/v1/documents/{{ doc.id }}/thumbnail" alt="">{% endif %}
         <div class="clip-body">
           <p class="clip-site">{{ clip.site_name or "" }}</p>
           <h2 class="clip-title">{{ clip.title or doc.filename }}</h2>
@@ -41,10 +41,10 @@
           <p class="muted small">安全のため HTML は表示しません。本文は下の「取り出したテキスト」で読めます。</p>
         </div>
       </div>
-    {% elif image_src(doc, "/api/v1/documents/" ~ doc.id) %}
-      <img src="{{ image_src(doc, '/api/v1/documents/' ~ doc.id) }}" alt="{{ doc.filename }}">
+    {% elif image_src(doc, base ~ "/api/v1/documents/" ~ doc.id) %}
+      <img src="{{ image_src(doc, base ~ '/api/v1/documents/' ~ doc.id) }}" alt="{{ doc.filename }}">
     {% elif media_kind(doc.mime_type) %}
-      {% set media_kind_now, media_src, media_name = media_kind(doc.mime_type), "/api/v1/documents/" ~ doc.id ~ "/view", doc.filename %}
+      {% set media_kind_now, media_src, media_name = media_kind(doc.mime_type), base ~ "/api/v1/documents/" ~ doc.id ~ "/view", doc.filename %}
       {% include "_media.html" %}
     {% elif text_preview is not none %}
       <pre class="textview">{{ text_preview }}</pre>
@@ -76,7 +76,7 @@
       {% if can_edit_summary %}
       <details class="summary-edit" {% if sugg.summary_hidden %}open{% endif %}>
         <summary class="small">{{ icon("edit") }}{% if sugg.summary %}要約を直す・消す{% else %}要約を書く{% endif %}</summary>
-        <form method="post" action="/d/{{ doc.id }}/summary" class="form">
+        <form method="post" action="{{ base }}/d/{{ doc.id }}/summary" class="form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <textarea name="summary" aria-label="要約" rows="4" maxlength="1000">{{ sugg.summary.summary if sugg.summary else "" }}</textarea>
           <div class="row-actions-in">
@@ -94,12 +94,12 @@
         <ul class="suggest-list">
         {% for f in sugg.folders %}
           <li>
-            <form method="post" action="/d/{{ doc.id }}/suggestions/{{ f.id }}/accept">
+            <form method="post" action="{{ base }}/d/{{ doc.id }}/suggestions/{{ f.id }}/accept">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="btn btn-sm {% if f.recommended %}btn-primary{% endif %}" title="似ている文書があるフォルダです">{{ icon("drive_file_move") }}{{ f.path }} へ移動</button>
             </form>
             {% if f.recommended %}<span class="badge-reco">おすすめ</span>{% endif %}
-            <form method="post" action="/d/{{ doc.id }}/suggestions/{{ f.id }}/reject">
+            <form method="post" action="{{ base }}/d/{{ doc.id }}/suggestions/{{ f.id }}/reject">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="linkish small" aria-label="{{ f.path }} の候補を却下">{{ icon("close") }}</button>
             </form>
@@ -112,11 +112,11 @@
         <ul class="suggest-tags">
         {% for t in sugg.tags %}
           <li class="tag tag-suggest">
-            <form method="post" action="/d/{{ doc.id }}/suggestions/{{ t.id }}/accept">
+            <form method="post" action="{{ base }}/d/{{ doc.id }}/suggestions/{{ t.id }}/accept">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="linkish" title="このタグを付ける">{{ icon("label") }}{{ t.name }}</button>
             </form>
-            <form method="post" action="/d/{{ doc.id }}/suggestions/{{ t.id }}/reject">
+            <form method="post" action="{{ base }}/d/{{ doc.id }}/suggestions/{{ t.id }}/reject">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="linkish" aria-label="タグ「{{ t.name }}」の候補を却下">{{ icon("close") }}</button>
             </form>
@@ -124,9 +124,9 @@
         {% endfor %}
         </ul>
       {% endif %}
-      {% if sugg.rejected %}<p class="small"><a href="/suggestions/rejected?doc={{ doc.id }}">{{ icon("block") }} 却下した候補 {{ sugg.rejected }} 件</a></p>{% endif %}
+      {% if sugg.rejected %}<p class="small"><a href="{{ base }}/suggestions/rejected?doc={{ doc.id }}">{{ icon("block") }} 却下した候補 {{ sugg.rejected }} 件</a></p>{% endif %}
       {% if can_redo %}
-      <form method="post" action="/d/{{ doc.id }}/redo" class="redo-form">
+      <form method="post" action="{{ base }}/d/{{ doc.id }}/redo" class="redo-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="btn btn-sm" {% if sugg.summary_pending %}disabled{% endif %}
                 title="{% if llm_enabled %}要約と、タグ・フォルダの候補を作り直します（今の要約は上書きされ、手で直した要約も自動の要約に戻ります）{% else %}タグ・フォルダの候補を作り直します{% endif %}">{{ icon("refresh") }}{% if llm_enabled %}{% if sugg.summary %}要約とタグをやり直す{% else %}要約とタグを作る{% endif %}{% else %}候補をやり直す{% endif %}</button>
@@ -134,7 +134,7 @@
       {% endif %}
     </section>
     {% endif %}
-    {% if doc.status == "ready" %}<div hx-get="/x/d/{{ doc.id }}/related" hx-trigger="load" hx-swap="outerHTML"></div>{% endif %}
+    {% if doc.status == "ready" %}<div hx-get="{{ base }}/x/d/{{ doc.id }}/related" hx-trigger="load" hx-swap="outerHTML"></div>{% endif %}
     <dl class="facts">
       <dt>状態</dt><dd><span class="status status-{{ doc.status }}">{{ icon(status_icon[doc.status]) }}{{ status_label[doc.status] }}{% if doc.status == "processing" and doc.progress_total %} <span data-live-progress>{{ doc.progress_done }}/{{ doc.progress_total }}</span>{% endif %}</span>
         {% if error and doc.status in ["failed", "unsupported"] %}<div class="small">{{ error }}</div>{% endif %}
@@ -172,16 +172,16 @@
           <div><b>{{ v.created_at | localtime }}</b> <span class="muted small">{{ v.size_bytes | filesize }}{% if v.created_by_name %} ・ {{ v.created_by_name }}{% endif %}</span></div>
           <div class="muted small">{% if v.filename != doc.filename %}{{ v.filename }} ・ {% endif %}{{ v.archived_at | localtime }} に置き換え{% if v.archived_by_name %}（{{ v.archived_by_name }}）{% endif %}</div>
           <div class="row-actions-in">
-            <a class="btn btn-sm" href="/api/v1/documents/{{ doc.id }}/versions/{{ v.id }}/content">{{ icon("download") }}ダウンロード</a>
+            <a class="btn btn-sm" href="{{ base }}/api/v1/documents/{{ doc.id }}/versions/{{ v.id }}/content">{{ icon("download") }}ダウンロード</a>
             {% if can_edit %}
             {% if v.blob_id != doc.blob_id %}
-            <form method="post" action="/d/{{ doc.id }}/versions/{{ v.id }}/restore" class="form-inline"
+            <form method="post" action="{{ base }}/d/{{ doc.id }}/versions/{{ v.id }}/restore" class="form-inline"
                   data-confirm="この版（{{ v.created_at | localtime }}）に戻しますか？ 今の版は過去の版に残ります。">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="btn btn-sm">{{ icon("undo") }}この版に戻す</button>
             </form>
             {% else %}<span class="muted small">今の版と同じ内容</span>{% endif %}
-            <form method="post" action="/d/{{ doc.id }}/versions/{{ v.id }}/delete" class="form-inline"
+            <form method="post" action="{{ base }}/d/{{ doc.id }}/versions/{{ v.id }}/delete" class="form-inline"
                   data-confirm="この版（{{ v.created_at | localtime }}）を完全に削除しますか？ 元に戻せません。">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="btn btn-sm btn-danger">{{ icon("delete_forever") }}削除</button>
@@ -195,7 +195,7 @@
       <p class="muted small">まだありません。新しい版をアップロードすると、今の版がここに残ります。</p>
       {% endif %}
       {% if can_edit and doc.kind != "webclip" and versions_keep %}
-      <form method="post" action="/d/{{ doc.id }}/versions" enctype="multipart/form-data" class="form">
+      <form method="post" action="{{ base }}/d/{{ doc.id }}/versions" enctype="multipart/form-data" class="form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <label>新しい版のファイル <input type="file" name="file" required></label>
         <p class="muted small">名前・フォルダ・タグはそのままで、中身だけが変わります。過去の版は新しいものから {{ versions_keep }} 件まで残します。</p>
@@ -206,7 +206,7 @@
     {% endif %}
 
     {% if can_edit %}
-    <form method="post" action="/d/{{ doc.id }}" class="form form-panel">
+    <form method="post" action="{{ base }}/d/{{ doc.id }}" class="form form-panel">
       <h2>{{ icon("edit") }} 編集</h2>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>ファイル名 <input name="filename" value="{{ doc.filename }}" required maxlength="255"></label>
@@ -221,7 +221,7 @@
       <button type="submit" class="btn btn-primary">{{ icon("save") }}保存</button>
     </form>
     {% if clip and webclip_enabled %}
-    <form method="post" action="/d/{{ doc.id }}/refetch" class="form form-panel">
+    <form method="post" action="{{ base }}/d/{{ doc.id }}/refetch" class="form form-panel">
       <h2>{{ icon("public") }} 元のページ</h2>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="row-actions-in">
@@ -231,14 +231,14 @@
     </form>
     {% endif %}
     {% if doc.status in ["ready", "failed", "unsupported"] %}
-    <form method="post" action="/d/{{ doc.id }}/reprocess" class="form form-panel">
+    <form method="post" action="{{ base }}/d/{{ doc.id }}/reprocess" class="form form-panel">
       <h2>{{ icon("document_scanner") }} 文字の読み取り</h2>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       {% if doc.mime_type == "application/pdf" %}<label class="check"><input type="checkbox" name="force_ocr" value="1"> PDF の埋め込みテキストを使わず、画像として読み取る</label>{% endif %}
       <button type="submit" class="btn">{{ icon("refresh") }}再処理</button>
     </form>
     {% endif %}
-    <form method="post" action="/d/{{ doc.id }}/delete" class="form-inline" data-confirm="「{{ doc.filename }}」をゴミ箱に移動しますか？">
+    <form method="post" action="{{ base }}/d/{{ doc.id }}/delete" class="form-inline" data-confirm="「{{ doc.filename }}」をゴミ箱に移動しますか？">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button type="submit" class="btn btn-danger">{{ icon("delete") }}ゴミ箱に移動</button>
     </form>
@@ -264,7 +264,7 @@
               aria-expanded="false">{{ icon("image") }}読み取った位置を画像に重ねて表示</button>
       {% endif %}
       {% if can_page %}
-      <form method="post" action="/d/{{ doc.id }}/pages/{{ pg.page_no }}/reprocess" class="page-reprocess">
+      <form method="post" action="{{ base }}/d/{{ doc.id }}/pages/{{ pg.page_no }}/reprocess" class="page-reprocess">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         {% if k == "pdf" and pg.source == "text_layer" %}<label class="check small"><input type="checkbox" name="force_ocr" value="1"> 埋め込みテキストを使わず画像として読む</label>{% endif %}
         <button class="btn btn-sm" title="このページだけを読み直します（ほかのページはそのまま）">{{ icon("refresh") }}このページを読み直す</button>

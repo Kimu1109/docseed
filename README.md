@@ -191,6 +191,49 @@ docker compose logs cloudflared | tail        # 「Registered tunnel connection�
 - Caddy は cloudflared のネットワーク（`DOCSEED_TUNNEL_SUBNET`、既定 `10.213.47.0/28`）から来たときだけ `CF-Connecting-IP` を本当の接続元として使います。ほかから送られたこのヘッダは無視します
 - トンネルを使う場合は、ルーターのポートを閉じたままにできます（Tailscale と LAN からは今まで通り直接開けます）
 
+### パスの下で動かす（`https://example.com/docseed/`）
+
+ドメイン（サブドメイン）を他のサービスと分け合っていて直下に置けない場合は、パスの下で動かせます。
+
+```bash
+# .env
+DOCSEED_BASE_PATH=/docseed
+```
+
+```bash
+docker compose up -d --force-recreate api worker
+```
+
+`https://<名前>/docseed/` で開きます（`/docseed` だけで開いても `/docseed/` に移ります）。画面のリンク・リダイレクト・Cookie・共有リンク・ブックマークレット・通知のリンク・Google のリダイレクト URI に接頭辞が付きます。
+
+置き方は次のどれかです。
+
+- **docseed の Caddy がそのまま受ける**（`DOCSEED_HOST` がその名前）: ほかの設定は要りません。この場合は `/docseed/` の外（`/` など）で開いても docseed が出ます
+- **外側の別のリバースプロキシ（nginx・Apache・別の Caddy）が `/docseed/` だけを docseed に転送する**: `Host` ヘッダは元のまま渡してください。接頭辞は付けたまま転送しても（`proxy_pass https://pi:8443;`）、外して転送しても（`proxy_pass https://pi:8443/;`）動きます。ブラウザから見たオリジンが `https://<DOCSEED_HOST>:<DOCSEED_HTTPS_PORT>` と違う（ポートを付けずに開くなど）ときは、`DOCSEED_PUBLIC_URL=https://example.com` も書きます（パスキーと Google のログインがこれを使います）
+- **Cloudflare Tunnel**: 「Public hostname」の Path に `docseed` を入れ、ほかは前の節の通りに設定します
+
+注意:
+
+- **同じオリジンの別のアプリから守られません。** ブラウザはパスで区別しないため、同じ名前の下の別のアプリに XSS などの穴があると、docseed の画面も操作されえます。Cookie の `Path` は `/docseed` に絞りますが、これでは防げません。同じ名前の下には、信頼できるものだけを置いてください
+- **外側のプロキシが LAN にあると、全員が「内側」に見えます。** Caddy には外側のプロキシのアドレスが接続元として届くため、管理画面などの 404 の制限（前の節）が効きません。外側のプロキシで `/docseed/admin`・`/docseed/api/v1/admin`・`/docseed/api/docs`・`/docseed/api/v1/openapi.json`・`/docseed/healthz` を外から開けないようにしてください。nginx の例:
+
+  ```nginx
+  location ~* ^/docseed/(admin|api/v1/admin|api/docs|api/v1/openapi\.json|healthz)(/|$) { return 404; }
+  location /docseed/ {
+      proxy_pass https://192.168.1.20:8443;
+      proxy_set_header Host $host;
+      proxy_set_header X-Forwarded-For $remote_addr;
+      proxy_ssl_server_name on;
+      proxy_ssl_name docseed.example.com;      # DOCSEED_HOST（Caddy の証明書の名前）
+      client_max_body_size 1g;                 # アップロードの上限（DOCSEED_MAX_UPLOAD_MB）
+      proxy_request_buffering off;
+      proxy_buffering off;
+  }
+  ```
+
+- 名前を変えて移すと、パスキーの RP ID が変わり、登録済みのパスキーは使えなくなります（管理画面に警告が出ます）。確認コードかパスワードでログインして登録し直してください
+- 接頭辞を後から付けると、それまでに配った共有リンク（`/s/…`）とブックマークレットの URL が変わります。共有リンクは配り直すか、外側のプロキシで `/s/` を `/docseed/s/` に転送してください。ブックマークレットは設定画面から登録し直します。Google のログインを使っているなら、Google Cloud のリダイレクト URI も `https://<名前>/docseed/auth/oidc/google/callback` に変えます
+
 ### Phase 7 までから更新する場合（写真・サムネイル）
 
 ```bash

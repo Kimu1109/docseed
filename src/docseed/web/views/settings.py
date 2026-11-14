@@ -20,6 +20,7 @@ from ...deps import (
     require_session,
 )
 from ...errors import AppError
+from ...urls import public_root
 from ..common import (
     base_context,
     router,
@@ -52,11 +53,11 @@ def _prefs(conn: sqlite3.Connection, user_id: int) -> dict:
 def settings_context(request: Request, conn: sqlite3.Connection, auth: Auth, **extra) -> dict:
     from ...shares import list_shares
     settings = request.app.state.settings
-    base = settings.public_url or str(request.base_url).rstrip("/")
+    base = settings.public_base or public_root(request)
     bookmarklet = ("javascript:location.href='" + base + "/clip?url='+encodeURIComponent(location.href)"
                    if settings.webclip_enabled else None)
     return base_context(request, conn, auth, nav="settings", tokens=token_rows(conn, auth.user.id),
-                        my_shares=list_shares(conn, auth.user), base_url=str(request.base_url).rstrip("/"),
+                        my_shares=list_shares(conn, auth.user), base_url=public_root(request),
                         bookmarklet=bookmarklet, prefs=_prefs(conn, auth.user.id),
                         suggest_enabled=settings.suggest_enabled,
                         llm_enabled=settings.llm_enabled, retention=_retention_ctx(conn, auth, settings),

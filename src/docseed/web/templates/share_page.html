@@ -14,18 +14,18 @@
   <div class="doc-title">
     <span class="kind kind-{{ k }} kind-lg" title="{{ kind_label[k] }}"></span>
     <h1>{{ doc.filename }}</h1>
-    <a class="btn btn-primary" href="/s/{{ token }}/download">{{ icon("download") }}ダウンロード（{{ doc.size_bytes | filesize }}）</a>
+    <a class="btn btn-primary" href="{{ base }}/s/{{ token }}/download">{{ icon("download") }}ダウンロード（{{ doc.size_bytes | filesize }}）</a>
   </div>
   <section class="preview{% if media_kind(doc.mime_type) == 'audio' %} preview-audio{% endif %}" aria-label="プレビュー">
     {% if doc.mime_type == "application/pdf" %}
-      <iframe src="/s/{{ token }}/preview/{{ doc.id }}" title="{{ doc.filename }} のプレビュー"></iframe>
+      <iframe src="{{ base }}/s/{{ token }}/preview/{{ doc.id }}" title="{{ doc.filename }} のプレビュー"></iframe>
     {% elif image_src(doc, "x") %}
-      <img src="/s/{{ token }}/view/{{ doc.id }}" alt="{{ doc.filename }}">
+      <img src="{{ base }}/s/{{ token }}/view/{{ doc.id }}" alt="{{ doc.filename }}">
     {% elif media_kind(doc.mime_type) %}
-      {% set media_kind_now, media_src, media_name = media_kind(doc.mime_type), "/s/" ~ token ~ "/view/" ~ doc.id, doc.filename %}
+      {% set media_kind_now, media_src, media_name = media_kind(doc.mime_type), base ~ "/s/" ~ token ~ "/view/" ~ doc.id, doc.filename %}
       {% include "_media.html" %}
     {% elif can_preview(doc.mime_type) %}
-      <iframe class="textframe" src="/s/{{ token }}/preview/{{ doc.id }}" title="{{ doc.filename }} のプレビュー"></iframe>
+      <iframe class="textframe" src="{{ base }}/s/{{ token }}/preview/{{ doc.id }}" title="{{ doc.filename }} のプレビュー"></iframe>
     {% else %}
       <div class="nopreview"><p>この形式（{{ kind_label[k] }}）はブラウザで表示できません。ダウンロードして開いてください。</p></div>
     {% endif %}
@@ -41,7 +41,7 @@
     {% endfor %}
   </ul>
   {% endif %}
-  <form method="post" action="/s/{{ token }}/upload" enctype="multipart/form-data" class="form form-panel upload-form">
+  <form method="post" action="{{ base }}/s/{{ token }}/upload" enctype="multipart/form-data" class="form form-panel upload-form">
     <label>送るファイル（複数選べます。1 ファイル 1GB まで）<input type="file" name="files" multiple required></label>
     <button type="submit" class="btn btn-primary">{{ icon("send") }}送信</button>
   </form>
@@ -52,10 +52,10 @@
       {%- for c in crumbs %}
         {%- if not loop.first %}<span class="sep" aria-hidden="true">/</span>{% endif %}
         {%- if loop.last %}<span aria-current="page">{{ c.name or "共有フォルダ" }}</span>
-        {%- else %}<a href="/s/{{ token }}?folder={{ c.id }}">{{ c.name or "共有フォルダ" }}</a>{% endif %}
+        {%- else %}<a href="{{ base }}/s/{{ token }}?folder={{ c.id }}">{{ c.name or "共有フォルダ" }}</a>{% endif %}
       {%- endfor %}
     </nav>
-    {% if folders or docs %}<div class="actions"><a class="btn" href="/s/{{ token }}/archive?folder={{ folder.id }}">{{ icon("folder_zip") }}まとめてダウンロード（ZIP）</a></div>{% endif %}
+    {% if folders or docs %}<div class="actions"><a class="btn" href="{{ base }}/s/{{ token }}/archive?folder={{ folder.id }}">{{ icon("folder_zip") }}まとめてダウンロード（ZIP）</a></div>{% endif %}
   </div>
   {% if not folders and not docs %}
     <div class="empty">{{ icon("folder_open") }}<p>このフォルダは空です。</p></div>
@@ -66,7 +66,7 @@
     {% for f in folders %}
       <tr>
         <td class="col-kind"><span class="kind kind-folder"></span></td>
-        <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon("folder") }}</span><a class="name" href="/s/{{ token }}?folder={{ f.id }}">{{ f.name }}</a></div></td>
+        <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon("folder") }}</span><a class="name" href="{{ base }}/s/{{ token }}?folder={{ f.id }}">{{ f.name }}</a></div></td>
         <td class="col-date">{{ f.updated_at | shortdate }}</td><td class="col-size muted">{{ f.item_count }} 項目</td><td></td>
       </tr>
     {% endfor %}
@@ -74,10 +74,10 @@
       {% set k = kind_of(d.mime_type, d.filename, d.kind) %}
       <tr>
         <td class="col-kind"><span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span></td>
-        <td class="col-name"><div class="cell-name">{% if d.thumb_path %}<img class="thumb" src="/s/{{ token }}/thumb/{{ d.id }}" alt="" loading="lazy">{% else %}<span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span>{% endif %}{% if d.view_path %}<a class="name" href="/s/{{ token }}/view/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% elif can_preview(d.mime_type) %}<a class="name" href="/s/{{ token }}/preview/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% else %}<span class="name">{{ d.filename }}</span>{% endif %}</div></td>
+        <td class="col-name"><div class="cell-name">{% if d.thumb_path %}<img class="thumb" src="{{ base }}/s/{{ token }}/thumb/{{ d.id }}" alt="" loading="lazy">{% else %}<span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span>{% endif %}{% if d.view_path %}<a class="name" href="{{ base }}/s/{{ token }}/view/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% elif can_preview(d.mime_type) %}<a class="name" href="{{ base }}/s/{{ token }}/preview/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% else %}<span class="name">{{ d.filename }}</span>{% endif %}</div></td>
         <td class="col-date">{{ d.updated_at | shortdate }}</td>
         <td class="col-size">{{ d.size_bytes | filesize }}</td>
-        <td class="col-actions"><a class="btn btn-sm" href="/s/{{ token }}/download/{{ d.id }}">{{ icon("download") }}ダウンロード</a></td>
+        <td class="col-actions"><a class="btn btn-sm" href="{{ base }}/s/{{ token }}/download/{{ d.id }}">{{ icon("download") }}ダウンロード</a></td>
       </tr>
     {% endfor %}
     </tbody>
