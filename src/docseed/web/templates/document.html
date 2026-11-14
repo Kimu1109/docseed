@@ -41,7 +41,7 @@
     {% elif image_src(doc, "/api/v1/documents/" ~ doc.id) %}
       <img src="{{ image_src(doc, '/api/v1/documents/' ~ doc.id) }}" alt="{{ doc.filename }}">
     {% elif media_kind(doc.mime_type) %}
-      {% set media_kind_now, media_src, media_name = media_kind(doc.mime_type), "/api/v1/documents/" ~ doc.id ~ "/content?inline=1", doc.filename %}
+      {% set media_kind_now, media_src, media_name = media_kind(doc.mime_type), "/api/v1/documents/" ~ doc.id ~ "/view", doc.filename %}
       {% include "_media.html" %}
     {% elif text_preview is not none %}
       <pre class="textview">{{ text_preview }}</pre>

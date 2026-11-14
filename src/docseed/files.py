@@ -42,7 +42,7 @@ def media_kind(mime: str | None) -> str | None:
 
 def image_src(doc, base: str) -> str | None:
     """画面に画像として表示する URL。base は /api/v1/documents/<id> や /s/<token> など。"""
-    if doc["view_path"]:
+    if doc["view_path"] and doc["mime_type"].startswith("image/"):  # 映像のプレビュー（mp4）は画像ではない
         return f"{base}/view"
     if doc["mime_type"] in BROWSER_IMAGES:
         return f"{base}/content?inline=1"
@@ -50,10 +50,11 @@ def image_src(doc, base: str) -> str | None:
 
 
 def derived_response(path: Path | None) -> FileResponse:
-    """派生ファイル（WebP）の配信。原本と同じく、ほかの形式として解釈させないヘッダを付ける。"""
+    """派生ファイルの配信（画像は WebP、映像のプレビューは mp4）。ほかの形式として解釈させないヘッダを付ける。"""
     if path is None or not path.exists():
         raise NotFound("サムネイルはありません")
-    return FileResponse(path, media_type="image/webp", headers={
+    media = "video/mp4" if path.suffix == ".mp4" else "image/webp"
+    return FileResponse(path, media_type=media, headers={
         "X-Content-Type-Options": "nosniff",
         "Cross-Origin-Resource-Policy": "same-origin",
         "Content-Security-Policy": "default-src 'none'; sandbox; frame-ancestors 'self'",
