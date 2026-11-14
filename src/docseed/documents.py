@@ -21,15 +21,20 @@ DEFAULT_KEEP_VERSIONS = 10   # 1 文書あたりの過去の版の数（DOCSEED_
 # 参照
 # ---------------------------------------------------------------------------
 
+_DOC_COLUMNS = (
+    "d.*, b.size_bytes, b.mime_type, b.sha256, b.storage_path, b.status, b.page_count,"
+    " b.progress_done, b.progress_total, b.error, b.warnings, b.thumb_path, b.view_path, b.image_meta, f.owner_id,"
+    " u.display_name AS created_by_name"
+)
+_DOC_FROM = (
+    " FROM documents d JOIN blobs b ON b.id = d.blob_id JOIN folders f ON f.id = d.folder_id"
+    " JOIN users u ON u.id = d.created_by"
+)
+
+
 def get_document(conn: sqlite3.Connection, user: User, doc_id: int, role: str = "viewer") -> sqlite3.Row:
-    r = conn.execute(
-        "SELECT d.*, b.size_bytes, b.mime_type, b.sha256, b.storage_path, b.status, b.page_count,"
-        " b.progress_done, b.progress_total, b.error, b.warnings, b.thumb_path, b.view_path, b.image_meta, f.owner_id,"
-        " u.display_name AS created_by_name"
-        " FROM documents d JOIN blobs b ON b.id = d.blob_id JOIN folders f ON f.id = d.folder_id"
-        " JOIN users u ON u.id = d.created_by WHERE d.id = ? AND d.deleted_at IS NULL",
-        (doc_id,),
-    ).fetchone()
+    r = conn.execute("SELECT " + _DOC_COLUMNS + _DOC_FROM + " WHERE d.id = ? AND d.deleted_at IS NULL",
+                     (doc_id,)).fetchone()
     if r is None:
         raise NotFound("ファイルが見つかりません")
     try:
@@ -283,7 +288,7 @@ def list_trash(conn: sqlite3.Connection, user: User) -> list[dict]:
             (r["deleted_at"], *ids),
         ).fetchone()[0]
         items.append({"type": "folder", "id": r["id"], "name": r["name"], "deleted_at": r["deleted_at"],
-                      "location": _location(conn, r["parent_id"]), "files": n, "size": None})
+                      "location": location_of(conn, r["parent_id"]), "files": n, "size": None})
     for r in conn.execute(
         "SELECT d.id, d.filename, d.deleted_at, d.folder_id, b.size_bytes, b.mime_type, u.display_name"
         " FROM documents d JOIN folders f ON f.id = d.folder_id JOIN blobs b ON b.id = d.blob_id"
@@ -293,12 +298,51 @@ def list_trash(conn: sqlite3.Connection, user: User) -> list[dict]:
         (user.id,),
     ):
         items.append({"type": "document", "id": r["id"], "name": r["filename"], "deleted_at": r["deleted_at"],
-                      "location": _location(conn, r["folder_id"]), "size": r["size_bytes"],
+                      "location": location_of(conn, r["folder_id"]), "size": r["size_bytes"],
                       "mime_type": r["mime_type"], "deleted_by": r["display_name"]})
     return sorted(items, key=lambda x: x["deleted_at"], reverse=True)
 
 
-def _location(conn: sqlite3.Connection, folder_id: int | None) -> str:
+def get_trashed_document(conn: sqlite3.Connection, user: User, doc_id: int) -> sqlite3.Row:
+    """ゴミ箱の中の文書（プレビュー用）。ゴミ箱を見られるのはフォルダの持ち主だけなので、持ち主に限る。
+
+    文書単位で削除したものも、削除したフォルダの中にあるものも返す。"""
+    r = conn.execute(
+        "SELECT " + _DOC_COLUMNS + ", f.deleted_at AS folder_deleted_at, du.display_name AS deleted_by_name"
+        + _DOC_FROM + " LEFT JOIN users du ON du.id = d.deleted_by WHERE d.id = ? AND d.deleted_at IS NOT NULL",
+        (doc_id,),
+    ).fetchone()
+    if r is None or r["owner_id"] != user.id:
+        raise NotFound("ゴミ箱に見つかりません")
+    return r
+
+
+def trashed_folder_contents(conn: sqlite3.Connection, user: User, folder_id: int) -> dict:
+    """ゴミ箱の中のフォルダと、一緒に削除された配下の文書（フォルダの中の相対パス付き）。"""
+    f = _own_trashed_folder(conn, user, folder_id)
+    ids = fo.subtree_ids(conn, folder_id, deleted_at=f["deleted_at"])
+    q = ",".join("?" * len(ids))
+    names = {r["id"]: (r["parent_id"], r["name"]) for r in conn.execute(
+        f"SELECT id, parent_id, name FROM folders WHERE id IN ({q})", ids)}
+
+    def rel(fid: int) -> str:
+        parts: list[str] = []
+        while fid != folder_id and fid in names:
+            parent, name = names[fid]
+            parts.append(name)
+            fid = parent
+        return "/".join(reversed(parts))
+
+    docs = [dict(r) | {"path": rel(r["folder_id"])} for r in conn.execute(
+        "SELECT d.id, d.filename, d.folder_id, d.kind, b.size_bytes, b.mime_type, b.thumb_path"
+        " FROM documents d JOIN blobs b ON b.id = d.blob_id"
+        f" WHERE d.deleted_at = ? AND d.folder_id IN ({q})", (f["deleted_at"], *ids))]
+    docs.sort(key=lambda x: (x["path"], x["filename"].lower()))
+    return {"folder": f, "docs": docs, "folders": len(ids) - 1, "location": location_of(conn, f["parent_id"])}
+
+
+def location_of(conn: sqlite3.Connection, folder_id: int | None) -> str:
+    """「/経理/2026」のような場所の表示（削除済みのフォルダも名前をたどる）。"""
     if folder_id is None:
         return "/"
     return "/" + "/".join(c.name for c in fo.path(conn, folder_id) if c.name)

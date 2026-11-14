@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ folder.name }}（ゴミ箱）{% endblock %}
+{% block main %}
+<div class="page-head">
+  <nav class="crumbs crumbs-links" aria-label="現在の場所">
+    <a href="{{ base }}/trash">ゴミ箱</a><span class="sep" aria-hidden="true">/</span><span aria-current="page">{{ folder.name }}</span>
+  </nav>
+  <div class="actions">
+    <form method="post" action="{{ base }}/trash/folder/{{ folder.id }}/restore" class="form-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn">{{ icon("restore_from_trash") }}フォルダごと元に戻す</button>
+    </form>
+    <form method="post" action="{{ base }}/trash/folder/{{ folder.id }}/purge" class="form-inline"
+          data-confirm="フォルダ「{{ folder.name }}」と中の {{ docs | length }} ファイルを完全に削除します。元に戻せません。よろしいですか？">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn btn-danger">{{ icon("delete_forever") }}フォルダごと完全に削除</button>
+    </form>
+  </div>
+</div>
+<p class="note">{{ icon("delete") }} 元の場所: {{ location }} ・ {{ folder.deleted_at | localtime }} に削除{% if subfolders %} ・ 中のフォルダ {{ subfolders }} 個{% endif %}。ファイルを押すと中身を確かめられます。</p>
+{% if not docs %}
+  <div class="empty">{{ icon("folder") }}<p>ファイルは入っていません。</p></div>
+{% else %}
+<table class="files">
+  <thead>
+    <tr>
+      <th class="col-kind"><span class="sr">種類</span></th>
+      <th class="col-name">名前</th>
+      <th class="col-loc">フォルダの中の場所</th>
+      <th class="col-size">サイズ</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for d in docs %}
+    {% set k = kind_of(d.mime_type, d.filename, d.kind) %}
+    <tr>
+      <td class="col-kind"><span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span></td>
+      <td class="col-name"><div class="cell-name">{% if d.thumb_path %}<img class="thumb" src="{{ base }}/api/v1/trash/document/{{ d.id }}/thumbnail" alt="" loading="lazy">{% else %}<span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span>{% endif %}<a class="name" href="{{ base }}/trash/document/{{ d.id }}">{{ d.filename }}</a></div>
+        {% if d.path %}<div class="m-meta">{{ d.path }}</div>{% endif %}</td>
+      <td class="muted col-loc">{{ d.path or "" }}</td>
+      <td class="col-size">{{ d.size_bytes | filesize }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

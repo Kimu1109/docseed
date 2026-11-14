@@ -18,7 +18,7 @@
     {% set k = "folder" if it.type == "folder" else kind_of(it.mime_type, it.name) %}
     <tr>
       <td class="col-kind"><span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span></td>
-      <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span><span class="name">{{ it.name }}</span>{% if it.type == "folder" %} <span class="muted small">{{ it.files }} ファイル</span>{% endif %}</div>
+      <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span><a class="name" href="{{ base }}/trash/{{ it.type }}/{{ it.id }}" title="中身を確かめる">{{ it.name }}</a>{% if it.type == "folder" %} <span class="muted small">{{ it.files }} ファイル</span>{% endif %}</div>
         <div class="m-meta">{{ it.location }} ・ {{ it.deleted_at | shortdate }} に削除</div></td>
       <td class="muted col-loc">{{ it.location }}</td>
       <td class="col-date">{{ it.deleted_at | shortdate }}</td>

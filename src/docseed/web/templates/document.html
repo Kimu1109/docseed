@@ -27,35 +27,7 @@
 
 {% if live.busy %}<div hidden data-live-url="{{ base }}/x/d/{{ doc.id }}/state" data-live-key="{{ live.key }}"></div>{% endif %}
 <div class="doc-layout">
-  <section class="preview{% if media_kind(doc.mime_type) == 'audio' %} preview-audio{% endif %}" aria-label="プレビュー">
-    {% if doc.mime_type == "application/pdf" %}
-      <iframe src="{{ base }}/api/v1/documents/{{ doc.id }}/content?inline=1" title="{{ doc.filename }} のプレビュー"></iframe>
-    {% elif clip and doc.kind == "webclip" %}
-      <div class="clip-card">
-        {% if doc.thumb_path %}<img class="clip-image" src="{{ base }}/api/v1/documents/{{ doc.id }}/thumbnail" alt="">{% endif %}
-        <div class="clip-body">
-          <p class="clip-site">{{ clip.site_name or "" }}</p>
-          <h2 class="clip-title">{{ clip.title or doc.filename }}</h2>
-          {% if clip.description %}<p class="clip-desc">{{ clip.description }}</p>{% endif %}
-          <p class="small"><a href="{{ clip.final_url or clip.url }}" target="_blank" rel="noopener noreferrer">{{ icon("link") }} {{ clip.final_url or clip.url }}</a></p>
-          <p class="muted small">安全のため HTML は表示しません。本文は下の「取り出したテキスト」で読めます。</p>
-        </div>
-      </div>
-    {% elif image_src(doc, base ~ "/api/v1/documents/" ~ doc.id) %}
-      <img src="{{ image_src(doc, base ~ '/api/v1/documents/' ~ doc.id) }}" alt="{{ doc.filename }}">
-    {% elif media_kind(doc.mime_type) %}
-      {% set media_kind_now, media_src, media_name = media_kind(doc.mime_type), base ~ "/api/v1/documents/" ~ doc.id ~ "/view", doc.filename %}
-      {% include "_media.html" %}
-    {% elif text_preview is not none %}
-      <pre class="textview">{{ text_preview }}</pre>
-      {% if truncated %}<p class="muted">先頭の 200 KB だけを表示しています。</p>{% endif %}
-    {% else %}
-      <div class="nopreview">
-        {{ icon("visibility_off", cls="hero-icon") }}
-        <p>この形式（{{ kind_label[k] }}）はブラウザで表示できません。</p>
-      </div>
-    {% endif %}
-  </section>
+  {% set file_base = base ~ "/api/v1/documents/" ~ doc.id %}{% include "_preview.html" %}
 
   <aside class="doc-side">
     {% set can_redo = sugg and can_edit and doc.status == "ready" and (suggest_enabled or llm_enabled) %}
