@@ -201,7 +201,7 @@ DOCSEED_BASE_PATH=/docseed
 ```
 
 ```bash
-docker compose up -d --force-recreate api worker
+docker compose up -d --force-recreate   # ポートも変えたときは Caddy も作り直す必要があるので、全部を作り直す
 ```
 
 `https://<名前>/docseed/` で開きます（`/docseed` だけで開いても `/docseed/` に移ります）。画面のリンク・リダイレクト・Cookie・共有リンク・ブックマークレット・通知のリンク・Google のリダイレクト URI に接頭辞が付きます。
@@ -209,7 +209,7 @@ docker compose up -d --force-recreate api worker
 置き方は次のどれかです。
 
 - **docseed の Caddy がそのまま受ける**（`DOCSEED_HOST` がその名前）: ほかの設定は要りません。この場合は `/docseed/` の外（`/` など）で開いても docseed が出ます
-- **外側の別のリバースプロキシ（nginx・Apache・別の Caddy）が `/docseed/` だけを docseed に転送する**: `Host` ヘッダは元のまま渡してください。接頭辞は付けたまま転送しても（`proxy_pass https://pi:8443;`）、外して転送しても（`proxy_pass https://pi:8443/;`）動きます。ブラウザから見たオリジンが `https://<DOCSEED_HOST>:<DOCSEED_HTTPS_PORT>` と違う（ポートを付けずに開くなど）ときは、`DOCSEED_PUBLIC_URL=https://example.com` も書きます（パスキーと Google のログインがこれを使います）
+- **外側の別のリバースプロキシ（nginx・Apache・別の Caddy）が `/docseed/` だけを docseed に転送する**: 手順・設定例・うまく行かないときの対処は [別の Web サーバーの下に置く](docs/guides/reverse-proxy.md) にまとめています。`Host` ヘッダは元のまま渡してください。接頭辞は付けたまま転送しても（`proxy_pass https://pi:8443;`）、外して転送しても（`proxy_pass https://pi:8443/;`）動きます。ブラウザから見たオリジンが `https://<DOCSEED_HOST>:<DOCSEED_HTTPS_PORT>` と違う（ポートを付けずに開くなど）ときは、`DOCSEED_PUBLIC_URL=https://example.com` も書きます（パスキーと Google のログインがこれを使います）
 - **Cloudflare Tunnel**: 「Public hostname」の Path に `docseed` を入れ、ほかは前の節の通りに設定します
 
 注意:
@@ -713,6 +713,7 @@ API の仕様は起動後に `/api/docs` で確認できます（ログインが
 
 ## 文書
 
+- [別の Web サーバーの下に置く（Apache・nginx、パスの下で動かす）](docs/guides/reverse-proxy.md)
 - [設計書](docs/design.md)（詳細設計は `docs/design/`。今後の拡張は [拡張機能](docs/design/extensions.md)）
 - [ローカル OCR / Embedding モデル調査](docs/research/ocr-embedding-models.md)
 - [Phase 0 計測結果](docs/research/phase0-results.md)
