@@ -102,3 +102,8 @@ person_remove
 person_check
 person_off
 group
+# スマホ用の画面
+photo_camera
+open_in_new
+sort
+checklist

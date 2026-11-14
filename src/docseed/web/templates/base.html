@@ -2,7 +2,7 @@
 <html lang="ja"{% if theme in ("light", "dark") %} data-theme="{{ theme }}"{% endif %}>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="{{ theme if theme in ('light', 'dark') else 'light dark' }}">
 <meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false, "allowScriptTags": false}'>
 <title>{% block title %}docseed{% endblock %} | docseed</title>
@@ -26,8 +26,9 @@
   <div class="top-right">
     {% block top_actions %}{% endblock %}
     <details class="usermenu">
-      <summary>{{ icon("account_circle") }}{{ user.display_name }}</summary>
+      <summary aria-label="{{ user.display_name }} のメニュー">{{ icon("account_circle") }}<span class="usermenu-name">{{ user.display_name }}</span></summary>
       <div class="usermenu-panel">
+        <div class="usermenu-who m-only">{{ user.display_name }}</div>
         <a href="/settings">{{ icon("settings") }}設定</a>
         <button type="button" class="linkish" data-open-dialog="dlg-keys">{{ icon("keyboard") }}キーボード操作 <kbd>?</kbd></button>
         <form method="post" action="/logout">
@@ -47,6 +48,7 @@
     <a href="/tags" data-goto="tags" {% if nav == 'tags' %}aria-current="page"{% endif %}>{{ icon("label") }}タグ</a>
     <a href="/trash" data-goto="trash" {% if nav == 'trash' %}aria-current="page"{% endif %}>{{ icon("delete") }}ゴミ箱</a>
     {% if user.is_admin %}<a href="/admin" data-goto="admin" {% if nav == 'admin' %}aria-current="page"{% endif %}>{{ icon("admin_panel_settings") }}管理{% if alert_count %} <span class="alert-badge" title="確認が必要な項目が {{ alert_count }} 件あります" aria-label="警告 {{ alert_count }} 件">!{{ alert_count }}</span>{% endif %}</a>{% endif %}
+    <a class="m-only" href="/settings" {% if nav == 'settings' %}aria-current="page"{% endif %}>{{ icon("settings") }}設定</a>
     <div class="side-foot">
       {% if quota and quota.quota %}
       <div>使用量 <b>{{ usage | filesize }}</b> / {{ quota.quota | filesize }}</div>
@@ -63,6 +65,15 @@
     {% block main %}{% endblock %}
   </main>
 </div>
+<div class="side-backdrop" data-nav-close hidden></div>
+{#- スマホ用の下部タブ（PC では出さない）。「メニュー」はサイドバーを引き出しとして開く -#}
+<nav class="tabbar" aria-label="メイン（下部）">
+  <a href="/f/{{ root_id }}" {% if nav == 'files' %}aria-current="page"{% endif %}>{{ icon("folder") }}<span>ファイル</span></a>
+  <a href="/favorites" {% if nav == 'favorites' %}aria-current="page"{% endif %}>{{ icon("star") }}<span>お気に入り</span></a>
+  <a href="/search" {% if nav == 'search' %}aria-current="page"{% endif %}>{{ icon("search") }}<span>検索</span></a>
+  <a href="/shared" {% if nav == 'shared' %}aria-current="page"{% endif %}>{{ icon("folder_shared") }}<span>共有</span></a>
+  <button type="button" data-nav-toggle aria-controls="side" aria-expanded="false" {% if nav in ('tags', 'trash', 'admin', 'settings') %}aria-current="page"{% endif %}>{{ icon("menu") }}<span>メニュー</span>{% if user.is_admin and alert_count %}<span class="tab-dot" aria-label="警告 {{ alert_count }} 件"></span>{% endif %}</button>
+</nav>
 {% else %}
 {% block bare %}{% endblock %}
 {% endif %}
