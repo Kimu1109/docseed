@@ -135,6 +135,18 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      # api のイメージ（target base）の層を GitHub Actions のキャッシュに置き、次の実行で使い回す
+      - uses: docker/setup-buildx-action@v3
+      - name: api のイメージを作る
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: base
+          tags: docseed:latest
+          load: true
+          cache-from: type=gha,scope=docseed-base
+          cache-to: type=gha,scope=docseed-base,mode=max
       - name: 起動
         run: |
           sudo mkdir -p /srv/docseed-ci && sudo chown 1000:1000 /srv/docseed-ci
@@ -143,8 +155,8 @@ jobs:
           DOCSEED_SECRET_KEY=ci-secret-key-ci-secret-key-ci-secret-key-ci
           DOCSEED_DATA_DIR=/srv/docseed-ci
           ENV
-          docker compose build api
-          docker compose up -d caddy api worker
+          # イメージは上で作ったもの（docseed:latest）を使う。compose ではビルドしない
+          docker compose up -d --no-build caddy api worker
           for i in $(seq 1 30); do
             [ "$(docker inspect -f '{{.State.Health.Status}}' docseed-api-1)" = healthy ] && break; sleep 2
           done
