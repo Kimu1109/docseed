@@ -68,4 +68,5 @@ docker compose exec api docseed status
 | 症状 | 対処 |
 |---|---|
 | ファイルとデータベースが合っているか確かめたい | `docker compose exec api docseed verify-files`（「問題はありません」なら正常。`--quick` で SHA-256 を省く） |
+| ヘルプに「このサーバーには文書が入っていません」と出る | 古い作り方のイメージです。`git pull` のあと `docker compose up -d --build` で作り直す |
 | データベースを戻したい | api と worker を止めて `docker compose run --rm --no-deps api docseed restore-db`（[バックアップと復旧](backup.md)） |

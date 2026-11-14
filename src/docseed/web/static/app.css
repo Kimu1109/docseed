@@ -712,6 +712,35 @@ kbd:not(.kbd) { display: inline-block; min-width: 1.6em; padding: 0 5px; font: 1
 .jobs-table td.job-title { overflow-wrap: anywhere; max-width: 28em; }
 .jobs-table progress { width: 6em; vertical-align: middle; }
 
+/* ---- ヘルプ（docs/ の文書） --------------------------------------------- */
+.help-guides { display: flex; flex-wrap: wrap; gap: 0; margin: 0 0 var(--s5); border-bottom: 1px solid var(--line); }
+.help-guides a { padding: var(--s2) var(--s4); color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.help-guides a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 700; }
+.help-guides a:hover { text-decoration: none; color: var(--ink); }
+.doc { max-width: 860px; overflow-wrap: anywhere; }
+.doc h1 { font-size: 22px; margin: 0 0 var(--s4); }
+.doc h2 { font-size: 18px; margin: var(--s6) 0 var(--s3); padding-bottom: var(--s1); border-bottom: 2px solid var(--ink); }
+.doc h3 { font-size: 16px; margin: var(--s5) 0 var(--s2); }
+.doc h4, .doc h5, .doc h6 { font-size: 15px; margin: var(--s4) 0 var(--s2); }
+.doc :is(h1, h2, h3, h4) { scroll-margin-top: calc(var(--top-h) + var(--s3)); }
+.doc p, .doc ul, .doc ol { margin: 0 0 var(--s3); }
+.doc ul, .doc ol { padding-left: 1.5em; }
+.doc li + li { margin-top: 2px; }
+.doc :not(pre) > code { background: var(--accent-soft); padding: 1px 4px; }
+.doc pre { background: var(--surface); border: 1px solid var(--line); border-left: 2px solid var(--accent);
+           padding: var(--s3); overflow-x: auto; margin: 0 0 var(--s3); line-height: 1.5; }
+.doc pre code { font-size: 13px; }
+.doc blockquote { margin: 0 0 var(--s3); padding: var(--s2) var(--s3); border-left: 2px solid var(--line-strong);
+                  color: var(--muted); }
+.doc-table { overflow-x: auto; margin: 0 0 var(--s4); }
+.doc table { border-collapse: collapse; font-size: 14px; min-width: 100%; background: var(--surface); }
+.doc th { text-align: left; font-weight: 700; border-bottom: 1px solid var(--ink); padding: 6px 8px; }
+.doc td { border-bottom: 1px solid var(--line); padding: 6px 8px; vertical-align: top; }
+.doc .task-list-item { list-style: none; }
+.doc .task-list-item input { margin: 0 6px 0 -1.3em; }
+.doc a.doc-nolink { color: inherit; }
+.doc-src { margin-top: var(--s6); }
+
 /* ---- スマホ用の画面（幅 860px 以下） ------------------------------------
    PC はサイドバー＋表の画面、スマホは「下のタブ・引き出しのメニュー・1 列の一覧・下から出るメニュー」の画面にする。
    HTML は同じで、スマホだけの部品（.m-only・.m-meta・.tabbar・.fab など）を PC では隠す。

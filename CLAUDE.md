@@ -17,6 +17,8 @@ python scripts/build_icons.py --check   # アイコンのスプライトが icon
 - コードの地図と決まりごと: `docs/dev/README.md`
 - 設計（なぜそう作ったか。章の番号はコードやテストから参照される）: `docs/design.md` と `docs/design/`
 - 文書の全体の地図: `docs/README.md`
+- `docs/` の Markdown は画面の「ヘルプ」（`/help`）でもそのまま出る（`src/docseed/helpdocs.py`）。リンクは相対パス、生の HTML は書かない
+- main に push されると `docs/` が GitHub の Wiki に写る（`scripts/wiki_sync.py`。一方向）。Wiki は直さない
 
 ## 決まりごと（要点）
 

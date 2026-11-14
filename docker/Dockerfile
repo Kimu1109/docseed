@@ -14,7 +14,7 @@ RUN apt-get update \
  && useradd --uid 1000 --create-home --shell /usr/sbin/nologin docseed
 
 WORKDIR /app
-# 依存だけを先に入れる。この層は pyproject.toml が変わったときだけ作り直す（src や README の変更では取り直さない）
+# 依存だけを先に入れる。この層は pyproject.toml が変わったときだけ作り直す（src・docs や README の変更では取り直さない）
 COPY pyproject.toml ./
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml', 'rb'))['project']['dependencies']))" \
@@ -24,6 +24,8 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
 # 本体（依存は上で入れたので --no-deps）
 COPY README.md ./
 COPY src ./src
+# 画面のヘルプで読む文書（wheel の docseed/_docs に入る。docseed/helpdocs.py）
+COPY docs ./docs
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     pip install --no-deps .
 

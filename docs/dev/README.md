@@ -61,9 +61,11 @@ python scripts/build_icons.py --check
 | `src/docseed/shares.py`・`inbox.py` | 共有リンク・受け取り箱 | [認証・権限・共有](../design/security.md) 4 章 |
 | `src/docseed/webclip/` | URL の取り込み（安全な取得・描画） | [拡張機能](../design/extensions.md) 6 章 |
 | `src/docseed/suggest.py`・`llm.py`・`tags.py` | 整理の補助・要約 | [拡張機能](../design/extensions.md) 7 章 |
+| `src/docseed/helpdocs.py`・`web/views/help.py` | 画面のヘルプ（`docs/` の Markdown を画面で読む） | [画面](../design/ui.md) S12 |
 | `src/docseed/monitor.py`・`metrics.py`・`notify.py`・`tlscheck.py`・`backup.py` | 監視・指標・通知・証明書・バックアップ | [配置・運用](../design/deployment.md) 5〜6 章 |
 | `src/docseed/migrations/` | DB のマイグレーション（`NNNN_名前.sql`。番号順に適用） | [データモデル](../design/data-model.md) |
 | `compose.yaml`・`docker/` | コンテナ・Caddyfile | [配置・運用](../design/deployment.md) 2 章 |
+| `scripts/wiki_sync.py`・`.github/workflows/wiki.yml` | `docs/` を GitHub の Wiki に写す | [文書の書き方と更新の手順](docs-guide.md#github-の-wiki読むための写し) |
 | `scripts/ops/`・`deploy/` | Pi 本体で使う運用スクリプト・systemd・fail2ban | [配置・運用](../design/deployment.md) 5 章 |
 | `tests/` | テスト（ファイルの先頭の docstring に、対応する設計書の章を書く） | — |
 

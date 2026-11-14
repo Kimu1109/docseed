@@ -14,6 +14,7 @@ from .views import (  # noqa: F401 - 読み込むとルートが登録される
     admin,
     documents,
     files,
+    help,
     login,
     organize,
     search,

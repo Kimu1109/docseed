@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from docseed.helpdocs import slug  # 画面のヘルプと同じ見出しの id（GitHub と同じ形）
+
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 # ひな形は書きかけのリンク（〇〇.md）を含むので検査しない。scripts/poc は計測の作業場所
@@ -47,14 +49,6 @@ def prose_lines(text: str) -> list[str]:
         if not in_code:
             lines.append(line)
     return lines
-
-
-def slug(heading: str) -> str:
-    """GitHub の見出しの id（github-slugger と同じ考え方: 小文字、記号を除き、空白を -）。"""
-    h = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", heading)   # 見出しの中のリンクは文字だけ
-    h = h.replace("`", "").strip().lower()
-    h = re.sub(r"[^\w\- ]", "", h)
-    return h.replace(" ", "-")
 
 
 @cache

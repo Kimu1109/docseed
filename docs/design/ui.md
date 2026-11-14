@@ -43,6 +43,7 @@
 | S09 | 管理 | `/admin`（ユーザー・ジョブ・システム状態・監査ログ） | admin |
 | S10 | 共有リンクの公開ページ | `/s/{token}` | 誰でも（リンクを知っている人） |
 | S11 | お気に入り・最近開いたファイル | `/favorites` | ログインユーザー（実装で追加） |
+| S12 | ヘルプ（docs/ の文書） | `/help`（文書の地図）、`/help/user` など | ログインユーザー（実装で追加） |
 
 ## 3. 共通レイアウト
 
@@ -205,6 +206,20 @@ HTML は PC と同じテンプレートを使い、スマホだけの部品（`.
 - お気に入りは、文書の画面の題の横と、フォルダの画面の操作の並びの「☆お気に入り」で入れる・外す（`POST /x/favorite`、htmx でボタンだけを差し替える。入っていれば色を変え `aria-pressed="true"`）。一覧では、お気に入りの名前の横に ☆ の印を出す。
 - 出すのは今見られるものだけ（ゴミ箱の中・共有をやめられたものは出さない）。完全に削除されたものは、記録も消す。
 - 最近開いたファイルは、利用者ごとに新しい 50 件だけ残す。API での取得・ダウンロードは数えない。
+
+### S12 ヘルプ（実装で追加）
+
+リポジトリの `docs/` の Markdown を、そのまま画面で読めるようにする（`helpdocs.py`・`web/views/help.py`）。GitHub で読む文書と画面のヘルプを 1 つの元にして、二重に書かない。
+
+- URL: `docs/README.md` → `/help`、`docs/user/README.md` → `/help/user`、`docs/user/files.md` → `/help/user/files`。サイドの「ヘルプ」（`g` → `h`）は `/help/user` を開く
+- 変換は markdown-it-py（CommonMark・表・取り消し線・チェックリスト）。**生の HTML は出さない**（`html=False`。文字として出す）。`javascript:` などのリンクも出さない
+- 相対リンク（`../admin/https.md#…`）は画面の URL（`/help/admin/https#…`）に書き換える。`docs/` の外（ルートの README・ソース）を指すリンクは、リンクにしない。外のサイトへのリンクは新しいタブで開く（`rel="noopener noreferrer"`）
+- 見出しの id は GitHub と同じ形（`helpdocs.slug`。`tests/test_docs.py` も同じ関数でリンクを確かめる）
+- 上のタブ: 利用者ガイド（全員）・管理者ガイド・開発者ガイド・設計書・文書の地図（管理者だけ）。タブに出さなくても、リンクから開くことは誰でもできる（文書はリポジトリで公開しているものと同じで、秘密は書かない）
+- `docs/dev/templates/`（ひな形）は出さない
+- 確認コードの設定を求められている間も読める（`deps.SETUP_ALLOWED_PREFIXES`）
+- イメージには wheel の `docseed/_docs` として入る（`pyproject.toml` の force-include、`docker/Dockerfile` の `COPY docs`）。開発中はリポジトリの `docs/` を読む
+- 管理画面の説明文から、関係するヘルプのページへ張る（バックアップ・通知・導入）
 
 ### S04 への追加: 検索の履歴・保存した検索（実装で追加）
 
