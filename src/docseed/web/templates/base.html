@@ -4,20 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="{{ theme if theme in ('light', 'dark') else 'light dark' }}">
+<meta name="docseed-base" content="{{ base }}">
 <meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false, "allowScriptTags": false}'>
 <title>{% block title %}docseed{% endblock %} | docseed</title>
-<link rel="stylesheet" href="/static/app.css?v={{ version }}">
-<script src="/static/htmx-2.0.4.min.js" defer></script>
-<script src="/static/app.js?v={{ version }}" defer></script>
+<link rel="stylesheet" href="{{ base }}/static/app.css?v={{ version }}">
+<script src="{{ base }}/static/htmx-2.0.4.min.js" defer></script>
+<script src="{{ base }}/static/app.js?v={{ version }}" defer></script>
 {% block head %}{% endblock %}
 </head>
 <body hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
 {% if user %}
 <header class="top">
-  <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>docseed</a>
+  <a class="brand" href="{{ base }}/"><span class="brand-mark" aria-hidden="true"></span>docseed</a>
   <button class="nav-toggle" type="button" aria-controls="side" aria-expanded="false" data-nav-toggle aria-label="メニュー" title="メニュー">{{ icon("menu") }}</button>
   {% if nav != "search" %}
-  <form class="topsearch" method="get" action="/search" role="search">
+  <form class="topsearch" method="get" action="{{ base }}/search" role="search">
     {{ icon("search", cls="search-icon") }}
     <input type="search" name="q" placeholder="ファイルの中身を検索" aria-label="検索" autocomplete="off" data-search-shortcut>
     <kbd class="kbd" aria-hidden="true">/</kbd>
@@ -29,9 +30,9 @@
       <summary aria-label="{{ user.display_name }} のメニュー">{{ icon("account_circle") }}<span class="usermenu-name">{{ user.display_name }}</span></summary>
       <div class="usermenu-panel">
         <div class="usermenu-who m-only">{{ user.display_name }}</div>
-        <a href="/settings">{{ icon("settings") }}設定</a>
+        <a href="{{ base }}/settings">{{ icon("settings") }}設定</a>
         <button type="button" class="linkish" data-open-dialog="dlg-keys">{{ icon("keyboard") }}キーボード操作 <kbd>?</kbd></button>
-        <form method="post" action="/logout">
+        <form method="post" action="{{ base }}/logout">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button type="submit" class="linkish">{{ icon("logout") }}ログアウト</button>
         </form>
@@ -41,14 +42,14 @@
 </header>
 <div class="shell">
   <nav class="side" id="side" aria-label="メイン">
-    <a href="/f/{{ root_id }}" data-drop="{{ root_id }}" data-goto="files" {% if nav == 'files' %}aria-current="page"{% endif %}>{{ icon("folder") }}マイファイル</a>
-    <a href="/favorites" data-goto="favorites" {% if nav == 'favorites' %}aria-current="page"{% endif %}>{{ icon("star") }}お気に入り</a>
-    <a href="/search" {% if nav == 'search' %}aria-current="page"{% endif %}>{{ icon("search") }}検索</a>
-    <a href="/shared" data-goto="shared" {% if nav == 'shared' %}aria-current="page"{% endif %}>{{ icon("folder_shared") }}共有されたフォルダ</a>
-    <a href="/tags" data-goto="tags" {% if nav == 'tags' %}aria-current="page"{% endif %}>{{ icon("label") }}タグ</a>
-    <a href="/trash" data-goto="trash" {% if nav == 'trash' %}aria-current="page"{% endif %}>{{ icon("delete") }}ゴミ箱</a>
-    {% if user.is_admin %}<a href="/admin" data-goto="admin" {% if nav == 'admin' %}aria-current="page"{% endif %}>{{ icon("admin_panel_settings") }}管理{% if alert_count %} <span class="alert-badge" title="確認が必要な項目が {{ alert_count }} 件あります" aria-label="警告 {{ alert_count }} 件">!{{ alert_count }}</span>{% endif %}</a>{% endif %}
-    <a class="m-only" href="/settings" {% if nav == 'settings' %}aria-current="page"{% endif %}>{{ icon("settings") }}設定</a>
+    <a href="{{ base }}/f/{{ root_id }}" data-drop="{{ root_id }}" data-goto="files" {% if nav == 'files' %}aria-current="page"{% endif %}>{{ icon("folder") }}マイファイル</a>
+    <a href="{{ base }}/favorites" data-goto="favorites" {% if nav == 'favorites' %}aria-current="page"{% endif %}>{{ icon("star") }}お気に入り</a>
+    <a href="{{ base }}/search" {% if nav == 'search' %}aria-current="page"{% endif %}>{{ icon("search") }}検索</a>
+    <a href="{{ base }}/shared" data-goto="shared" {% if nav == 'shared' %}aria-current="page"{% endif %}>{{ icon("folder_shared") }}共有されたフォルダ</a>
+    <a href="{{ base }}/tags" data-goto="tags" {% if nav == 'tags' %}aria-current="page"{% endif %}>{{ icon("label") }}タグ</a>
+    <a href="{{ base }}/trash" data-goto="trash" {% if nav == 'trash' %}aria-current="page"{% endif %}>{{ icon("delete") }}ゴミ箱</a>
+    {% if user.is_admin %}<a href="{{ base }}/admin" data-goto="admin" {% if nav == 'admin' %}aria-current="page"{% endif %}>{{ icon("admin_panel_settings") }}管理{% if alert_count %} <span class="alert-badge" title="確認が必要な項目が {{ alert_count }} 件あります" aria-label="警告 {{ alert_count }} 件">!{{ alert_count }}</span>{% endif %}</a>{% endif %}
+    <a class="m-only" href="{{ base }}/settings" {% if nav == 'settings' %}aria-current="page"{% endif %}>{{ icon("settings") }}設定</a>
     <div class="side-foot">
       {% if quota and quota.quota %}
       <div>使用量 <b>{{ usage | filesize }}</b> / {{ quota.quota | filesize }}</div>
@@ -68,10 +69,10 @@
 <div class="side-backdrop" data-nav-close hidden></div>
 {#- スマホ用の下部タブ（PC では出さない）。「メニュー」はサイドバーを引き出しとして開く -#}
 <nav class="tabbar" aria-label="メイン（下部）">
-  <a href="/f/{{ root_id }}" {% if nav == 'files' %}aria-current="page"{% endif %}>{{ icon("folder") }}<span>ファイル</span></a>
-  <a href="/favorites" {% if nav == 'favorites' %}aria-current="page"{% endif %}>{{ icon("star") }}<span>お気に入り</span></a>
-  <a href="/search" {% if nav == 'search' %}aria-current="page"{% endif %}>{{ icon("search") }}<span>検索</span></a>
-  <a href="/shared" {% if nav == 'shared' %}aria-current="page"{% endif %}>{{ icon("folder_shared") }}<span>共有</span></a>
+  <a href="{{ base }}/f/{{ root_id }}" {% if nav == 'files' %}aria-current="page"{% endif %}>{{ icon("folder") }}<span>ファイル</span></a>
+  <a href="{{ base }}/favorites" {% if nav == 'favorites' %}aria-current="page"{% endif %}>{{ icon("star") }}<span>お気に入り</span></a>
+  <a href="{{ base }}/search" {% if nav == 'search' %}aria-current="page"{% endif %}>{{ icon("search") }}<span>検索</span></a>
+  <a href="{{ base }}/shared" {% if nav == 'shared' %}aria-current="page"{% endif %}>{{ icon("folder_shared") }}<span>共有</span></a>
   <button type="button" data-nav-toggle aria-controls="side" aria-expanded="false" {% if nav in ('tags', 'trash', 'admin', 'settings') %}aria-current="page"{% endif %}>{{ icon("menu") }}<span>メニュー</span>{% if user.is_admin and alert_count %}<span class="tab-dot" aria-label="警告 {{ alert_count }} 件"></span>{% endif %}</button>
 </nav>
 {% else %}

@@ -188,3 +188,20 @@ def test_fail2ban_regex_matches_security_log(tmp_path):
     assert "3 matched, 0 missed" in out, out
     for ip in ("203.0.113.5", "2001:db8::1", "198.51.100.3"):
         assert ip in out
+
+
+def test_internal_paths_hidden_under_any_prefix():
+    """DOCSEED_BASE_PATH=/docseed のときの「/docseed/admin」なども、外からは 404（docs/design/security.md 8 章）。"""
+    block = CADDYFILE.split("(internal_paths) {", 1)[1].split("\n}\n", 1)[0]
+    regexps = re.findall(r"^\s*path_regexp (\S+)$", block, flags=re.MULTILINE)
+    assert len(regexps) == 2 and len(set(regexps)) == 1   # 外側から・トンネル経由の両方
+    assert "respond @internal_only_prefixed 404" in block
+    assert "respond @internal_only_prefixed_tunnel 404" in block
+    rx = re.compile(regexps[0])   # RE2 と同じ意味になる書き方だけを使っている
+    for hidden in ("/docseed/admin", "/docseed/admin/users", "/docseed/ADMIN", "/a/b/api/docs",
+                   "/docseed/api/docs/oauth2", "/docseed/api/v1/admin/jobs", "/docseed/api/v1/openapi.json",
+                   "/docseed/healthz"):
+        assert rx.match(hidden), hidden
+    for shown in ("/docseed/", "/docseed/d/1", "/docseed/api/v1/documents", "/docseed/administrator",
+                  "/docseed/api/v1/openapi_json", "/admin"):   # 接頭辞なしの /admin は path の一覧で隠す
+        assert not rx.match(shown), shown

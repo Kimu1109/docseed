@@ -5,7 +5,7 @@
   <h1 class="page-title">{{ icon("delete") }} ゴミ箱</h1>
   {% if items %}
   <div class="actions">
-    <button type="button" class="btn btn-danger" hx-post="/trash/empty" hx-target="#trash" hx-swap="outerHTML"
+    <button type="button" class="btn btn-danger" hx-post="{{ base }}/trash/empty" hx-target="#trash" hx-swap="outerHTML"
             hx-confirm="ゴミ箱の {{ items | length }} 件をすべて完全に削除します。元に戻せません。よろしいですか？">{{ icon("delete_sweep") }}ゴミ箱を空にする</button>
   </div>
   {% endif %}

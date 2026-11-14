@@ -5,8 +5,8 @@
   {% set link_last = False %}{% include "_crumbs.html" %}
   <div class="actions m-ic">
     {% set fav, fav_type, fav_id, small = folder.id in favs.folder, "folder", folder.id, False %}{% include "_fav.html" %}
-    <a class="btn" href="/api/v1/folders/{{ folder.id }}/archive" title="このフォルダをまとめてダウンロード">{{ icon("folder_zip") }}<span class="lbl">ZIP</span></a>
-    <button type="button" class="btn" data-open-dialog="dlg-share" hx-get="/x/share?type=folder&id={{ folder.id }}"
+    <a class="btn" href="{{ base }}/api/v1/folders/{{ folder.id }}/archive" title="このフォルダをまとめてダウンロード">{{ icon("folder_zip") }}<span class="lbl">ZIP</span></a>
+    <button type="button" class="btn" data-open-dialog="dlg-share" hx-get="{{ base }}/x/share?type=folder&id={{ folder.id }}"
             hx-target="#share-body" hx-swap="outerHTML">{{ icon("share") }}<span class="lbl">共有</span></button>
     {% if can_edit %}
     <button type="button" class="btn pc-only" data-open-dialog="dlg-folder">{{ icon("create_new_folder") }}新しいフォルダ</button>
@@ -69,7 +69,7 @@
 </dialog>
 {% if can_edit %}
 <dialog id="dlg-folder" class="dialog">
-  <form hx-post="/f/{{ folder.id }}/folders" hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
+  <form hx-post="{{ base }}/f/{{ folder.id }}/folders" hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
     <h2>{{ icon("create_new_folder") }} 新しいフォルダ</h2>
     <label>フォルダ名 <input name="name" required maxlength="200" autocomplete="off"></label>
     <div class="dialog-actions">
@@ -80,7 +80,7 @@
 </dialog>
 {% if webclip_enabled %}
 <dialog id="dlg-webclip" class="dialog">
-  <form hx-post="/f/{{ folder.id }}/webclips" hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
+  <form hx-post="{{ base }}/f/{{ folder.id }}/webclips" hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
     <h2>{{ icon("link") }} URL を追加</h2>
     <p class="muted small">PDF や画像の URL は、そのファイルを保存します。</p>
     <label>URL <input name="url" type="url" required maxlength="2048" placeholder="https://" autocomplete="off" inputmode="url"></label>
@@ -126,7 +126,7 @@
     <p class="muted" data-move-name></p>
     <input type="hidden" name="current" value="{{ folder.id }}">
     <label>移動先
-      <select name="target" hx-get="/x/folders/{{ folder.id }}/targets" hx-trigger="load-targets" hx-target="this" hx-swap="innerHTML" required></select>
+      <select name="target" hx-get="{{ base }}/x/folders/{{ folder.id }}/targets" hx-trigger="load-targets" hx-target="this" hx-swap="innerHTML" required></select>
     </label>
     <div class="dialog-actions">
       <button type="button" class="btn" data-close-dialog>キャンセル</button>

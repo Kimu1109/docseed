@@ -59,7 +59,7 @@ def enqueue(conn: sqlite3.Connection, settings: Settings, kind: str, title: str,
 
 def _link(settings: Settings, path: str) -> str:
     """本文の最後に付けるリンク（"\nhttps://..."）。外から開く URL が分からなければ付けない。"""
-    base = settings.public_url
+    base = settings.public_base
     return "\n" + base.rstrip("/") + path if base else ""
 
 

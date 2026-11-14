@@ -32,6 +32,7 @@ from ..deps import (
 from ..errors import AppError, NotFound, ValidationFailed
 from ..files import derived_response, file_response
 from ..storage import BlobStore
+from ..urls import href, public_root
 
 router = APIRouter(prefix="/api/v1")
 limiter = authn.limiter
@@ -74,7 +75,7 @@ def _webclip_json(conn: sqlite3.Connection, d: sqlite3.Row) -> dict | None:
     return {"id": c["id"], "url": c["url"], "canonical_url": c["canonical_url"], "site_name": c["site_name"],
             "title": c["title"], "description": c["description"], "author": c["author"],
             "published_at": c["published_at"], "fetched_at": c["fetched_at"], "status": c["status"],
-            "image_url": f"/api/v1/documents/{d['id']}/thumbnail" if thumb else None}
+            "image_url": href(f"/api/v1/documents/{d['id']}/thumbnail") if thumb else None}
 
 
 def folder_json(conn: sqlite3.Connection, f: sqlite3.Row, role: str | None) -> dict[str, Any]:
@@ -330,7 +331,7 @@ def api_user_directory(conn: sqlite3.Connection = Depends(get_conn), auth: Auth 
 # ---------------------------------------------------------------------------
 
 def share_json(request: Request, r: sqlite3.Row) -> dict[str, Any]:
-    return {"id": r["id"], "url": str(request.base_url).rstrip("/") + "/s/" + r["token"],
+    return {"id": r["id"], "url": public_root(request) + "/s/" + r["token"],
             "target_type": r["target_type"], "target_id": r["target_id"],
             "target_name": r["target_name"] if "target_name" in r.keys() else None,
             "permission": r["permission"], "has_password": bool(r["password_hash"]),

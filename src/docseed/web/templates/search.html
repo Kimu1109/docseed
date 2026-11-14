@@ -2,7 +2,7 @@
 {% block title %}{{ ("「" ~ q ~ "」の検索結果") if q else "検索" }}{% endblock %}
 {% block main %}
 {% set n_filters = [type, tag, after, before, taken_from, taken_to, folder] | select | list | length %}
-<form class="search-form" method="get" action="/search" role="search" data-autosubmit>
+<form class="search-form" method="get" action="{{ base }}/search" role="search" data-autosubmit>
   <div class="search-main m-ic">
     <input type="search" name="q" value="{{ q }}" placeholder="ファイルの中身を検索（例: 振込先 請求書）" aria-label="検索語" autocomplete="off" enterkeyhint="search" {% if not q %}autofocus{% endif %}>
     <button type="button" class="btn m-only filters-toggle{% if n_filters %} is-on{% endif %}" data-filters-toggle aria-controls="search-filters" aria-expanded="false"
@@ -47,7 +47,7 @@
   {% endif %}
   <div class="result-bar">
     {% if result.total %}<p class="result-count"><b>{{ result.total }}</b> 件<span class="muted">（{{ result.took_ms }} ミリ秒）</span></p>{% else %}<span></span>{% endif %}
-    <form class="search-save" method="post" action="/search/saved">
+    <form class="search-save" method="post" action="{{ base }}/search/saved">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       {% for k, v in current.items() %}<input type="hidden" name="p_{{ k }}" value="{{ v }}">{% endfor %}
       <input name="name" maxlength="100" placeholder="名前（省略時は{{ '検索語' if q else '「保存した検索」' }}）" aria-label="保存する名前" autocomplete="off">
@@ -62,14 +62,14 @@
         <span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span>{{ icon(kind_icon[k]) }}
         <div class="result-body">
           <div class="result-head">
-            <a class="result-name" href="/d/{{ d.id }}?q={{ q | urlencode }}">{{ d.filename }}</a>
+            <a class="result-name" href="{{ base }}/d/{{ d.id }}?q={{ q | urlencode }}">{{ d.filename }}</a>
             <span class="muted small">{{ icon("folder") }}{{ paths[d.folder_id] }}</span>
             <span class="muted small">{{ icon("schedule") }}{{ d.updated_at | shortdate }}</span>
             {% if d.taken_at %}<span class="muted small" title="撮影日時">{{ icon("image") }}{{ d.taken_at | taken_at }}</span>{% endif %}
           </div>
           {% if summaries.get(d.id) %}<p class="result-summary small">{{ icon("wand_stars") }} {{ summaries[d.id] }}</p>{% endif %}
           {% for s in h.snippets %}
-          <a class="snippet" href="/d/{{ d.id }}?q={{ q | urlencode }}{% if s.page_no %}#p{{ s.page_no }}{% endif %}">
+          <a class="snippet" href="{{ base }}/d/{{ d.id }}?q={{ q | urlencode }}{% if s.page_no %}#p{{ s.page_no }}{% endif %}">
             {% if s.summary %}<span class="snip-page">要約</span>{% elif s.page_no %}<span class="snip-page">{{ s.page_no }} ページ</span>{% endif %}
             <span class="snip-text">{{ s.html | safe }}</span>
             {% if "semantic" in s.match %}<span class="badge" title="同じ語は含まれていませんが、意味が近い部分です">意味が近い</span>{% endif %}
@@ -82,9 +82,9 @@
     {% set pages = ((result.total - 1) // per_page) + 1 %}
     {% if pages > 1 %}
     <nav class="pager" aria-label="ページ送り">
-      {% if page > 1 %}<a class="btn" href="/search?{{ dict(params, page=page - 1) | urlencode }}">{{ icon("chevron_left") }}前へ</a>{% endif %}
+      {% if page > 1 %}<a class="btn" href="{{ base }}/search?{{ dict(params, page=page - 1) | urlencode }}">{{ icon("chevron_left") }}前へ</a>{% endif %}
       <span class="muted">{{ page }} / {{ [pages, 26] | min }}</span>
-      {% if page < pages and page < 26 %}<a class="btn" href="/search?{{ dict(params, page=page + 1) | urlencode }}">次へ{{ icon("chevron_right") }}</a>{% endif %}
+      {% if page < pages and page < 26 %}<a class="btn" href="{{ base }}/search?{{ dict(params, page=page + 1) | urlencode }}">次へ{{ icon("chevron_right") }}</a>{% endif %}
     </nav>
     {% endif %}
   {% else %}
@@ -104,17 +104,17 @@
     <ul class="item-list">
     {% for x in saved %}
       <li>
-        <a href="{{ x.url }}" title="{{ x.label }}"><span class="item-name">{{ x.name }}</span></a>
+        <a href="{{ base }}{{ x.url }}" title="{{ x.label }}"><span class="item-name">{{ x.name }}</span></a>
         <span class="muted small">{{ x.label }}</span>
         <details class="rowmenu">
           <summary aria-label="「{{ x.name }}」の操作">{{ icon("more_horiz") }}</summary>
           <div class="rowmenu-panel">
-            <form method="post" action="/search/saved/{{ x.id }}/rename" class="form">
+            <form method="post" action="{{ base }}/search/saved/{{ x.id }}/rename" class="form">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <label>名前 <input name="name" value="{{ x.name }}" required maxlength="100"></label>
               <button class="btn btn-sm">{{ icon("edit") }}名前を変更</button>
             </form>
-            <form method="post" action="/search/saved/{{ x.id }}/delete">
+            <form method="post" action="{{ base }}/search/saved/{{ x.id }}/delete">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="danger">{{ icon("delete") }}消す</button>
             </form>
@@ -131,16 +131,16 @@
     <ul class="item-list">
     {% for x in history %}
       <li>
-        <a href="{{ x.url }}"><span class="item-name">{{ x.label }}</span></a>
+        <a href="{{ base }}{{ x.url }}"><span class="item-name">{{ x.label }}</span></a>
         <span class="muted small">{{ x.searched_at | shortdate }}</span>
-        <form method="post" action="/search/history/{{ x.id }}/delete">
+        <form method="post" action="{{ base }}/search/history/{{ x.id }}/delete">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button class="linkish small" aria-label="「{{ x.label }}」を履歴から消す" title="履歴から消す">{{ icon("close") }}</button>
         </form>
       </li>
     {% endfor %}
     </ul>
-    <form method="post" action="/search/history/clear" data-confirm="検索の履歴をすべて消しますか？">
+    <form method="post" action="{{ base }}/search/history/clear" data-confirm="検索の履歴をすべて消しますか？">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="btn btn-sm">{{ icon("delete_sweep") }}履歴をすべて消す</button>
     </form>

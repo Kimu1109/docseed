@@ -24,8 +24,8 @@
       <td class="col-date">{{ it.deleted_at | shortdate }}</td>
       <td class="col-size">{{ it.size | filesize if it.size is not none else "" }}</td>
       <td class="col-actions m-ic">
-        <button type="button" class="btn btn-sm" hx-post="/trash/{{ it.type }}/{{ it.id }}/restore" hx-target="#trash" hx-swap="outerHTML">{{ icon("restore_from_trash") }}<span class="lbl">元に戻す</span></button>
-        <button type="button" class="btn btn-sm btn-danger" hx-post="/trash/{{ it.type }}/{{ it.id }}/purge" hx-target="#trash" hx-swap="outerHTML"
+        <button type="button" class="btn btn-sm" hx-post="{{ base }}/trash/{{ it.type }}/{{ it.id }}/restore" hx-target="#trash" hx-swap="outerHTML">{{ icon("restore_from_trash") }}<span class="lbl">元に戻す</span></button>
+        <button type="button" class="btn btn-sm btn-danger" hx-post="{{ base }}/trash/{{ it.type }}/{{ it.id }}/purge" hx-target="#trash" hx-swap="outerHTML"
                 hx-confirm="「{{ it.name }}」を完全に削除します。元に戻せません。よろしいですか？">{{ icon("delete_forever") }}<span class="lbl">完全に削除</span></button>
       </td>
     </tr>

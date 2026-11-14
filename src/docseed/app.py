@@ -8,6 +8,7 @@ from urllib.parse import quote
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -23,6 +24,7 @@ from .db import connect, migrate
 from .errors import AppError, SecondFactorSetupRequired, Unauthenticated
 from .search import QueryEmbedder
 from .storage import BlobStore
+from .urls import BasePathMiddleware, href
 from .web.auth import router as auth_router
 from .web.public import router as public_router
 from .web.routes import render_error
@@ -52,6 +54,29 @@ class SecurityHeaders(BaseHTTPMiddleware):
         return resp
 
 
+def _route_paths(routes, prefix: str = ""):
+    """登録したルートのパス。FastAPI の include_router は、ルーターを入れ子のまま持つ版がある。"""
+    for r in routes:
+        inner = getattr(r, "original_router", None)
+        if inner is not None:
+            ctx = getattr(r, "include_context", None)
+            yield from _route_paths(inner.routes, prefix + (getattr(ctx, "prefix", "") or ""))
+        elif isinstance(path := getattr(r, "path", None), str):
+            yield prefix + path
+
+
+def _check_base_path(app: FastAPI, base_path: str) -> None:
+    """接頭辞の最初の部分がアプリのパス（/s/… や /api/… など）と同じだと、外側のプロキシが接頭辞を外して
+    送ってきたときに区別できない。起動時に止める。"""
+    if not base_path:
+        return
+    first = base_path.split("/")[1]
+    used = {p.split("/")[1] for p in _route_paths(app.routes) if p.startswith("/")}
+    if first in used - {""}:
+        raise RuntimeError(f"DOCSEED_BASE_PATH={base_path} はアプリのパス /{first}/ と重なるため使えません"
+                           "（例 /docseed）")
+
+
 def _wants_json(request: Request) -> bool:
     # /auth/* のパスキー・2 段階目は、JSON で送られたときは JSON で返す（passkey.js が使う）
     return (request.url.path.startswith("/api/") or request.url.path == "/healthz"
@@ -71,8 +96,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     finally:
         conn.close()
 
-    app = FastAPI(title="docseed", version=__version__, docs_url="/api/docs", redoc_url=None,
-                  openapi_url="/api/v1/openapi.json")
+    # API の説明ページは自前で出す（接頭辞があるとき、ページが読む openapi.json の URL にも接頭辞を付けるため）。
+    # servers は「Try it out」の送り先
+    app = FastAPI(title="docseed", version=__version__, docs_url=None, redoc_url=None,
+                  openapi_url="/api/v1/openapi.json",
+                  servers=[{"url": settings.base_path}] if settings.base_path else None)
+
+    @app.get("/api/docs", include_in_schema=False)
+    def api_docs():
+        return get_swagger_ui_html(openapi_url=href(app.openapi_url), title=f"{app.title} - Swagger UI")
     app.state.settings = settings
     app.state.store = BlobStore(settings.files_dir, settings.tmp_dir)
     app.state.query_embedder = QueryEmbedder(settings.models_dir, settings.embed_model,
@@ -93,6 +125,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(SecurityHeaders)
     # 流量の制限（docs/design/security.md 9 章）。SecurityHeaders より外側に置き、429 にもヘッダを付けない
     app.add_middleware(RateLimitMiddleware, enabled=settings.rate_limit_enabled)
+    # URL の起点（DOCSEED_BASE_PATH）。一番外側に置き、リダイレクト・Cookie の Path にもまとめて接頭辞を付ける
+    app.add_middleware(BasePathMiddleware, base_path=settings.base_path)
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "web" / "static"), name="static")
     app.include_router(health)
     app.include_router(api_router)
@@ -104,6 +138,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(public_router)
     app.include_router(auth_router)
     app.include_router(web_router)
+    _check_base_path(app, settings.base_path)
 
     @app.exception_handler(AppError)
     async def app_error(request: Request, exc: AppError):

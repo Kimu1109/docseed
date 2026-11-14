@@ -21,6 +21,7 @@ from ...deps import (
     require_auth,
 )
 from ...errors import AppError, ValidationFailed
+from ...urls import href
 from ..common import (
     base_context,
     is_htmx,
@@ -44,7 +45,7 @@ def _view_params(request: Request, folder_id: int) -> tuple[str, str, int]:
     q = request.query_params
     if request.url.path != f"/f/{folder_id}":
         cur = urlparse(request.headers.get("hx-current-url") or "")
-        q = dict(parse_qsl(cur.query)) if cur.path == f"/f/{folder_id}" else {}
+        q = dict(parse_qsl(cur.query)) if cur.path == href(f"/f/{folder_id}") else {}
     sort = q.get("sort") if q.get("sort") in ("name", "updated_at", "size") else "name"
     order = "desc" if q.get("order") == "desc" else "asc"
     page = q.get("page") or "1"

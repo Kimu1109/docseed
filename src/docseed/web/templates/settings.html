@@ -3,15 +3,15 @@
 {% block main %}
 <div class="page-head"><h1 class="page-title">{{ icon("settings") }} 設定</h1></div>
 <nav class="subnav" aria-label="設定の項目">
-  <a href="/settings" aria-current="page">{{ icon("tune") }}一般</a>
-  <a href="/settings/security">{{ icon("security") }}セキュリティ（ログイン方法）</a>
+  <a href="{{ base }}/settings" aria-current="page">{{ icon("tune") }}一般</a>
+  <a href="{{ base }}/settings/security">{{ icon("security") }}セキュリティ（ログイン方法）</a>
 </nav>
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 
 <div class="sections">
   <section class="panel">
     <h2>{{ icon("person") }} プロフィール</h2>
-    <form method="post" action="/settings/profile" class="form">
+    <form method="post" action="{{ base }}/settings/profile" class="form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>ユーザー名 <input value="{{ user.username }}" disabled></label>
       <label>表示名 <input name="display_name" value="{{ user.display_name }}" required maxlength="50"></label>
@@ -21,7 +21,7 @@
 
   <section class="panel">
     <h2>{{ icon("password") }} パスワード</h2>
-    <form method="post" action="/settings/password" class="form">
+    <form method="post" action="{{ base }}/settings/password" class="form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>現在のパスワード <input name="current_password" type="password" autocomplete="current-password" required></label>
       <label>新しいパスワード <span class="muted small">（12 文字以上）</span>
@@ -39,12 +39,12 @@
       <tbody>
       {% for l in my_shares %}
         <tr>
-          <td><a href="{{ ('/f/' if l.target_type == 'folder' else '/d/') ~ l.target_id }}">{{ l.target_name or "（マイファイル）" }}</a>
+          <td><a href="{{ base }}{{ ('/f/' if l.target_type == 'folder' else '/d/') ~ l.target_id }}">{{ l.target_name or "（マイファイル）" }}</a>
             <div class="small"><input class="link-url" value="{{ base_url }}/s/{{ l.token }}" readonly aria-label="リンク"></div></td>
           <td>{{ "受け取り用" if l.permission == "upload" else "閲覧" }}{% if l.password_hash %}・パスワードあり{% endif %}</td>
           <td>{{ (l.expires_at | localtime) if l.expires_at else "無期限" }}</td>
           <td>{{ l.download_count }}{% if l.max_downloads %} / {{ l.max_downloads }}{% endif %}</td>
-          <td><form method="post" action="/settings/shares/{{ l.id }}/revoke" data-confirm="このリンクを無効にしますか？">
+          <td><form method="post" action="{{ base }}/settings/shares/{{ l.id }}/revoke" data-confirm="このリンクを無効にしますか？">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button class="btn btn-sm btn-danger">{{ icon("link_off") }}無効にする</button></form></td>
         </tr>
@@ -63,7 +63,7 @@
       <div><dt>内訳</dt><dd class="small">今のファイル {{ quota.current | filesize }}<div>ゴミ箱 {{ quota.trash | filesize }}</div><div>過去の版 {{ quota.versions | filesize }}</div></dd></div>
     </dl>
     {% if quota.quota %}<p class="muted small">上限は管理者が決めます。ゴミ箱の中と過去の版も数えます。ゴミ箱を空にするか、使わない過去の版を消すと空きます。</p>{% endif %}
-    <form method="post" action="/settings/trash-retention" class="form">
+    <form method="post" action="{{ base }}/settings/trash-retention" class="form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>ゴミ箱に残す日数
         <select name="days">
@@ -78,7 +78,7 @@
 
   <section class="panel" id="theme" aria-label="画面の色">
     <h2>{{ icon("visibility") }} 画面の色</h2>
-    <form method="post" action="/settings/theme" class="form">
+    <form method="post" action="{{ base }}/settings/theme" class="form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       {% for k, label in [("auto", "端末の設定に合わせる"), ("light", "ライト"), ("dark", "ダーク")] %}
       <label class="check"><input type="radio" name="theme" value="{{ k }}" {% if theme == k %}checked{% endif %}> {{ label }}</label>
@@ -91,7 +91,7 @@
   <section class="panel panel-wide">
     <h2>{{ icon("wand_stars") }} 整理の補助</h2>
     <p class="muted">似ている文書から、置くフォルダと付けるタグの候補を出します。</p>
-    <form method="post" action="/settings/prefs" class="form">
+    <form method="post" action="{{ base }}/settings/prefs" class="form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       {% if suggest_enabled %}
       <label class="check"><input type="checkbox" name="suggest_folders" value="1" {% if prefs.suggest_folders %}checked{% endif %}> フォルダの候補を出す</label>
@@ -106,7 +106,7 @@
       {% elif prefs.show_summary %}<input type="hidden" name="show_summary" value="1">{% endif %}
       <div><button type="submit" class="btn btn-primary">{{ icon("save") }}保存</button></div>
     </form>
-    <p class="small"><a href="/suggestions/rejected">{{ icon("block") }} 却下した候補の一覧</a></p>
+    <p class="small"><a href="{{ base }}/suggestions/rejected">{{ icon("block") }} 却下した候補の一覧</a></p>
   </section>
   {% endif %}
 
@@ -138,7 +138,7 @@
           <td>{{ "閲覧・変更" if t.scopes == "read,write" else ("閲覧のみ" if t.scopes == "read" else "変更のみ") }}</td>
           <td>{{ t.last_used_at | localtime }}</td><td>{{ t.created_at | localtime }}</td>
           <td>
-            <form method="post" action="/settings/tokens/{{ t.id }}/revoke" data-confirm="トークン「{{ t.name }}」を無効にしますか？">
+            <form method="post" action="{{ base }}/settings/tokens/{{ t.id }}/revoke" data-confirm="トークン「{{ t.name }}」を無効にしますか？">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button type="submit" class="btn btn-sm btn-danger">{{ icon("link_off") }}無効にする</button>
             </form>
@@ -148,7 +148,7 @@
       </tbody>
     </table>
     {% endif %}
-    <form method="post" action="/settings/tokens" class="form form-row">
+    <form method="post" action="{{ base }}/settings/tokens" class="form form-row">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>名前 <input name="name" required maxlength="100" placeholder="例: ノート PC のバックアップ"></label>
       <label>権限
