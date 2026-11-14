@@ -21,7 +21,7 @@ from ..deps import (
     Auth,
 )
 from ..errors import AppError
-from ..files import can_preview, image_src
+from ..files import can_preview, image_src, media_kind
 from . import helpers as h
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -29,7 +29,8 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 templates.env.globals.update(
     version=__version__, kind_of=h.kind_of, kind_label=h.KIND_LABEL, status_label=h.STATUS_LABEL,
-    can_preview=can_preview, image_src=image_src, icon=h.icon, kind_icon=h.KIND_ICON, status_icon=h.STATUS_ICON,
+    can_preview=can_preview, image_src=image_src, media_kind=media_kind, icon=h.icon, kind_icon=h.KIND_ICON,
+    status_icon=h.STATUS_ICON,
 )
 
 
