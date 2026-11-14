@@ -86,7 +86,7 @@
       {% else %}記録がありません{% endif %}
     </dd></div>
   </dl>
-  <p class="muted small">復旧の練習は、最新のバックアップを一時ディレクトリに復元して、データベースと原本が一致するかを確かめます（毎月第 1 日曜。動いている docseed には触れません）。設定と復旧の手順は README の「バックアップと復旧」を参照してください。</p>
+  <p class="muted small">復旧の練習は、最新のバックアップを一時ディレクトリに復元して、データベースと原本が一致するかを確かめます（毎月第 1 日曜。動いている docseed には触れません）。設定と復旧の手順は docs/admin/backup.mdを参照してください。</p>
 </section>
 
 <section class="panel panel-wide" id="notify">
@@ -120,7 +120,7 @@
   </table>
   {% endif %}
   {% else %}
-  <p class="muted small">通知の宛先が設定されていません。<code>.env</code> の <code>DOCSEED_NOTIFY_URLS</code>（ntfy・Discord・Slack などの Webhook）か、<code>DOCSEED_SMTP_HOST</code> と <code>DOCSEED_NOTIFY_EMAIL</code>（メール）を設定すると、警告・共有リンクでの受け取り・受け取り箱の取り込みを知らせます（README の「通知」）。</p>
+  <p class="muted small">通知の宛先が設定されていません。<code>.env</code> の <code>DOCSEED_NOTIFY_URLS</code>（ntfy・Discord・Slack などの Webhook）か、<code>DOCSEED_SMTP_HOST</code> と <code>DOCSEED_NOTIFY_EMAIL</code>（メール）を設定すると、警告・共有リンクでの受け取り・受け取り箱の取り込みを知らせます（docs/admin/notifications.md）。</p>
   {% endif %}
 </section>
 

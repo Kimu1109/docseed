@@ -10,7 +10,7 @@ JavaScript を動かしたあとの HTML を返す。
 - このサービスには保存領域（docseed のデータ）を渡さない。外へつなぐのは描画のためだけ。
 
 注意: Chromium の WebSocket は経路の割り込みの対象にならないので、LAN への出口は別途
-（Pi のルーターや Docker のネットワークで）止めること。README を参照。
+（Pi のルーターや Docker のネットワークで）止めること。docs/admin/webclip.md を参照。
 """
 
 from __future__ import annotations

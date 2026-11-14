@@ -5,7 +5,7 @@
 | 版 | 1.3 |
 | 日付 | 2026-11-08 |
 | 状態 | ドラフト |
-| 関連 | [ローカル OCR / Embedding モデル調査](research/ocr-embedding-models.md)、[Phase 0 計測結果](research/phase0-results.md)、[新機能の実現手段の調査](research/new-features.md) |
+| 関連 | 使い方と運用の手順は [利用者ガイド](user/README.md)・[管理者ガイド](admin/README.md)。調査: [ローカル OCR / Embedding モデル調査](research/ocr-embedding-models.md)、[Phase 0 計測結果](research/phase0-results.md)、[新機能の実現手段の調査](research/new-features.md) |
 
 ### 詳細設計
 

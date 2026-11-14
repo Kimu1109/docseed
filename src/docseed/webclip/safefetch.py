@@ -148,7 +148,7 @@ class SafeFetcher:
                 raise FetchError("url_blocked", "LAN などのプライベートなアドレスからは取得できません")
             return url, {}, {}
         if self.proxy:
-            # 名前の解決はプロキシに任せる（プロキシ側で LAN への通信を止めること。README）
+            # 名前の解決はプロキシに任せる（プロキシ側で LAN への通信を止めること。docs/admin/webclip.md）
             return url, {}, {}
         try:
             ips = self.resolver(host, port)
