@@ -56,3 +56,17 @@ RUN pip install torch --index-url https://download.pytorch.org/whl/cpu \
 USER docseed
 HEALTHCHECK NONE
 CMD ["docseed", "fetch-models"]
+
+
+# JavaScript で描くページの描画（任意）。Chromium を含む Playwright の公式イメージを使う。
+# compose の webclip-browser（profile webclip-render）で動かす。docseed 本体とは別のコンテナ（docs/design/extensions.md 6.10）
+FROM mcr.microsoft.com/playwright/python:v1.65.2-noble AS render
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PYTHONPATH=/app/src
+WORKDIR /app
+RUN pip install "httpx>=0.27"
+COPY src ./src
+USER pwuser
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=4)"
+CMD ["python", "-m", "docseed.webclip.browser"]

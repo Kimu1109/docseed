@@ -67,6 +67,7 @@ class Settings:
     webclip_enabled: bool = False     # DOCSEED_WEBCLIP_ENABLED
     webclip_max_mb: int = 5           # HTML の大きさの上限
     webclip_proxy: str = ""           # DOCSEED_WEBCLIP_PROXY
+    webclip_render_url: str = ""      # DOCSEED_WEBCLIP_RENDER_URL（描画サービス。空なら描画しない）
     # 整理の補助（Phase 9、docs/design/extensions.md 7 章）
     suggest_enabled: bool = True      # DOCSEED_SUGGEST_ENABLED（フォルダ・タグの候補）
     llm_enabled: bool = False         # DOCSEED_LLM_ENABLED（要約と新しいタグの提案）
@@ -206,6 +207,7 @@ class Settings:
             webclip_enabled=_bool(e.get("DOCSEED_WEBCLIP_ENABLED"), False),
             webclip_max_mb=int(e.get("DOCSEED_WEBCLIP_MAX_MB") or "5"),
             webclip_proxy=e.get("DOCSEED_WEBCLIP_PROXY", "").strip(),
+            webclip_render_url=e.get("DOCSEED_WEBCLIP_RENDER_URL", "").strip(),
             suggest_enabled=_bool(e.get("DOCSEED_SUGGEST_ENABLED"), True),
             llm_enabled=_bool(e.get("DOCSEED_LLM_ENABLED"), False),
             llm_url=(e.get("DOCSEED_LLM_URL") or "http://llm:8080").rstrip("/"),
