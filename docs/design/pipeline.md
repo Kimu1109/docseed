@@ -146,6 +146,15 @@ RETURNING *;
 - 画面の「取り出したテキスト」では、ページの代わりに「N 番目の区切り」「N 枚目のシート」「スライド N」と表示する。
 - Phase 5 より前に保存した Office 文書は `unsupported` になっているので、管理画面の「形式が未対応だったファイルを再処理」（`docseed reprocess unsupported`）で処理し直す。
 
+### 3.6 映像のプレビュー用の動画（保存時）
+
+映像（`video/*`）は、保存時（`process_blob` の派生ファイル作成）に、ブラウザで軽く再生できる低解像度の動画を作る。文字起こしの設定とは関係なく動く（`DOCSEED_VIDEO_PROXY=false` で止められる）。
+
+1. `ffprobe` で映像のコーデックと大きさを調べる。映像が無ければ作らない。H.264 で長辺 854px 以下なら作らず、原本をそのまま使う。
+2. `ffmpeg` で長辺を 854px に収め（縦横とも偶数）、H.264（CRF 28・veryfast）・AAC 96k・`+faststart` の MP4 にする。`<data_dir>/derived/view/<sha256>.mp4` に作り、`blobs.view_path` に入れる。
+3. 変換中は 10 秒ごとに worker の心拍・停止の確認を行う（停止の合図が来たら ffmpeg を止め、途中のファイルは残さない）。制限時間は 6 時間。失敗しても文書の処理は止めず、警告 `thumbnail_failed` を付ける。
+4. 配信は `/view`（API と共有）。プレビュー用の動画が無ければ原本を inline で返す。
+
 ### 3.5 音声・動画（任意機能・Phase 10）
 
 `DOCSEED_ASR_ENABLED=true` のときだけ動く（既定は保存のみ。`extract.kind` は `media`）。

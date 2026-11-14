@@ -4,15 +4,20 @@
 - 派生ファイルには EXIF を一切入れない（位置情報を含めない）
 - 置き場所は <data_dir>/derived/thumbs/<sha256>.webp と derived/view/<sha256>.webp
   （blobs.thumb_path / view_path には data_dir からの相対パスを入れる）
+- 映像は、ブラウザで軽く再生できる低解像度の H.264・MP4 を derived/view/<sha256>.mp4 に作る（ffmpeg）
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import io
+import json
 import os
 import signal
+import subprocess
 import threading
+import time
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,6 +32,12 @@ VIEW_SIDE = 2048
 VIEW_QUALITY = 85
 VIEW_OVER = 4096              # これより長辺が大きい画像は、表示用のプレビューを作る
 TIMEOUT_S = 60
+# 映像のプレビュー（H.264・MP4）。長辺を 854px（16:9 なら 854x480）に縮める。Pi 5 では実時間の数倍かかる
+VIDEO_PROXY_SIDE = 854
+VIDEO_PROXY_CRF = 28
+VIDEO_PROXY_TIMEOUT_S = 6 * 3600   # 1 本の上限（長い動画でも、途中で打ち切らない程度に長く）
+VIDEO_POLL_S = 10                  # 変換中にこの間隔で tick（心拍・停止の確認）を呼ぶ
+FFMPEG_THREADS = 2
 # ブラウザで原本をそのまま表示しない（できない・しにくい）形式。プレビューを作る
 VIEW_TYPES = {"image/heic", "image/heif", "image/avif", "image/tiff", "image/bmp"}
 
@@ -43,6 +54,14 @@ class Derived:
 
 class DeriveTimeout(Exception):
     pass
+
+
+class DeriveStopped(Exception):
+    """変換中に tick が例外（停止の合図など）を投げた。派生ファイルの失敗ではないので、そのまま上へ返す。"""
+
+    def __init__(self, original: BaseException):
+        super().__init__(str(original))
+        self.original = original
 
 
 @contextmanager
@@ -69,6 +88,10 @@ def thumb_rel(sha: str) -> str:
 
 def view_rel(sha: str) -> str:
     return f"derived/view/{sha}.webp"
+
+
+def video_view_rel(sha: str) -> str:
+    return f"derived/view/{sha}.mp4"
 
 
 # ---------------------------------------------------------------------------
@@ -147,10 +170,23 @@ def image_meta(im: Image.Image, width: int, height: int) -> dict:
 # 本体
 # ---------------------------------------------------------------------------
 
-def derive(data_dir: Path, path: Path, mime: str, sha: str) -> Derived:
-    """派生ファイルを作る。作れなかった場合は warnings に thumbnail_failed を入れて返す（例外は投げない）。"""
+def derive(data_dir: Path, path: Path, mime: str, sha: str, *, video_proxy: bool = True,
+           tick: Callable[[], None] | None = None) -> Derived:
+    """派生ファイルを作る。作れなかった場合は warnings に thumbnail_failed を入れて返す（例外は投げない）。
+
+    映像は時間がかかるので、制限時間は区切らず、変換中に tick を呼ぶ（tick が投げた例外はそのまま上へ返す）。
+    """
     out = Derived()
     k = extract.kind(mime)
+    if k == "media":
+        if video_proxy and mime.startswith("video/"):
+            try:
+                _derive_video(data_dir, path, sha, out, tick or (lambda: None))
+            except DeriveStopped as s:
+                raise s.original from None
+            except Exception as e:  # noqa: BLE001 - 映像のプレビューが作れなくても、文書の処理は止めない
+                out.warnings.append({"code": "thumbnail_failed", "message": f"{type(e).__name__}: {e}"[:200]})
+        return out
     if k not in ("image", "pdf"):
         return out
     try:
@@ -192,6 +228,79 @@ def _derive_pdf(data_dir: Path, path: Path, sha: str, out: Derived) -> None:
         doc.close()
     _save_webp(im, data_dir / thumb_rel(sha), THUMB_SIDE, THUMB_QUALITY)
     out.thumb_path = thumb_rel(sha)
+
+
+# ---------------------------------------------------------------------------
+# 映像のプレビュー（ffmpeg）
+# ---------------------------------------------------------------------------
+
+# 長辺を VIDEO_PROXY_SIDE に収め（縦長も同じ）、縦横とも偶数にする（H.264 の条件）
+_VIDEO_FILTER = (f"scale=w='min({VIDEO_PROXY_SIDE}\\,iw)':h='min({VIDEO_PROXY_SIDE}\\,ih)':"
+                 "force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2")
+
+
+def probe_video(path: Path) -> dict | None:
+    """映像のトラックの情報（コーデック・幅・高さ）。映像のトラックが無ければ None。"""
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                        "stream=codec_name,width,height", "-of", "json", str(path)],
+                       capture_output=True, timeout=60, check=False)
+    if r.returncode != 0:
+        raise RuntimeError("映像の情報を読めませんでした")
+    streams = json.loads(r.stdout or b"{}").get("streams") or []
+    if not streams:
+        return None
+    return streams[0]
+
+
+def _derive_video(data_dir: Path, path: Path, sha: str, out: Derived, tick: Callable[[], None]) -> None:
+    info = probe_video(path)
+    if info is None:
+        return  # 映像のトラックが無い（音声だけの動画）
+    w, h = int(info.get("width") or 0), int(info.get("height") or 0)
+    if info.get("codec_name") == "h264" and max(w, h) <= VIDEO_PROXY_SIDE:
+        return  # 既に十分小さく、ブラウザで再生できる。原本をそのまま使う
+    dest = data_dir / video_view_rel(sha)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(f"{sha}.tmp{os.getpid()}.mp4")
+    cmd = ["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", str(path),
+           "-map", "0:v:0", "-map", "0:a:0?", "-vf", _VIDEO_FILTER,
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", str(VIDEO_PROXY_CRF), "-pix_fmt", "yuv420p",
+           "-threads", str(FFMPEG_THREADS), "-c:a", "aac", "-b:a", "96k",
+           "-movflags", "+faststart", "-f", "mp4", str(tmp)]
+    try:
+        _run_ffmpeg(cmd, tick)
+        os.replace(tmp, dest)
+    finally:
+        tmp.unlink(missing_ok=True)
+    out.view_path = video_view_rel(sha)
+
+
+def _run_ffmpeg(cmd: list[str], tick: Callable[[], None]) -> None:
+    """ffmpeg を走らせ、終わるまで VIDEO_POLL_S ごとに tick を呼ぶ。中断・失敗のときは ffmpeg を残さない。"""
+    try:
+        p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    except FileNotFoundError as e:
+        raise RuntimeError("ffmpeg が見つかりません（映像のプレビューを作れません）") from e
+    deadline = time.monotonic() + VIDEO_PROXY_TIMEOUT_S
+    try:
+        while True:
+            try:
+                _, err = p.communicate(timeout=VIDEO_POLL_S)
+                break
+            except subprocess.TimeoutExpired:
+                try:
+                    tick()
+                except Exception as e:  # noqa: BLE001 - 停止の合図は、そのまま上へ返す
+                    raise DeriveStopped(e) from e
+                if time.monotonic() > deadline:
+                    raise RuntimeError(f"{VIDEO_PROXY_TIMEOUT_S} 秒以内に終わりませんでした") from None
+    finally:
+        if p.poll() is None:
+            p.kill()
+            p.wait()
+    if p.returncode != 0:
+        msg = (err or b"").decode("utf-8", "replace").strip().splitlines()[-1:] or ["ffmpeg が失敗しました"]
+        raise RuntimeError(f"映像を変換できませんでした: {msg[0][:150]}")
 
 
 def remove(data_dir: Path, *rel_paths: str | None) -> None:

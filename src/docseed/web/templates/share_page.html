@@ -22,7 +22,7 @@
     {% elif image_src(doc, "x") %}
       <img src="/s/{{ token }}/view/{{ doc.id }}" alt="{{ doc.filename }}">
     {% elif media_kind(doc.mime_type) %}
-      {% set media_kind_now, media_src, media_name = media_kind(doc.mime_type), "/s/" ~ token ~ "/preview/" ~ doc.id, doc.filename %}
+      {% set media_kind_now, media_src, media_name = media_kind(doc.mime_type), "/s/" ~ token ~ "/view/" ~ doc.id, doc.filename %}
       {% include "_media.html" %}
     {% elif can_preview(doc.mime_type) %}
       <iframe class="textframe" src="/s/{{ token }}/preview/{{ doc.id }}" title="{{ doc.filename }} のプレビュー"></iframe>

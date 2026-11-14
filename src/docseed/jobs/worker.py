@@ -217,7 +217,7 @@ def default_context(settings: Settings, between_pages) -> Context:
         data_dir=settings.data_dir, suggest_enabled=settings.suggest_enabled, pdf_images=settings.ocr_pdf_images,
         llm=LlmClient(settings.llm_url, settings.llm_model, timeout_s=settings.llm_timeout_s,
                       max_input_chars=settings.llm_max_input_chars) if settings.llm_enabled else None,
-        asr=_asr(settings), tmp_dir=settings.tmp_dir,
+        asr=_asr(settings), tmp_dir=settings.tmp_dir, video_proxy=settings.video_proxy,
     )
 
 

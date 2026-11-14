@@ -43,7 +43,7 @@ class Context:
                  embedder_factory: Callable[[], Embedder], dpi: int = 200, min_score: float = 0.5,
                  between_pages: Callable[[], None] | None = None, data_dir: Path | None = None,
                  suggest_enabled: bool = True, llm=None, pdf_images: bool = True,
-                 asr=None, tmp_dir: Path | None = None):
+                 asr=None, tmp_dir: Path | None = None, video_proxy: bool = True):
         self.files_dir = files_dir
         self.data_dir = data_dir or files_dir.parent   # 派生ファイルは <data_dir>/derived/
         self.suggest_enabled = suggest_enabled         # フォルダ・タグの候補（Phase 9）
@@ -51,6 +51,7 @@ class Context:
         self.pdf_images = pdf_images                   # テキスト層のある PDF のページの画像も OCR する
         self.asr = asr                                 # 音声・動画の文字起こし（WhisperCli。無効なら None）
         self.tmp_dir = tmp_dir                         # ffmpeg の一時ファイル（SSD 上に置く）
+        self.video_proxy = video_proxy                 # 映像のプレビュー用の動画を保存時に作る（DOCSEED_VIDEO_PROXY）
         self._ocr_factory = ocr_factory
         self._embedder_factory = embedder_factory
         self._ocr: OcrEngine | None = None
@@ -102,6 +103,10 @@ def process_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int, *, force_
 
     media = extract.kind(mime) == "media"
     if media and ctx.asr is None:
+        # 文字起こしは使わないが、映像のプレビューは保存時に作る
+        if blob["thumb_path"] is None and blob["view_path"] is None:
+            warnings.extend(_derive(conn, ctx, blob))
+            _set(conn, blob_id, warnings=json.dumps(warnings, ensure_ascii=False))
         return _give_up(conn, blob_id, extract.Unsupported("unsupported_type", MEDIA_OFF_MESSAGE))
     try:
         total = transcribe.page_count(path) if media else extract.page_count(path, mime)
@@ -112,7 +117,7 @@ def process_blob(conn: sqlite3.Connection, ctx: Context, blob_id: int, *, force_
         total = extract.MAX_PAGES
 
     # 派生ファイル（サムネイル・プレビュー）。抽出のついでに作る。途中再開のときは作り直さない
-    if blob["thumb_path"] is None:
+    if blob["thumb_path"] is None and blob["view_path"] is None:
         warnings.extend(_derive(conn, ctx, blob))
 
     done_pages = {r[0] for r in conn.execute("SELECT page_no FROM pages WHERE blob_id = ?", (blob_id,))}
@@ -222,7 +227,8 @@ def webclip_info(conn: sqlite3.Connection, blob_id: int) -> dict | None:
 
 
 def _derive(conn: sqlite3.Connection, ctx: Context, blob: sqlite3.Row) -> list[dict]:
-    d = derive.derive(ctx.data_dir, ctx.files_dir / blob["storage_path"], blob["mime_type"], blob["sha256"])
+    d = derive.derive(ctx.data_dir, ctx.files_dir / blob["storage_path"], blob["mime_type"], blob["sha256"],
+                      video_proxy=ctx.video_proxy, tick=ctx.between_pages)
     if d.thumb_path or d.view_path or d.image_meta:
         with Tx(conn):
             conn.execute("UPDATE blobs SET thumb_path = ?, view_path = ?, image_meta = ?, updated_at = ? WHERE id = ?",

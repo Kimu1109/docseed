@@ -95,10 +95,11 @@ def enqueue_derive(conn: sqlite3.Connection, scope: str = "missing") -> int:
     from .pipeline.extract import kind
     if scope not in ("missing", "all"):
         raise ValueError(scope)
-    cond = " AND thumb_path IS NULL" if scope == "missing" else ""
+    cond = " AND thumb_path IS NULL AND view_path IS NULL" if scope == "missing" else ""
     rows = conn.execute("SELECT id, mime_type FROM blobs WHERE status IN ('ready', 'failed', 'unsupported')"
                         + cond).fetchall()
-    ids = [r["id"] for r in rows if kind(r["mime_type"]) in ("image", "pdf")]
+    ids = [r["id"] for r in rows
+           if kind(r["mime_type"]) in ("image", "pdf") or (r["mime_type"] or "").startswith("video/")]
     n = 0
     with Tx(conn):
         for bid in ids:

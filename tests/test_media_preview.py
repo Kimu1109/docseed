@@ -51,9 +51,9 @@ def test_document_page_plays_audio_and_video(login):
     files = alice.upload(alice.root, {"clip.mov": MOV, "song.mp3": MP3, "old.avi": AVI}).json()["results"]
     mov, mp3, avi = (r["document"] for r in files)
     page = alice.get(f"/d/{mov['id']}").text
-    assert "<video" in page and f"/api/v1/documents/{mov['id']}/content?inline=1" in page
+    assert "<video" in page and f"/api/v1/documents/{mov['id']}/view" in page
     page = alice.get(f"/d/{mp3['id']}").text
-    assert "<audio" in page and f"/api/v1/documents/{mp3['id']}/content?inline=1" in page
+    assert "<audio" in page and f"/api/v1/documents/{mp3['id']}/view" in page
     page = alice.get(f"/d/{avi['id']}").text
     assert "<video" not in page and "<audio" not in page
     assert "ブラウザで表示できません" in page
@@ -66,7 +66,7 @@ def test_share_page_plays_media(app, login):
     link = alice.post("/api/v1/shares", json={"target_type": "document", "target_id": d["id"]}).json()
     anon = public(app)
     page = anon.get(f"/s/{token_of(link['url'])}").text
-    assert "<video" in page and f"/s/{token_of(link['url'])}/preview/{d['id']}" in page
+    assert "<video" in page and f"/s/{token_of(link['url'])}/view/{d['id']}" in page
     # 共有された先でも、再生用の配信は同じ条件で通る
     r = anon.get(f"/s/{token_of(link['url'])}/preview/{d['id']}")
     assert r.headers["content-type"] == "video/mp4" and r.headers["content-disposition"].startswith("inline")
