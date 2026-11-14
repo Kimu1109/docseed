@@ -194,6 +194,23 @@ CREATE TABLE document_versions (
 - 過去の版は検索の対象にしない（チャンクは blob に付くが、検索は今の版の文書からたどる）。使用量（`usage_bytes`）にも数えない。
 - 過去の版に戻すと、今の版を過去の版として残し、戻した版の行を消す（戻したことも取り消せる）。
 
+分割・再開できるアップロード（api.md 3.3.2、0013）。受け取り中のデータは `files/.tmp/tus-<id>` に置き、受け取ったバイト数はそのファイルの大きさで表す（表には持たない）。最後まで届いたら文書として保存し、結果を `result` に残す。
+
+```sql
+CREATE TABLE resumable_uploads (
+  id            TEXT PRIMARY KEY,           -- URL に使う乱数
+  user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  folder_id     INTEGER NOT NULL,
+  filename      TEXT NOT NULL,
+  relative_path TEXT,
+  on_conflict   TEXT NOT NULL DEFAULT 'rename',
+  length        INTEGER NOT NULL,           -- Upload-Length
+  result        TEXT,                       -- 保存し終えたら JSON（失敗も含む）。NULL なら受け取り中
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  expires_at    TEXT NOT NULL               -- 最後の書き込みから 24 時間。過ぎたら worker の毎日の片付けで消す
+);
+```
+
 ### 3.4 抽出結果
 
 ```sql

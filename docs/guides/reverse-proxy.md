@@ -196,7 +196,7 @@ sudo nginx -t && sudo systemctl reload nginx
 | 開くと Caddy の画面が出ない・証明書のエラー・「接続できない」がすぐ出る | `DOCSEED_HOST` が、ブラウザで開く名前と違う。Caddy はその名前でだけ応答する。`ProxyPreserveHost On`（nginx は `proxy_set_header Host $host;`）も必要 |
 | パスキーで「パスキーは … で開いたときに使えます」と出る | `DOCSEED_HOST` の先頭の名前（パスキーの RP ID）が、ブラウザで開いている名前と違う。先頭をその名前にする |
 | パスキーの登録・ログインが失敗する（上のメッセージは出ない） | `DOCSEED_PUBLIC_URL` がブラウザのオリジン（`https://example.com`。ポートなし・パスなし）と違う |
-| 大きなファイルのアップロードが途中で失敗する | Apache は `LimitRequestBody`、nginx は `client_max_body_size` を `DOCSEED_MAX_UPLOAD_MB` 以上にする。時間で切れるなら `ProxyTimeout` / `proxy_read_timeout` を延ばす |
+| 大きなファイルのアップロードが途中で失敗する | 画面からのアップロードは 8MB ずつに分けて送り、切れても続きから再開します（api.md 3.3.2）。プロキシが `PATCH`・`HEAD` と `Upload-*`・`Tus-*` のヘッダを通しているか確かめてください。API の `POST /api/v1/documents` で 1 回で送る場合は、Apache は `LimitRequestBody`、nginx は `client_max_body_size` を `DOCSEED_MAX_UPLOAD_MB` 以上にし、時間で切れるなら `ProxyTimeout` / `proxy_read_timeout` を延ばす |
 | 画面の表示が崩れる・ボタンが動かない | 更新前の JS が残っている。ブラウザで強制再読み込み（キャッシュの破棄）をする |
 
 ログの見方:

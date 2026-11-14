@@ -325,6 +325,8 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .uploads-list .up-state { font-size: 13px; color: var(--muted); text-align: right; }
 .uploads-list .up-done .up-state { color: var(--ok); }
 .uploads-list .up-error .up-state { color: var(--danger); }
+.uploads-list .up-wait .up-state { color: var(--warn); }
+.uploads-list .up-retry { margin-left: var(--s2); font-size: 13px; }
 .uploads-list .up-msg { grid-column: 1 / -1; color: var(--danger); font-size: 13px; }
 
 .dropzone { position: fixed; inset: var(--top-h) 0 0 var(--side-w); z-index: 30; display: grid; place-items: center;

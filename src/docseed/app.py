@@ -130,6 +130,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "web" / "static"), name="static")
     app.include_router(health)
     app.include_router(api_router)
+    from .api.uploads import router as api_uploads_router
+    app.include_router(api_uploads_router)
     app.include_router(api_auth_router)
     app.include_router(api_webclip_router)
     app.include_router(api_suggest_router)

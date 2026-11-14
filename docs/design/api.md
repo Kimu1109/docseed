@@ -135,6 +135,7 @@ RFC 9457（`application/problem+json`）形式。
 | メソッド | パス | 説明 |
 |---|---|---|
 | POST | `/documents` | アップロード（3.3.1） |
+| OPTIONS・POST・HEAD・PATCH・GET・DELETE | `/uploads`・`/uploads/{id}` | 分割・再開できるアップロード（tus 1.0。3.3.2） |
 | GET | `/documents/{id}` | Document |
 | GET | `/documents/{id}/content` | 原本ダウンロード。`Range` 対応。`?inline=1` で許可形式のみプレビュー表示 |
 | GET | `/documents/{id}/thumbnail` | WebP サムネイル（未生成なら種類別のアイコン） |
@@ -180,7 +181,29 @@ files=@領収書.jpg
 - `deduplicated: true` は同じ内容のファイルが既にあり、処理結果を使い回したことを示す。
 - `on_conflict=replace` で置き換えたときは `status: "replaced"`。それまでの中身は過去の版（`/documents/{id}/versions`）に残る。
 - フォルダ構造ごとのアップロード: `files` と同じ順番で `relative_paths`（例 `2026/10/見積書.pdf`）を送ると、`folder_id` の下に必要なフォルダを作成する（空文字のファイルはそのまま `folder_id` に置く）。
-- 大きなファイル: Caddy とアプリの上限は 1GB。分割・再開可能なアップロード（tus 等）は初版では対応しない。
+- 大きなファイル: Caddy とアプリの上限は 1GB。通信が不安定な環境や、1 リクエストの大きさに上限がある経路（Cloudflare Tunnel は 100MB）では、分割・再開できるアップロード（3.3.2）を使う。画面からのアップロードはすべてこちらを使う。
+
+#### 3.3.2 分割・再開できるアップロード（tus 1.0）
+
+[tus 1.0](https://tus.io/protocols/resumable-upload) の core と、拡張 `creation`・`creation-with-upload`・`termination`・`expiration` に対応する。tus-js-client などの既存のクライアントも使える。処理は `resumable.py`、表は data-model.md 3.3 の `resumable_uploads`。
+
+| メソッド | パス | 説明 |
+|---|---|---|
+| OPTIONS | `/uploads` | `Tus-Version`・`Tus-Extension`・`Tus-Max-Size`（= `DOCSEED_MAX_UPLOAD_MB`） |
+| POST | `/uploads` | 受け取りを始める。`Upload-Length`（必須。`Upload-Defer-Length` は不可）と `Upload-Metadata`（`filename`・`folder_id` が必須、`relative_path`・`on_conflict` は 3.3.1 と同じ）。201 と `Location`。`Content-Type: application/offset+octet-stream` で本文を付けると、そのまま書き始める |
+| HEAD | `/uploads/{id}` | `Upload-Offset`（受け取り済みのバイト数）・`Upload-Length`・`Upload-Expires` |
+| PATCH | `/uploads/{id}` | 続きを送る。`Content-Type: application/offset+octet-stream`（以外は 415）と `Upload-Offset`（受け取り済みと違えば 409 `offset_mismatch`）。204 と新しい `Upload-Offset` |
+| GET | `/uploads/{id}` | docseed 独自。`{id, offset, length, complete, expires_at, result}` |
+| DELETE | `/uploads/{id}` | 取り消す（受け取った分も消す）。204 |
+
+- 送り始める前（POST）に、フォルダの権限（editor 以上）・1 ファイルの上限（413）・容量の上限（507）・空き容量を確かめる。遅い回線で送り終えてから断らないため。
+- PATCH の途中で接続が切れても、届いた分は残る。クライアントは HEAD で位置を聞き、そこから送る。同じアップロードへの書き込みは 1 本ずつで、前の接続がまだ書いている間は 423 `upload_busy`（少し待って再試行する）。
+- 最後まで届いた PATCH（または POST）では文書として保存し、**200（POST は 201）と GET と同じ JSON** を返す（tus の決まりでは 204 だが、既存のクライアントは 2xx を成功として扱う）。`result` は 3.3.1 の `results[]` の 1 件と同じ形で、名前の重複（`on_conflict=error`）などの失敗も `status: "error"` としてここに入る。
+- 最後の応答を受け取れなかったときは、`Upload-Offset` を最後の位置にした空の PATCH（または GET）で、同じ結果をもう一度受け取れる（2 回保存しない）。
+- 期限は最後の書き込みから 24 時間（`Upload-Expires`）。過ぎると 410 `upload_gone`。受け取り中のデータ（`files/.tmp/tus-<id>`）は worker の毎日の片付けで消す。受け取り中のまま置ける数は 1 人 200 件まで。
+- 他の人のアップロードは 404（存在を明かさない）。API トークン（write）でも使える。ブラウザのセッションでは、POST・PATCH・DELETE に `X-CSRF-Token` が必要。
+
+画面（`app.js`）は 1 ファイルを 8MB ずつ PATCH で送る。通信が失敗したら（接続の失敗・60 秒進まない・408・423・429・5xx・409）、1・2・4・8・15・30…秒待ってから HEAD で位置を聞き直して続きを送る。前に進めば待ち時間は最初に戻り、オフラインの間は回線が戻るのを待つ。送り先の URL は localStorage に覚えるので、再読み込みのあと同じファイルを選び直すと続きから送る。待っても届かなければ失敗として「再試行」ボタンを出す。
 
 ### 3.4 ゴミ箱
 
