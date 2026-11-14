@@ -4,5 +4,6 @@
 !pyproject.toml
 !README.md
 !src/
+!docs/
 **/__pycache__
 **/*.py[cod]

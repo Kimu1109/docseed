@@ -4,7 +4,7 @@
   {% elif worker_seen %}
     <p class="alert">処理（worker）から 2 分以上応答がありません（最終応答 {{ worker_seen | localtime }}）。<code>docker compose logs worker</code> で状態を確認してください。</p>
   {% else %}
-    <p class="alert">処理（worker）がまだ一度も動いていません。モデルを取得して worker を起動してください（docs/admin/install.md）。</p>
+    <p class="alert">処理（worker）がまだ一度も動いていません。モデルを取得して worker を起動してください（<a href="{{ base }}/help/admin/install">ヘルプの「導入」</a>）。</p>
   {% endif %}
 
   <dl class="stats">

@@ -49,6 +49,7 @@
     <a href="{{ base }}/tags" data-goto="tags" {% if nav == 'tags' %}aria-current="page"{% endif %}>{{ icon("label") }}タグ</a>
     <a href="{{ base }}/trash" data-goto="trash" {% if nav == 'trash' %}aria-current="page"{% endif %}>{{ icon("delete") }}ゴミ箱</a>
     {% if user.is_admin %}<a href="{{ base }}/admin" data-goto="admin" {% if nav == 'admin' %}aria-current="page"{% endif %}>{{ icon("admin_panel_settings") }}管理{% if alert_count %} <span class="alert-badge" title="確認が必要な項目が {{ alert_count }} 件あります" aria-label="警告 {{ alert_count }} 件">!{{ alert_count }}</span>{% endif %}</a>{% endif %}
+    <a href="{{ base }}/help/user" data-goto="help" {% if nav == 'help' %}aria-current="page"{% endif %}>{{ icon("help") }}ヘルプ</a>
     <a class="m-only" href="{{ base }}/settings" {% if nav == 'settings' %}aria-current="page"{% endif %}>{{ icon("settings") }}設定</a>
     <div class="side-foot">
       {% if quota and quota.quota %}
@@ -95,6 +96,7 @@
           <dt><kbd>g</kbd> <kbd>t</kbd></dt><dd>タグ</dd>
           <dt><kbd>g</kbd> <kbd>d</kbd></dt><dd>ゴミ箱</dd>
           {% if user.is_admin %}<dt><kbd>g</kbd> <kbd>a</kbd></dt><dd>管理</dd>{% endif %}
+          <dt><kbd>g</kbd> <kbd>h</kbd></dt><dd>ヘルプ</dd>
           <dt><kbd>s</kbd></dt><dd>今のファイル・フォルダをお気に入りに入れる・外す</dd>
         </dl>
       </section>

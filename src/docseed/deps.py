@@ -86,7 +86,7 @@ async def _check_csrf(request: Request, expected: str) -> None:
 
 
 # 2 段階認証が必須で未設定のときにも使える画面・API（設定・ログアウト）
-SETUP_ALLOWED_PREFIXES = ("/settings/security", "/auth/", "/logout", "/api/v1/auth/", "/api/v1/me/security",
+SETUP_ALLOWED_PREFIXES = ("/settings/security", "/help", "/auth/", "/logout", "/api/v1/auth/", "/api/v1/me/security",
                           "/api/v1/me/totp", "/api/v1/me/passkeys", "/api/v1/me/recovery-codes")
 
 

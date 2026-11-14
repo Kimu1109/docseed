@@ -172,6 +172,8 @@ jobs:
           head -c 5000000 /dev/urandom > /tmp/big.bin
           $C -H "X-CSRF-Token: $csrf" -F folder_id=$root -F files=@/tmp/big.bin https://docseed.example.com/api/v1/documents \
             | grep -q '"size_bytes":5000000'
+          # 画面のヘルプ: イメージに docs/ が入っていて、文書が画面に出る（docs/design/ui.md S12）
+          $C https://docseed.example.com/help/user | grep -q '<h1 id="利用者ガイド">'
       - name: コンテナが書き換えられないこと
         run: |
           if docker compose exec -T api touch /app/x; then echo "api の /app に書けてしまう"; exit 1; fi

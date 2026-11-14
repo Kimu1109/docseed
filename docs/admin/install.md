@@ -83,4 +83,4 @@ docker compose logs -f worker
 1. [HTTPS の証明書](https.md) を決める（パスキーを使うなら必須）
 2. [ユーザーとログイン](users.md) でユーザーを足す
 3. [バックアップと復旧](backup.md) を設定する
-4. 使う人に [利用者ガイド](../user/README.md) と、開く URL を伝える
+4. 使う人に、開く URL と、画面の左のメニューの「ヘルプ」に [利用者ガイド](../user/README.md) があることを伝える

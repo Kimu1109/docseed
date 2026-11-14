@@ -1,6 +1,6 @@
 # 管理者ガイド
 
-docseed を **置く・設定する・見守る人** 向けです。画面の使い方は [利用者ガイド](../user/README.md) にあります（使う人に渡してください）。
+docseed を **置く・設定する・見守る人** 向けです。画面の使い方は [利用者ガイド](../user/README.md) にあります。どちらのガイドも、docseed の画面の左のメニューの **「ヘルプ」** で読めます（管理者には管理者ガイドのタブも出ます）。
 
 前提: Raspberry Pi 5（RAM 8GB 以上、16GB 推奨）、NVMe SSD、Raspberry Pi OS 64-bit、Docker Engine と Compose プラグイン。コマンドはすべて **リポジトリのディレクトリ**（`git clone` した場所）で実行します。
 

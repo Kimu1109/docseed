@@ -40,6 +40,9 @@ dependencies = [
   "trafilatura>=2.0",
   "lxml>=5.0",
   "charset-normalizer>=3.3",
+  # ヘルプ（docs/ の文書を画面で読む）: Markdown を HTML にする
+  "markdown-it-py>=3.0",
+  "mdit-py-plugins>=0.4",
 ]
 
 [project.optional-dependencies]
@@ -63,6 +66,10 @@ docseed = "docseed.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/docseed"]
+
+# 画面のヘルプで読む文書（docseed/helpdocs.py。ひな形は入っても画面には出さない）
+[tool.hatch.build.targets.wheel.force-include]
+"docs" = "docseed/_docs"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

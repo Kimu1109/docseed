@@ -143,7 +143,8 @@
   // ---- キーボード操作（? で一覧を出す） ------------------------------------
   // g に続けて押すと画面を移る。s: お気に入り、u: アップロード、n: 新しいフォルダ、検索結果では j / k
   const GOTO = { m: "[data-goto=files]", f: "[data-goto=favorites]", s: "[data-goto=shared]",
-                 t: "[data-goto=tags]", d: "[data-goto=trash]", a: "[data-goto=admin]" };
+                 t: "[data-goto=tags]", d: "[data-goto=trash]", a: "[data-goto=admin]",
+                 h: "[data-goto=help]" };
   let gPressed = 0;
   const typing = (t) => t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName);
   document.addEventListener("keydown", (e) => {
