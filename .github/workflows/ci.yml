@@ -13,6 +13,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          # 依存の wheel をジョブをまたいで使い回す（pyproject.toml が変わったら取り直す）
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - run: pip install -e ".[dev]"
       # tests/test_deploy.py の fail2ban-regex と、tests/test_ops.py の復旧の練習（restic）の確認に使う
       - run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends fail2ban restic

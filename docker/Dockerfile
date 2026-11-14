@@ -3,9 +3,9 @@
 #   tools: モデルの取得と ONNX への変換（docseed fetch-models）。torch を含むので初回だけ使う
 FROM python:3.12-slim-bookworm AS base
 
+# pip のキャッシュは BuildKit のキャッシュマウント（/root/.cache/pip）に置く。イメージの層には残らない
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 RUN apt-get update \
@@ -14,9 +14,18 @@ RUN apt-get update \
  && useradd --uid 1000 --create-home --shell /usr/sbin/nologin docseed
 
 WORKDIR /app
-COPY pyproject.toml README.md ./
+# 依存だけを先に入れる。この層は pyproject.toml が変わったときだけ作り直す（src や README の変更では取り直さない）
+COPY pyproject.toml ./
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml', 'rb'))['project']['dependencies']))" \
+      > /tmp/requirements.txt \
+ && pip install -r /tmp/requirements.txt \
+ && rm /tmp/requirements.txt
+# 本体（依存は上で入れたので --no-deps）
+COPY README.md ./
 COPY src ./src
-RUN pip install .
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip install --no-deps .
 
 USER docseed
 EXPOSE 8000
@@ -51,7 +60,8 @@ USER docseed
 FROM base AS tools
 USER root
 # torch は CPU 版を入れる（x86 の PyPI 版は CUDA 込みで巨大なため。arm64 はどちらも CPU 版）
-RUN pip install torch --index-url https://download.pytorch.org/whl/cpu \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip install torch --index-url https://download.pytorch.org/whl/cpu \
  && pip install ".[tools]"
 USER docseed
 HEALTHCHECK NONE
@@ -61,9 +71,10 @@ CMD ["docseed", "fetch-models"]
 # JavaScript で描くページの描画（任意）。Chromium を含む Playwright の公式イメージを使う。
 # compose の webclip-browser（profile webclip-render）で動かす。docseed 本体とは別のコンテナ（docs/design/extensions.md 6.10）
 FROM mcr.microsoft.com/playwright/python:v1.65.2-noble AS render
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PYTHONPATH=/app/src
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app/src
 WORKDIR /app
-RUN pip install "httpx>=0.27"
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip install "httpx>=0.27"
 COPY src ./src
 USER pwuser
 EXPOSE 8080
