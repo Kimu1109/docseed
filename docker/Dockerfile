@@ -1,7 +1,7 @@
 # docseed（api / worker 共通イメージ）。docs/design/deployment.md 2.1
 #   base : api と worker。推論は ONNX Runtime（torch なし）
 #   tools: モデルの取得と ONNX への変換（docseed fetch-models）。torch を含むので初回だけ使う
-FROM python:3.12-slim-bookworm AS base
+FROM python:3.15-slim-bookworm AS base
 
 # pip のキャッシュは BuildKit のキャッシュマウント（/root/.cache/pip）に置く。イメージの層には残らない
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -39,7 +39,7 @@ CMD ["docseed", "serve", "--port", "8000"]
 
 # 音声・動画の文字起こし（任意）。whisper.cpp の whisper-cli を静的に作る（builder）。
 # 使うときは .env の DOCSEED_IMAGE_TARGET=asr にして build する（既定の base には入れない）
-FROM python:3.12-slim-bookworm AS asr-build
+FROM python:3.15-slim-bookworm AS asr-build
 ARG WHISPER_CPP_REF=v1.9.5
 RUN apt-get update \
  && apt-get install -y --no-install-recommends build-essential cmake git ca-certificates \
