@@ -244,7 +244,7 @@ compose の `cloudflared`（profile `tunnel`）が Cloudflare へ外向きにつ
 
 ## 11. 監視と通知
 
-api の中のスレッド（`src/docseed/notify.py`）が 1 分ごとに、前回からの監査ログ（`audit_log`）と状態（`monitor.status`）を確かめ、`DOCSEED_NOTIFY_URL` に知らせる。worker は外部と通信しない設定なので、外部へ出られる api が送る。
+api の中のスレッド（`src/docseed/security_notify.py`）が 1 分ごとに、前回からの監査ログ（`audit_log`）と状態（`monitor.status`）を確かめ、`DOCSEED_NOTIFY_URL` に知らせる。worker は外部と通信しない設定なので、外部へ出られる api が送る。
 
 | 通知 | 条件 | 重複の抑え方 |
 |---|---|---|
@@ -259,4 +259,4 @@ api の中のスレッド（`src/docseed/notify.py`）が 1 分ごとに、前�
 - 送り先の形式は URL から決める（`DOCSEED_NOTIFY_FORMAT=auto`）。ntfy は日本語の題名を送れるよう、ヘッダではなく JSON（`https://<server>/` に `topic` 付き）で送る。送信に失敗したら api のログに書き、送り直さない。
 - `docseed notify --test [--title ...] [--message ...] [--level ...]` で任意の通知を送れる。ホストの定期処理（`scripts/ops/update-images.sh`）の結果の通知にも使う。
 - 通知の本文にはユーザー名と接続元の IP が入る。第三者のサービス（ntfy.sh など）に送ることになるので README で注意する。
-- 確認済み: compose の中で擬似の Webhook に、`docseed notify --test` とバックグラウンドの確認（監査ログに記録した管理者の操作）の両方が届くこと。本物の HTTP の送信は tests/test_notify.py でも確かめる。
+- 確認済み: compose の中で擬似の Webhook に、`docseed notify --test` とバックグラウンドの確認（監査ログに記録した管理者の操作）の両方が届くこと。本物の HTTP の送信は tests/test_security_notify.py でも確かめる。
