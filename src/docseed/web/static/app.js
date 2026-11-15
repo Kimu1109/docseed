@@ -413,6 +413,15 @@
     if (btn) showOcrOverlay(btn, searchTerms());
   });
 
+  // ---- Markdown のプレビュー: 「表示」と「元の文字」を切り替える ---------
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-md-view]");
+    if (!btn) return;
+    const box = btn.closest(".preview");
+    $$("[data-md-view]", box).forEach((b) => b.setAttribute("aria-pressed", b === btn ? "true" : "false"));
+    $$("[data-md-pane]", box).forEach((p) => { p.hidden = p.dataset.mdPane !== btn.dataset.mdView; });
+  });
+
   // ---- 処理状況の自動更新 -----------------------------------------------
   setInterval(() => {
     const listing = $("#listing[data-has-pending]");

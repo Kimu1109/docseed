@@ -66,6 +66,14 @@ def text_preview_of(store: BlobStore, d: sqlite3.Row) -> tuple[str | None, bool]
     return raw[:TEXT_PREVIEW_BYTES].decode("utf-8", "replace"), len(raw) > TEXT_PREVIEW_BYTES
 
 
+def markdown_preview_of(d: sqlite3.Row, text: str | None):
+    """Markdown の文書なら、プレビューに出す HTML（mdview.py）。ほかは None。"""
+    from ...mdview import is_markdown, render
+    if text is None or not is_markdown(d["mime_type"], d["filename"]):
+        return None
+    return render(text)
+
+
 @router.get("/d/{doc_id}", response_class=HTMLResponse)
 def document_page(doc_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
                   auth: Auth = Depends(require_auth), store: BlobStore = Depends(get_store)):
@@ -79,7 +87,8 @@ def document_page(doc_id: int, request: Request, conn: sqlite3.Connection = Depe
     return templates.TemplateResponse(request, "document.html", base_context(
         request, conn, auth, doc=d, role=role, can_edit=role in ("editor", "owner"),
         crumbs=fo.path(conn, d["folder_id"]), tags=dm.document_tags(conn, doc_id), text_preview=text_preview,
-        truncated=truncated, targets=targets, owner=um.get_user(conn, d["owner_id"]),
+        md_html=markdown_preview_of(d, text_preview), truncated=truncated, targets=targets,
+        owner=um.get_user(conn, d["owner_id"]),
         pages=pages, pages_shown=PAGES_SHOWN, error=h.problem_message(d["error"]),
         warnings=h.warning_messages(d["warnings"]), image_meta=json.loads(d["image_meta"] or "null"),
         clip=clip_for(conn, d), webclip_enabled=request.app.state.settings.webclip_enabled,

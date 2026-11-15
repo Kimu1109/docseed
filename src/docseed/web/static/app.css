@@ -357,6 +357,11 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .textview { margin: 0; padding: var(--s4); font: 13px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
             max-height: calc(100vh - 210px); overflow: auto; }
 .nopreview { padding: var(--s6); text-align: center; }
+.md-switch { display: flex; gap: var(--s2); padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); }
+.md-switch .btn[aria-pressed="true"] { border-color: var(--ink); font-weight: 700; }
+.md-view { max-width: none; padding: var(--s4) var(--s5); max-height: calc(100vh - 260px); overflow: auto; }
+.md-view > :first-child { margin-top: 0; }
+.md-img { color: var(--muted); }
 .doc-side { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s4); min-width: 0; }
 .facts { margin: 0; background: var(--surface); border: 1px solid var(--line); display: grid;
          grid-template-columns: 96px minmax(0, 1fr); }
@@ -883,6 +888,7 @@ kbd:not(.kbd) { display: inline-block; min-width: 1.6em; padding: 0 5px; font: 1
   .preview { min-height: 200px; }
   .preview iframe { height: 70vh; min-height: 360px; }
   .textview { max-height: 60vh; }
+  .md-view { max-height: 60vh; padding: var(--s3); }
   .facts { grid-template-columns: 88px minmax(0, 1fr); }
 
   /* 検索: 絞り込みは「絞り込み」ボタンで開く */

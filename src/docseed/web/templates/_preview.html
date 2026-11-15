@@ -1,4 +1,4 @@
-{# 文書のプレビュー。呼び出し側が doc・k・file_base（content / view / thumbnail の前の URL）・text_preview・truncated・clip を決めておく #}
+{# 文書のプレビュー。呼び出し側が doc・k・file_base（content / view / thumbnail の前の URL）・text_preview・md_html（Markdown なら描いた HTML）・truncated・clip を決めておく #}
   <section class="preview{% if media_kind(doc.mime_type) == 'audio' %} preview-audio{% endif %}" aria-label="プレビュー">
     {% if doc.mime_type == "application/pdf" %}
       <iframe src="{{ file_base }}/content?inline=1" title="{{ doc.filename }} のプレビュー"></iframe>
@@ -18,6 +18,14 @@
     {% elif media_kind(doc.mime_type) %}
       {% set media_kind_now, media_src, media_name = media_kind(doc.mime_type), file_base ~ "/view", doc.filename %}
       {% include "_media.html" %}
+    {% elif md_html is defined and md_html is not none %}
+      <div class="md-switch" role="group" aria-label="Markdown の表示">
+        <button type="button" class="btn btn-sm" data-md-view="rendered" aria-pressed="true">{{ icon("visibility") }}表示</button>
+        <button type="button" class="btn btn-sm" data-md-view="source" aria-pressed="false">{{ icon("code") }}元の文字</button>
+      </div>
+      <article class="doc md-view" data-md-pane="rendered">{{ md_html }}</article>
+      <pre class="textview" data-md-pane="source" hidden>{{ text_preview }}</pre>
+      {% if truncated %}<p class="muted">先頭の 200 KB だけを表示しています。</p>{% endif %}
     {% elif text_preview is not none %}
       <pre class="textview">{{ text_preview }}</pre>
       {% if truncated %}<p class="muted">先頭の 200 KB だけを表示しています。</p>{% endif %}

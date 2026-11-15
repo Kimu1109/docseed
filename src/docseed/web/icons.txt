@@ -107,3 +107,5 @@ photo_camera
 open_in_new
 sort
 checklist
+# Markdown のプレビュー（表示 / 元の文字）
+code
