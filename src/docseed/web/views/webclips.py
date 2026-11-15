@@ -87,10 +87,14 @@ def clip_submit(request: Request, url: str = Form(""), folder_id: int = Form(...
                 settings: Settings = Depends(get_settings)):
     from ...webclip.service import create_clip
     try:
-        _cid, dups = create_clip(conn, settings, auth.user, folder_id, url, client_ip(request))
+        clip_id, dups = create_clip(conn, settings, auth.user, folder_id, url, client_ip(request))
     except AppError as e:
         targets = [(fid, label) for fid, label in fo.folders_of_owner(conn, auth.user.id)]
         return templates.TemplateResponse(request, "clip.html", base_context(
             request, conn, auth, nav="files", url=url, targets=targets, enabled=settings.webclip_enabled,
             error=e.detail), status_code=e.status)
-    return RedirectResponse(f"/f/{folder_id}?done={'clip_dup' if dups else 'clip'}", status_code=303)
+    # 保存したあとは、もとのページに戻れる確認の画面を出す（ブックマークレットから来た人はもとのページを離れている）
+    clip_url = conn.execute("SELECT url FROM web_clips WHERE id = ?", (clip_id,)).fetchone()[0]
+    return templates.TemplateResponse(request, "clip_saved.html", base_context(
+        request, conn, auth, nav="files", url=clip_url, folder_id=folder_id, message=_dup_message(conn, auth, dups),
+        doc_id=dups[0]["id"] if dups else None))

@@ -425,7 +425,9 @@ def test_bookmarklet_page(login, settings):
     assert conn.execute("SELECT count(*) FROM web_clips").fetchone()[0] == 0
     r = alice.post("/clip", data={"csrf_token": alice.csrf, "url": "https://example.com/a",
                                   "folder_id": alice.root}, follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"].startswith(f"/f/{alice.root}?done=clip")
+    assert r.status_code == 200 and "URL を保存しました" in r.text
+    assert 'href="https://example.com/a" rel="noopener noreferrer"' in r.text   # 元のページに戻るリンク
+    assert f'href="/f/{alice.root}"' in r.text
     assert conn.execute("SELECT count(*) FROM web_clips").fetchone()[0] == 1
 
 

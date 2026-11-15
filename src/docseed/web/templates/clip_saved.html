@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}URL を保存しました{% endblock %}
+{% block main %}
+<div class="page-head"><h1 class="page-title">{{ icon("link") }} URL を保存しました</h1></div>
+<section class="panel">
+  <p>{{ message }}</p>
+  <p class="small muted"><span class="hash">{{ url }}</span></p>
+  <p class="actions">
+    <a class="btn btn-primary" href="{{ url }}" rel="noopener noreferrer">{{ icon("arrow_back") }}元のページに戻る</a>
+    <a class="btn" href="{{ base }}/f/{{ folder_id }}">{{ icon("folder") }}保存先のフォルダを開く</a>
+    {% if doc_id %}<a class="btn" href="{{ base }}/d/{{ doc_id }}">{{ icon("description") }}既に保存されている文書を開く</a>{% endif %}
+  </p>
+</section>
+{% endblock %}

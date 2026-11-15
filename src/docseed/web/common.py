@@ -59,8 +59,6 @@ DONE_MESSAGES = {
     "unrejected_cleared": "却下の記録を消しました（今の状態では候補に出ません）",
     "retried": "ジョブをやり直します",
     "share_revoked": "共有リンクを無効にしました",
-    "clip": "URL を受け付けました",
-    "clip_dup": "URL を受け付けました（このページは既に保存されています）",
     "refetch": "再取得を受け付けました",
     "suggest_accept": "候補を採用しました",
     "suggest_reject": "候補を却下しました",

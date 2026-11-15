@@ -511,7 +511,7 @@ CREATE TABLE auth_challenges (
 > - **og:image の blob** は `status = 'ready'`・ページ数 0 で登録し、文字の読み取りのジョブは積まない。サムネイルは og:image から作り、HTML の blob の `thumb_path` にする。
 > - **`PIPELINE_VERSION` は上げない**（Phase 6 と同じ理由。既存のファイルの HTML を新しい方法で読み直したいときは、その文書の「再処理」）。HTML の本文は trafilatura で取り出し、取り出せなければ今までのタグを除く方法に戻る。
 > - **`web_clips.folder_id`** は `ON DELETE CASCADE` にした（取得待ち・失敗したままのクリップがあるフォルダを完全に削除できるように）。文書になったクリップは、文書の完全な削除で消える（`document_id` の `ON DELETE CASCADE`）。
-> - **画面**: 文書になる前のクリップ（取得中・失敗）は一覧の先頭に出し、失敗したものは理由と「もう一度取得」「取り消す」を出す。ブックマークレットの行き先 `/clip` は、GET では保存せず、保存先を選んで POST する（CSRF のため）。
+> - **画面**: 文書になる前のクリップ（取得中・失敗）は一覧の先頭に出し、失敗したものは理由と「もう一度取得」「取り消す」を出す。ブックマークレットの行き先 `/clip` は、GET では保存せず、保存先を選んで POST する（CSRF のため）。保存したあとは「URL を保存しました」の画面を出し、元のページ（保存した URL）へのリンクを置く（ブックマークレットから来た人はもとのページを離れているため。リダイレクトで一覧に戻すと、戻り先が分からなくなる）。
 > - **監視**: `DOCSEED_WEBCLIP_ENABLED` なのに 10 分以上取得されないジョブがあり、fetcher の応答（`fetcher.heartbeat`）も無ければ、管理画面に警告を出す。
 > - **確認**: 手元の HTTP サーバーと偽の名前の解決で、プライベートな IP・CGNAT・IPv4 を写した IPv6・混在した応答・リダイレクト先の LAN・DNS リバインディング・許可していないポート・5MB 超（Content-Length あり・なし）・Content-Type の偽装・HTTP のエラーとリトライ、OGP・Twitter カード・JSON-LD・oEmbed・文字コード、api → fetcher → worker → 検索まで（`tests/test_webclip.py`）。
 
