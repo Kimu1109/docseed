@@ -295,3 +295,17 @@ scrape_configs:
 2. `git pull` → `docker compose build`（または新しいイメージを pull）。
 3. `docker compose up -d`。api が起動時にマイグレーションを適用する。worker は api のマイグレーション完了（`schema_migrations` の版）を待ってから処理を始める。
 4. パイプラインの版や埋め込みモデルが変わった場合は、管理画面から一括再処理を実行する（優先度が低いので通常の利用は妨げない）。
+
+### 7.1 依存関係とイメージの更新
+
+| 何を | どうやって | いつ |
+|---|---|---|
+| Python の依存・GitHub Actions・Dockerfile のベースのイメージ | Dependabot が PR を作る（`.github/dependabot.yml`） | 毎週月曜 |
+| 脆弱性の検査 | `.github/workflows/security.yml`: pip-audit（`pyproject.toml` の下限から最新を入れた環境）と Trivy（`docker build --pull` した docseed のイメージ。修正版のある HIGH / CRITICAL で失敗）。caddy・cloudflared・llama.cpp は結果を概要に書くだけ | 毎週月曜 4:17（日本時間）と、依存関係・Dockerfile を変えた PR |
+| サードパーティのイメージの取り直し | Pi の `docseed-update.timer` → `scripts/ops/update-images.sh`。`docker compose config --images` のうち `docseed*` 以外を `docker pull` し、`docker compose up -d` で新しくなったコンテナだけ入れ替える。api の HEALTHCHECK が通るまで待ち、結果を通知する（[セキュリティ](security.md) 11 章） | 毎週月曜 4:30 ごろ（バックアップの後） |
+| docseed のイメージ | 手で `git pull` → `docker compose build --pull` → `docker compose up -d`（`/etc/docseed/update.env` の `DOCSEED_UPDATE_REBUILD=true` で上の取り直しと一緒に自動化できるが、既定は手で行う） | 月に 1 度くらい |
+
+- `docseed:latest` は手元で作るイメージなので、`docker compose pull` は使わない（Docker Hub で見つからず失敗する）。
+- 取り直しに失敗した場合（取得の失敗など）は、コンテナを入れ替えずに終わり、error の通知を送る。
+- 確認済み: compose の環境で、新しいイメージが無いときは入れ替えも通知もしないこと、存在しないイメージを指定すると入れ替えずに error を通知すること。
+

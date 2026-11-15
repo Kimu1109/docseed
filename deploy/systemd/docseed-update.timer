@@ -1,0 +1,11 @@
+[Unit]
+Description=docseed image update (weekly, Monday 04:30)
+
+[Timer]
+# バックアップ（毎日 3:00）のあと
+OnCalendar=Mon *-*-* 04:30:00
+RandomizedDelaySec=20min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

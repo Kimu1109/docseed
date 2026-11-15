@@ -241,3 +241,22 @@ compose の `cloudflared`（profile `tunnel`）が Cloudflare へ外向きにつ
 - Cloudflare Access で公開する名前を保護し、共有リンク（`/s/*`）だけ Bypass にするのを推奨する。
 - fail2ban（9.1）はトンネル経由の通信を止められない（ファイアウォールを通らないため）。アプリの中の制限（2.4・9 章）は本当の接続元で数えるので効く。
 - 確認済み（ローカルの Docker でトンネルのネットワークから再現）: トンネル経由は `CF-Connecting-IP` が公開・プライベート・無しのいずれでも管理系が 404、アプリには `CF-Connecting-IP` の値が届き、クライアントが送った `X-Forwarded-For` は無視されること。トンネル以外から送った `CF-Connecting-IP` は無視されること。cloudflared が強化した設定のまま起動すること。
+
+## 11. 監視と通知
+
+api の中のスレッド（`src/docseed/security_notify.py`）が 1 分ごとに、前回からの監査ログ（`audit_log`）と状態（`monitor.status`）を確かめ、`DOCSEED_NOTIFY_URL` に知らせる。worker は外部と通信しない設定なので、外部へ出られる api が送る。
+
+| 通知 | 条件 | 重複の抑え方 |
+|---|---|---|
+| 新しい接続元からのログイン | `login`・`passkey_login`・`oidc_login` の接続元が外側（`DOCSEED_TRUSTED_NETS` の外。既定は Caddy の `private_ranges` と Tailscale）で、同じユーザーが直近 180 日に同じ範囲（IPv4 は /24、IPv6 は /64）からログインしていない | ログインごとに 1 回 |
+| ログインの失敗の急増 | 直近 15 分の `login_failed`・`second_factor_failed` が `DOCSEED_NOTIFY_LOGIN_FAILURES`（既定 20）回以上。多い接続元を 3 つ添える | 1 時間に 1 回 |
+| 管理者の操作など | `user_create`・`user_update`・`auth_settings_change`・`auth_reset`・`totp_disable`・`passkey_clone_suspected`（これだけ error） | 記録ごとに 1 回 |
+| 共有リンクのパスワードの失敗 | 同じリンクで 15 分に 5 回以上 | リンクごとに 1 時間に 1 回 |
+| 確認が必要な項目 | `monitor.status` の error・warning のうち、前回は無かったもの | 出ている間は 1 回。消えてまた出たら再び |
+
+- 状態は `settings` 表の `notify.last_audit_id`・`notify.cooldown`・`notify.alerts` に置く。初回（通知を設定した直後）は過去の記録と今ある項目を送らない。
+- 1 回に送るのは 10 件まで。超えた分は 1 件にまとめる。
+- 送り先の形式は URL から決める（`DOCSEED_NOTIFY_FORMAT=auto`）。ntfy は日本語の題名を送れるよう、ヘッダではなく JSON（`https://<server>/` に `topic` 付き）で送る。送信に失敗したら api のログに書き、送り直さない。
+- `docseed notify --test [--title ...] [--message ...] [--level ...]` で任意の通知を送れる。ホストの定期処理（`scripts/ops/update-images.sh`）の結果の通知にも使う。
+- 通知の本文にはユーザー名と接続元の IP が入る。第三者のサービス（ntfy.sh など）に送ることになるので README で注意する。
+- 確認済み: compose の中で擬似の Webhook に、`docseed notify --test` とバックグラウンドの確認（監査ログに記録した管理者の操作）の両方が届くこと。本物の HTTP の送信は tests/test_security_notify.py でも確かめる。

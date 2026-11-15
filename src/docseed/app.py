@@ -119,6 +119,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     start_background(settings)
     from .notify import start_background as start_notify
     start_notify(settings)
+    from . import security_notify
+    security_notify.start_background(settings)
 
     from .ratelimit import RateLimitMiddleware, setup_security_log
     setup_security_log(settings.data_dir / "logs")

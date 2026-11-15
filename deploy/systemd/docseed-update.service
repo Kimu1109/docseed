@@ -1,0 +1,10 @@
+# イメージの取り直し（週 1 回）。scripts/ops/install-update.sh で配置する
+[Unit]
+Description=docseed image update (pull third-party images, recreate changed containers)
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=@DOCSEED_DIR@/scripts/ops/update-images.sh
+Nice=10

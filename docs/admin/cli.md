@@ -16,6 +16,7 @@ docker compose exec api docseed <コマンド> [オプション]
 |---|---|
 | `docseed create-admin --username NAME` | 管理者を作る（`--display-name`。パスワードは対話で入れる。`--password` も使えるが履歴に残る） |
 | `docseed reset-auth --username NAME` | ログイン方法（パスキー・確認コード・外部アカウントの連携）を消し、仮のパスワードを発行する。すべての端末をログアウトし、API トークンを無効にする |
+| `docseed notify [--test]` | 異常の通知を 1 回確かめて送る。`--test` はテストの通知を送って、宛先に届くか確かめる（[異常の通知と更新](security-notify.md)） |
 | `docseed status [--json]` | 状態と警告を表示する（管理画面と同じ）。重大な警告があれば終了コード 1 |
 | `docseed purge-trash` | 保持期間を過ぎたゴミ箱の項目を完全に削除する（worker が毎日行うので、ふつうは不要） |
 

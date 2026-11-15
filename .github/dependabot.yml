@@ -1,0 +1,23 @@
+# 依存関係の更新の提案（docs/design/deployment.md 7.1）。毎週、更新があれば PR を作る。
+# compose.yaml の caddy:2・cloudflare/cloudflared:latest などの浮動タグは対象にならないので、
+# 週ごとの取り直し（scripts/ops/install-update.sh）と脆弱性の検査（.github/workflows/security.yml）で補う。
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    groups:
+      python:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directories: [/docker, /docker/caddy]
+    schedule: { interval: weekly, day: monday }
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule: { interval: weekly, day: monday }

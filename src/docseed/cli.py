@@ -250,6 +250,23 @@ def cmd_status(args: argparse.Namespace) -> None:
     sys.exit(1 if any(a["level"] == "error" for a in st["alerts"]) else 0)
 
 
+def cmd_notify(args: argparse.Namespace) -> None:
+    """通知の送り先を確かめる（--test）か、いまの状態で 1 回だけ確かめて送る。"""
+    from . import security_notify as notify
+    settings = Settings.from_env()
+    if not settings.notify_url:
+        print("DOCSEED_NOTIFY_URL が設定されていません（.env に書いて docker compose up -d）", file=sys.stderr)
+        sys.exit(2)
+    if args.test:
+        msg = notify.Message(args.title or "通知のテスト", args.message or "docseed から通知が届くことを確かめています",
+                             args.level, "test")
+        ok = notify.send(settings, msg)
+        print("送りました" if ok else "送れませんでした（docker compose logs api を確認してください）")
+        sys.exit(0 if ok else 1)
+    n = notify.run_once(settings)
+    print(f"{n} 件送りました")
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="docseed")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -328,6 +345,13 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--quick", action="store_true", help="SHA-256 を計算せず、大きさだけを比べる")
     s.add_argument("--json", action="store_true", help="結果を JSON で出力する")
     s.set_defaults(func=cmd_verify_files)
+
+    s = sub.add_parser("notify", help="通知を送る（--test で送り先を確かめる。docs/design/security.md 11 章）")
+    s.add_argument("--test", action="store_true", help="テストの通知を 1 件送る")
+    s.add_argument("--message", help="--test で送る本文（ホストの定期処理の結果を知らせるのにも使う）")
+    s.add_argument("--title", help="--test で送る題名")
+    s.add_argument("--level", default="info", choices=["info", "warning", "error"], help="--test で送る重要度")
+    s.set_defaults(func=cmd_notify)
 
     s = sub.add_parser("status", help="システムの状態と警告を表示する")
     s.add_argument("--json", action="store_true", help="結果を JSON で出力する")

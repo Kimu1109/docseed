@@ -1,0 +1,67 @@
+# 依存関係とイメージの脆弱性の検査（docs/design/deployment.md 7.1）。
+# 毎週と、依存関係・Dockerfile を変えた PR で動く。失敗すると GitHub からリポジトリの持ち主に通知が届く。
+#   - docseed 自身（Python の依存と docseed のイメージ）: 修正版がある HIGH / CRITICAL があれば失敗にする
+#     （作り直す・依存を上げれば直せるため）
+#   - サードパーティのイメージ（caddy・cloudflared・llama.cpp）: 結果をジョブの概要に書くだけ（上流の更新を待つしかない）
+name: Security
+
+on:
+  schedule:
+    - cron: "17 19 * * 0"     # 毎週月曜 4:17（日本時間）
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - pyproject.toml
+      - docker/**
+      - compose.yaml
+      - .github/workflows/security.yml
+
+env:
+  # 版を上げるときは https://github.com/aquasecurity/trivy/releases を見る（脆弱性の DB は毎回最新を取る）
+  TRIVY_IMAGE: aquasec/trivy:0.58.1
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Pi でイメージを作るときと同じく、pyproject.toml の下限から最新を入れて検査する
+      - run: pip install . pip-audit
+      - run: pip-audit --progress-spinner off --desc
+
+  docseed-image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: イメージを作る（ベースのイメージも取り直す）
+        run: docker build --pull -f docker/Dockerfile --target base -t docseed:scan .
+      - name: 検査（修正版がある HIGH / CRITICAL で失敗）
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image \
+            --quiet --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 docseed:scan
+
+  third-party-images:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - caddy:2
+          - cloudflare/cloudflared:latest
+          - ghcr.io/ggml-org/llama.cpp:server
+    steps:
+      - name: 検査（概要に書くだけ）
+        run: |
+          docker pull -q "${{ matrix.image }}"
+          {
+            echo "## ${{ matrix.image }}"
+            echo '```'
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image \
+              --quiet --severity HIGH,CRITICAL --ignore-unfixed --format table "${{ matrix.image }}" || true
+            echo '```'
+            echo "修正版が出ていれば、Pi で docker compose pull && docker compose up -d で取り込めます"
+            echo "（scripts/ops/install-update.sh のタイマーを入れていれば毎週自動）。"
+          } >> "$GITHUB_STEP_SUMMARY"

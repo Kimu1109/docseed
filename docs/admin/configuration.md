@@ -111,6 +111,11 @@ docseed の設定は、リポジトリの `.env`（`cp .env.example .env` で作
 
 | 設定 | 既定 | 使う所 | 内容 |
 |---|---|---|---|
+| `DOCSEED_NOTIFY_URL` | 空 | api | **秘密**。異常の通知の送り先（ntfy・Discord・Slack・任意の JSON の Webhook）。[異常の通知と更新](security-notify.md) |
+| `DOCSEED_NOTIFY_FORMAT` | `auto` | api | 異常の通知の形式（`auto` / `ntfy` / `discord` / `slack` / `json`。`auto` は URL から決める） |
+| `DOCSEED_NOTIFY_LOGIN_FAILURES` | `20` | api | 15 分のログインの失敗がこの回数以上になったら知らせる |
+| `DOCSEED_UPDATE_REBUILD` | `false` | ホストの `/etc/docseed/update.env` | `true` にすると、週ごとの更新で docseed 自身のイメージも作り直す |
+| `DOCSEED_UPDATE_CONF` | `/etc/docseed/update.env` | `scripts/ops/update-images.sh` | 更新の設定ファイルの場所 |
 | `DOCSEED_NOTIFY_URLS` | 空 | api | **秘密**。Webhook の URL（カンマか空白区切り。ntfy・Discord・Slack は形式を見分ける。`ntfy+https://…` のように形式を前に付けることもできる） |
 | `DOCSEED_NOTIFY_EMAIL` | 空 | api | メールの宛先（カンマ区切り。`DOCSEED_SMTP_HOST` も要る） |
 | `DOCSEED_NOTIFY_EVENTS` | `alert,share_upload,inbox` | api | 知らせること（`alert` 監視の警告 / `share_upload` 共有リンクでの受け取り / `inbox` 受け取り箱） |

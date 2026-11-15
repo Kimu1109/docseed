@@ -190,6 +190,35 @@ def test_fail2ban_regex_matches_security_log(tmp_path):
         assert ip in out
 
 
+def test_update_timer_and_scripts():
+    """イメージの取り直し（docs/design/deployment.md 7.1）。"""
+    systemd = ROOT / "deploy" / "systemd"
+    svc = (systemd / "docseed-update.service").read_text()
+    assert "ExecStart=@DOCSEED_DIR@/scripts/ops/update-images.sh" in svc
+    assert "OnCalendar=Mon" in (systemd / "docseed-update.timer").read_text()
+    script = (ROOT / "scripts" / "ops" / "update-images.sh").read_text()
+    # docseed:latest は手元で作るので取りに行かない（docker compose pull は使わない）
+    assert "grep -v '^docseed'" in script and "docker compose pull" not in script
+    assert "docseed notify --test" in script
+    for p in ("update-images.sh", "install-update.sh", "install-fail2ban.sh"):
+        assert (ROOT / "scripts" / "ops" / p).stat().st_mode & 0o111, p
+
+
+def test_dependabot_and_security_workflow():
+    dependabot = (ROOT / ".github" / "dependabot.yml").read_text()
+    for eco in ("pip", "github-actions", "docker", "docker-compose"):
+        assert f"package-ecosystem: {eco}\n" in dependabot, eco
+    wf = (ROOT / ".github" / "workflows" / "security.yml").read_text()
+    assert "pip-audit" in wf and "--exit-code 1 docseed:scan" in wf and "schedule:" in wf
+    assert "DOCSEED_NOTIFY_URL" in ENV_EXAMPLE
+
+
+def test_notify_private_ranges_match_caddy():
+    """通知の「内側」の判定は Caddy の private_ranges と同じ範囲（CI の caddy でも実物と比べる）。"""
+    from docseed.security_notify import CADDY_PRIVATE_RANGES
+    assert CADDY_PRIVATE_RANGES == ("192.168.0.0/16", "172.16.0.0/12", "10.0.0.0/8", "127.0.0.1/8", "fd00::/8", "::1")
+
+
 def test_internal_paths_hidden_under_any_prefix():
     """DOCSEED_BASE_PATH=/docseed のときの「/docseed/admin」なども、外からは 404（docs/design/security.md 8 章）。"""
     block = CADDYFILE.split("(internal_paths) {", 1)[1].split("\n}\n", 1)[0]
