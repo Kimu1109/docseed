@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import getpass
 import sqlite3
 import sys
@@ -70,10 +69,11 @@ def cmd_purge_trash(args: argparse.Namespace) -> None:
     from .storage import BlobStore
     settings = Settings.from_env()
     conn = _conn(settings)
-    cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(days=settings.trash_retention_days)).strftime(
-        "%Y-%m-%dT%H:%M:%SZ")
-    n = purge_expired(conn, BlobStore(settings.files_dir, settings.tmp_dir), cutoff)
-    print(f"{n} 件を完全に削除しました（{settings.trash_retention_days} 日より前に削除されたもの）")
+    from .limits import retention_cutoffs
+    n = purge_expired(conn, BlobStore(settings.files_dir, settings.tmp_dir),
+                      retention_cutoffs(conn, settings.trash_retention_days))
+    print(f"{n} 件を完全に削除しました（保持日数を過ぎたもの。既定 {settings.trash_retention_days} 日、"
+          "利用者が設定で選んだ日数があればそちら）")
 
 
 def cmd_worker(args: argparse.Namespace) -> None:
@@ -122,7 +122,31 @@ def cmd_fetch_models(args: argparse.Namespace) -> None:
     if args.llm:
         fetch_llm_only(Settings.from_env(), args.llm, force=args.force)
         return
+    if args.asr:
+        from .models import fetch_asr, write_manifest
+        settings = Settings.from_env()
+        p = fetch_asr(settings, args.asr, force=args.force)
+        m = write_manifest(settings)
+        print(f"完了しました → {p}\n  .env の DOCSEED_ASR_MODEL={p.name} にして、"
+              f"DOCSEED_ASR_ENABLED=true にしてください（manifest: {m}）")
+        return
     fetch_all(Settings.from_env(), force=args.force)
+
+
+def cmd_export_texts(args: argparse.Namespace) -> None:
+    from .llm import export_texts
+    from .users import find_by_username
+    conn = _conn(Settings.from_env())
+    uid = None
+    if args.username:
+        u = find_by_username(conn, args.username)
+        if u is None:
+            sys.exit(f"ユーザー「{args.username}」が見つかりません")
+        uid = u["id"]
+    files = export_texts(conn, args.out, limit=args.limit, user_id=uid)
+    if not files:
+        sys.exit("書き出せる文書がありません（処理済みで、本文が 100 字以上の文書が必要です）")
+    print(f"{len(files)} 件を {args.out} に書き出しました")
 
 
 def cmd_derive(args: argparse.Namespace) -> None:
@@ -228,7 +252,7 @@ def cmd_status(args: argparse.Namespace) -> None:
 
 def cmd_notify(args: argparse.Namespace) -> None:
     """通知の送り先を確かめる（--test）か、いまの状態で 1 回だけ確かめて送る。"""
-    from . import notify
+    from . import security_notify as notify
     settings = Settings.from_env()
     if not settings.notify_url:
         print("DOCSEED_NOTIFY_URL が設定されていません（.env に書いて docker compose up -d）", file=sys.stderr)
@@ -285,8 +309,16 @@ def main(argv: list[str] | None = None) -> None:
 
     s = sub.add_parser("fetch-models", help="OCR と埋め込みのモデルを取得する（初回に 1 度）")
     s.add_argument("--force", action="store_true", help="取得済みでも取り直す")
-    s.add_argument("--llm", metavar="NAME", help="要約に使う LLM（GGUF）だけを取得する（例 sarashina2.2-1b）")
+    s.add_argument("--llm", metavar="NAME", help="要約に使う LLM（GGUF）だけを取得する（例 lfm2.5-1.2b-jp）")
+    s.add_argument("--asr", metavar="NAME", choices=["base", "small"],
+                   help="音声・動画の文字起こしのモデル（whisper.cpp の ggml）だけを取得する（base / small）")
     s.set_defaults(func=cmd_fetch_models)
+
+    s = sub.add_parser("export-texts", help="LLM の比較に使う文書のテキストを書き出す（scripts/bench_llm.sh）")
+    s.add_argument("--out", required=True, help="書き出し先のディレクトリ")
+    s.add_argument("--limit", type=int, default=30, help="件数（新しい文書から）")
+    s.add_argument("--username", help="このユーザーがアップロードした文書だけにする")
+    s.set_defaults(func=cmd_export_texts)
 
     s = sub.add_parser("derive", help="画像・PDF のサムネイルとプレビューを作る（文字の読み取りはやり直さない）")
     s.add_argument("scope", choices=["missing", "all"], help="missing: まだ無いもの / all: すべて作り直す")

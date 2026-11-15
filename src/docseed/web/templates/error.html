@@ -4,9 +4,10 @@
 <main class="login">
   <div class="login-box">
     <div class="brand brand-lg"><span class="brand-mark" aria-hidden="true"></span>docseed</div>
+    {{ icon("error", cls="hero-icon") }}
     <h1 class="error-title">{{ detail }}</h1>
     <p class="muted">コード {{ status }}</p>
-    <p><a class="btn" href="/">マイファイルに戻る</a></p>
+    <p><a class="btn" href="{{ base }}/">{{ icon("home") }}マイファイルに戻る</a></p>
   </div>
 </main>
 {% endblock %}

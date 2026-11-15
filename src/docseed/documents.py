@@ -9,26 +9,32 @@ from typing import BinaryIO
 from . import folders as fo
 from .audit import audit
 from .db import Tx, now
-from .errors import InvalidMove, NameConflict, NotFound, ValidationFailed
+from .errors import FileTooLarge, InvalidMove, NameConflict, NotFound, ValidationFailed
 from .storage import BlobStore, StoredFile
 from .users import User
 
 ON_CONFLICT = ("rename", "replace", "error")
+DEFAULT_KEEP_VERSIONS = 10   # 1 文書あたりの過去の版の数（DOCSEED_VERSIONS_KEEP。0 なら版を残さない）
 
 
 # ---------------------------------------------------------------------------
 # 参照
 # ---------------------------------------------------------------------------
 
+_DOC_COLUMNS = (
+    "d.*, b.size_bytes, b.mime_type, b.sha256, b.storage_path, b.status, b.page_count,"
+    " b.progress_done, b.progress_total, b.error, b.warnings, b.thumb_path, b.view_path, b.image_meta, f.owner_id,"
+    " u.display_name AS created_by_name"
+)
+_DOC_FROM = (
+    " FROM documents d JOIN blobs b ON b.id = d.blob_id JOIN folders f ON f.id = d.folder_id"
+    " JOIN users u ON u.id = d.created_by"
+)
+
+
 def get_document(conn: sqlite3.Connection, user: User, doc_id: int, role: str = "viewer") -> sqlite3.Row:
-    r = conn.execute(
-        "SELECT d.*, b.size_bytes, b.mime_type, b.sha256, b.storage_path, b.status, b.page_count,"
-        " b.progress_done, b.progress_total, b.error, b.warnings, b.thumb_path, b.view_path, b.image_meta, f.owner_id,"
-        " u.display_name AS created_by_name"
-        " FROM documents d JOIN blobs b ON b.id = d.blob_id JOIN folders f ON f.id = d.folder_id"
-        " JOIN users u ON u.id = d.created_by WHERE d.id = ? AND d.deleted_at IS NULL",
-        (doc_id,),
-    ).fetchone()
+    r = conn.execute("SELECT " + _DOC_COLUMNS + _DOC_FROM + " WHERE d.id = ? AND d.deleted_at IS NULL",
+                     (doc_id,)).fetchone()
     if r is None:
         raise NotFound("ファイルが見つかりません")
     try:
@@ -105,26 +111,45 @@ def _register_blob(conn: sqlite3.Connection, store: BlobStore, f: StoredFile) ->
 
 
 def upload(conn: sqlite3.Connection, store: BlobStore, user: User, folder_id: int, filename: str,
-           src: BinaryIO, *, max_bytes: int, on_conflict: str = "rename", relative_path: str | None = None,
+           src: BinaryIO | StoredFile, *, max_bytes: int, on_conflict: str = "rename", relative_path: str | None = None,
            ip: str | None = None, via_share_id: int | None = None, mime_type: str | None = None,
-           kind: str = "file") -> UploadResult:
-    """ファイルを保存する。mime_type は判定を上書きする（Web クリップの HTML）。kind は documents.kind。"""
+           kind: str = "file", keep_versions: int = DEFAULT_KEEP_VERSIONS) -> UploadResult:
+    """ファイルを保存する。mime_type は判定を上書きする（Web クリップの HTML）。kind は documents.kind。
+
+    src に StoredFile（分割アップロードで受け取り済みのもの）を渡すと受信を省く。失敗したときはそれも消す。"""
     if on_conflict not in ON_CONFLICT:
         raise ValidationFailed("on_conflict は rename / replace / error のいずれかです")
-    fo.require_folder_role(conn, user, folder_id, "editor")
+    pre = src if isinstance(src, StoredFile) else None
+    try:
+        fo.require_folder_role(conn, user, folder_id, "editor")
+    except BaseException:
+        if pre is not None:
+            store.discard(pre)
+        raise
     # relative_path（フォルダごとのアップロード）: "2026/10/見積書.pdf" → 2026/10 を作る
     parts: list[str] = []
     if relative_path:
         parts = [p for p in relative_path.replace("\\", "/").split("/") if p not in ("", ".", "..")]
         if parts:
             filename = parts.pop()
-    name = fo.clean_name(filename, what="ファイル名")
-    store.check_free_space()
-    stored = store.receive(src, name, max_bytes)  # 時間のかかる受信はトランザクションの外で行う
+    from . import limits
+    try:
+        name = fo.clean_name(filename, what="ファイル名")
+        owner_id = limits.owner_of_folder(conn, folder_id)
+        limits.check(conn, owner_id, 0, owner_is_actor=owner_id == user.id)   # もう上限なら受信の前に断る
+        store.check_free_space()
+        if pre is not None and pre.size > max_bytes:
+            raise FileTooLarge(f"1 ファイルの上限（{max_bytes // 1024 // 1024} MB）を超えています")
+    except BaseException:
+        if pre is not None:
+            store.discard(pre)
+        raise
+    stored = pre or store.receive(src, name, max_bytes)  # 時間のかかる受信はトランザクションの外で行う
     if mime_type:
         stored.mime_type = mime_type
     try:
         with Tx(conn):
+            limits.check(conn, owner_id, stored.size, owner_is_actor=owner_id == user.id)
             target = fo.ensure_path(conn, user, folder_id, parts) if parts else folder_id
             blob_id, dedup = _register_blob(conn, store, stored)
             t = now()
@@ -137,9 +162,8 @@ def upload(conn: sqlite3.Connection, store: BlobStore, user: User, folder_id: in
                 if on_conflict == "error":
                     raise NameConflict(f"「{name}」は既にこのフォルダにあります")
                 if on_conflict == "replace":
-                    conn.execute("UPDATE documents SET blob_id = ?, updated_at = ? WHERE id = ?",
-                                 (blob_id, t, existing[0]))
                     doc_id, replaced = int(existing[0]), True
+                    replace_blob(conn, doc_id, blob_id, user.id, keep_versions)
                 else:
                     name = free_doc_name(conn, target, name)
             if not replaced:
@@ -157,6 +181,40 @@ def upload(conn: sqlite3.Connection, store: BlobStore, user: User, folder_id: in
     if replaced:
         gc_blobs(conn, store)
     return UploadResult(doc_id, name, dedup, replaced)
+
+
+def replace_blob(conn: sqlite3.Connection, doc_id: int, blob_id: int, user_id: int | None,
+                 keep_versions: int = DEFAULT_KEEP_VERSIONS) -> bool:
+    """文書の中身を差し替え、それまでの中身を過去の版として残す。呼び出し側のトランザクションの中で使う。
+
+    中身が同じ（同じ blob）なら版は増やさない。差し替えたら True。古い blob の削除は呼び出し側が gc_blobs で行う。
+    """
+    d = conn.execute("SELECT blob_id, filename, created_by, created_at, content_updated_by, content_updated_at"
+                     " FROM documents WHERE id = ?", (doc_id,)).fetchone()
+    t = now()
+    if d["blob_id"] == blob_id:
+        conn.execute("UPDATE documents SET updated_at = ? WHERE id = ?", (t, doc_id))
+        return False
+    if keep_versions > 0:
+        conn.execute(
+            "INSERT INTO document_versions(document_id, blob_id, filename, created_by, created_at, archived_by,"
+            " archived_at) VALUES (?,?,?,?,?,?,?)",
+            (doc_id, d["blob_id"], d["filename"], d["content_updated_by"] or d["created_by"],
+             d["content_updated_at"] or d["created_at"], user_id, t))
+    conn.execute("UPDATE documents SET blob_id = ?, updated_at = ?, content_updated_at = ?, content_updated_by = ?"
+                 " WHERE id = ?", (blob_id, t, t, user_id, doc_id))
+    prune_versions(conn, doc_id, keep_versions)
+    return True
+
+
+def prune_versions(conn: sqlite3.Connection, doc_id: int | None, keep: int) -> int:
+    """過去の版を新しい順に keep 件だけ残す。doc_id が None ならすべての文書。消した件数を返す。"""
+    where, args = ("WHERE document_id = ?", [doc_id]) if doc_id is not None else ("", [])
+    cur = conn.execute(
+        "DELETE FROM document_versions WHERE id IN (SELECT id FROM (SELECT id, row_number() OVER"
+        f" (PARTITION BY document_id ORDER BY id DESC) AS n FROM document_versions {where}) WHERE n > ?)",
+        (*args, max(keep, 0)))
+    return cur.rowcount
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +264,9 @@ def copy_document(conn: sqlite3.Connection, user: User, doc_id: int, folder_id: 
     with Tx(conn):
         d = get_document(conn, user, doc_id, "viewer")
         fo.require_folder_role(conn, user, folder_id, "editor")
+        from . import limits
+        owner_id = limits.owner_of_folder(conn, folder_id)
+        limits.check(conn, owner_id, d["size_bytes"], owner_is_actor=owner_id == user.id)
         name = free_doc_name(conn, folder_id, fo.clean_name(filename or d["filename"], what="ファイル名"))
         t = now()
         cur = conn.execute(
@@ -242,7 +303,7 @@ def list_trash(conn: sqlite3.Connection, user: User) -> list[dict]:
             (r["deleted_at"], *ids),
         ).fetchone()[0]
         items.append({"type": "folder", "id": r["id"], "name": r["name"], "deleted_at": r["deleted_at"],
-                      "location": _location(conn, r["parent_id"]), "files": n, "size": None})
+                      "location": location_of(conn, r["parent_id"]), "files": n, "size": None})
     for r in conn.execute(
         "SELECT d.id, d.filename, d.deleted_at, d.folder_id, b.size_bytes, b.mime_type, u.display_name"
         " FROM documents d JOIN folders f ON f.id = d.folder_id JOIN blobs b ON b.id = d.blob_id"
@@ -252,12 +313,51 @@ def list_trash(conn: sqlite3.Connection, user: User) -> list[dict]:
         (user.id,),
     ):
         items.append({"type": "document", "id": r["id"], "name": r["filename"], "deleted_at": r["deleted_at"],
-                      "location": _location(conn, r["folder_id"]), "size": r["size_bytes"],
+                      "location": location_of(conn, r["folder_id"]), "size": r["size_bytes"],
                       "mime_type": r["mime_type"], "deleted_by": r["display_name"]})
     return sorted(items, key=lambda x: x["deleted_at"], reverse=True)
 
 
-def _location(conn: sqlite3.Connection, folder_id: int | None) -> str:
+def get_trashed_document(conn: sqlite3.Connection, user: User, doc_id: int) -> sqlite3.Row:
+    """ゴミ箱の中の文書（プレビュー用）。ゴミ箱を見られるのはフォルダの持ち主だけなので、持ち主に限る。
+
+    文書単位で削除したものも、削除したフォルダの中にあるものも返す。"""
+    r = conn.execute(
+        "SELECT " + _DOC_COLUMNS + ", f.deleted_at AS folder_deleted_at, du.display_name AS deleted_by_name"
+        + _DOC_FROM + " LEFT JOIN users du ON du.id = d.deleted_by WHERE d.id = ? AND d.deleted_at IS NOT NULL",
+        (doc_id,),
+    ).fetchone()
+    if r is None or r["owner_id"] != user.id:
+        raise NotFound("ゴミ箱に見つかりません")
+    return r
+
+
+def trashed_folder_contents(conn: sqlite3.Connection, user: User, folder_id: int) -> dict:
+    """ゴミ箱の中のフォルダと、一緒に削除された配下の文書（フォルダの中の相対パス付き）。"""
+    f = _own_trashed_folder(conn, user, folder_id)
+    ids = fo.subtree_ids(conn, folder_id, deleted_at=f["deleted_at"])
+    q = ",".join("?" * len(ids))
+    names = {r["id"]: (r["parent_id"], r["name"]) for r in conn.execute(
+        f"SELECT id, parent_id, name FROM folders WHERE id IN ({q})", ids)}
+
+    def rel(fid: int) -> str:
+        parts: list[str] = []
+        while fid != folder_id and fid in names:
+            parent, name = names[fid]
+            parts.append(name)
+            fid = parent
+        return "/".join(reversed(parts))
+
+    docs = [dict(r) | {"path": rel(r["folder_id"])} for r in conn.execute(
+        "SELECT d.id, d.filename, d.folder_id, d.kind, b.size_bytes, b.mime_type, b.thumb_path"
+        " FROM documents d JOIN blobs b ON b.id = d.blob_id"
+        f" WHERE d.deleted_at = ? AND d.folder_id IN ({q})", (f["deleted_at"], *ids))]
+    docs.sort(key=lambda x: (x["path"], x["filename"].lower()))
+    return {"folder": f, "docs": docs, "folders": len(ids) - 1, "location": location_of(conn, f["parent_id"])}
+
+
+def location_of(conn: sqlite3.Connection, folder_id: int | None) -> str:
+    """「/経理/2026」のような場所の表示（削除済みのフォルダも名前をたどる）。"""
     if folder_id is None:
         return "/"
     return "/" + "/".join(c.name for c in fo.path(conn, folder_id) if c.name)
@@ -358,17 +458,30 @@ def empty_trash(conn: sqlite3.Connection, store: BlobStore, user: User) -> int:
     return len(items)
 
 
-def purge_expired(conn: sqlite3.Connection, store: BlobStore, cutoff_iso: str) -> int:
-    """保持期間（cutoff より前に削除されたもの）を過ぎた項目を完全に削除する。"""
+def purge_expired(conn: sqlite3.Connection, store: BlobStore, cutoff_iso: str | dict[int, str]) -> int:
+    """保持期間を過ぎた項目を完全に削除する。
+
+    cutoff_iso: この日時より前に削除されたもの。{持ち主のユーザー ID: 日時} なら持ち主ごと（ゴミ箱の保持日数は
+    利用者ごとに選べる。limits.retention_cutoffs）。dict に無い持ち主のものは消さない。
+    """
+    cutoffs = cutoff_iso if isinstance(cutoff_iso, dict) else None
     n = 0
     with Tx(conn):
-        for r in conn.execute("SELECT id FROM folders WHERE deleted_at IS NOT NULL AND deleted_at < ?"
-                              " AND parent_id IS NOT NULL", (cutoff_iso,)).fetchall():
-            if conn.execute("SELECT 1 FROM folders WHERE id = ?", (r[0],)).fetchone():
-                _purge_folder(conn, r[0])
+        for r in conn.execute("SELECT id, owner_id, deleted_at FROM folders WHERE deleted_at IS NOT NULL"
+                              " AND parent_id IS NOT NULL ORDER BY id").fetchall():
+            cut = cutoffs.get(r["owner_id"]) if cutoffs is not None else cutoff_iso
+            if cut is None or r["deleted_at"] >= cut:
+                continue
+            if conn.execute("SELECT 1 FROM folders WHERE id = ?", (r["id"],)).fetchone():
+                _purge_folder(conn, r["id"])
                 n += 1
-        cur = conn.execute("DELETE FROM documents WHERE deleted_at IS NOT NULL AND deleted_at < ?", (cutoff_iso,))
-        n += cur.rowcount
+        rows = conn.execute("SELECT d.id, d.deleted_at, f.owner_id FROM documents d"
+                            " JOIN folders f ON f.id = d.folder_id WHERE d.deleted_at IS NOT NULL").fetchall()
+        for r in rows:
+            cut = cutoffs.get(r["owner_id"]) if cutoffs is not None else cutoff_iso
+            if cut is not None and r["deleted_at"] < cut:
+                conn.execute("DELETE FROM documents WHERE id = ?", (r["id"],))
+                n += 1
     gc_blobs(conn, store)
     return n
 
@@ -381,6 +494,8 @@ def gc_blobs(conn: sqlite3.Connection, store: BlobStore) -> int:
             " WHERE NOT EXISTS (SELECT 1 FROM documents d WHERE d.blob_id = b.id)"
             # Web クリップの og:image（どの文書からも直接は参照されない）は、クリップがある間は残す
             " AND NOT EXISTS (SELECT 1 FROM web_clips w WHERE w.image_blob_id = b.id)"
+            # 過去の版の中身は、版がある間は残す
+            " AND NOT EXISTS (SELECT 1 FROM document_versions v WHERE v.blob_id = b.id)"
         ).fetchall()
         for r in rows:
             conn.execute("DELETE FROM blobs WHERE id = ?", (r["id"],))

@@ -5,7 +5,7 @@
 | 版 | 1.3 |
 | 日付 | 2026-11-08 |
 | 状態 | ドラフト |
-| 関連 | [ローカル OCR / Embedding モデル調査](research/ocr-embedding-models.md)、[Phase 0 計測結果](research/phase0-results.md)、[新機能の実現手段の調査](research/new-features.md) |
+| 関連 | 使い方と運用の手順は [利用者ガイド](user/README.md)・[管理者ガイド](admin/README.md)。調査: [ローカル OCR / Embedding モデル調査](research/ocr-embedding-models.md)、[Phase 0 計測結果](research/phase0-results.md)、[新機能の実現手段の調査](research/new-features.md) |
 
 ### 詳細設計
 
@@ -35,10 +35,10 @@ Raspberry Pi 5（SSD 起動）1台で動く、自宅/小規模向けのドキュ
 
 ### 1.2 スコープ外（初版）
 
-- LLM による回答生成（RAG の生成部分）。検索 API までを提供し、生成は将来の拡張とする（文書ごとの要約は Phase 9 で任意の機能として入れる）
+- ~~LLM による回答生成（RAG の生成部分）~~ → 実装済み（任意。小型の LLM を有効にしたとき。[検索設計](design/search.md) 10 章）
 - 複数ノード構成、高可用性
 - 手書き文字の高精度認識、表・段組みの構造認識
-- ファイルの版管理（履歴）、デスクトップ同期クライアント
+- デスクトップ同期クライアント（版の履歴は実装済み）
 - 外部クラウドへの依存（すべてローカルで処理する）。例外として、利用者が有効にしたときだけ、URL の取り込み（fetcher）と OIDC でのログイン（api）が外部と通信する
 
 ### 1.3 決定済み事項
@@ -255,7 +255,7 @@ docseed/
 | 6. 基盤の改善 | HTTPS 証明書の方式の切り替え（internal / file / tailscale / acme_dns）、アイコン（Material Symbols）、HEIC / AVIF、サムネイル・プレビュー | **実装済み**。iPhone の HEIC 写真が OCR・プレビューされる（[拡張機能](design/extensions.md) 2〜4 章）。Caddyfile は 4 方式とも CI で `caddy adapt` により展開を確かめる。Tailscale と DNS-01 での実際の証明書の取得は導入時に利用者の手元で確かめる |
 | 7. ログイン | パスキー、確認コード（TOTP）と復旧コード、OIDC（Google など）、再認証 | **実装済み**。パスキーだけでログインでき、2 段階認証を管理者が必須にできる（同 5 章）。パスキーは Chromium の仮想認証器で登録・ログインまで確認。実機の端末（iPhone・Android など）と Google での確認は導入時に利用者の手元で行う |
 | 8. Web クリップ | URL の取得（SSRF 対策つき）、OGP・Twitter カード・本文の取り出しと検索 | **実装済み**。URL を貼ると、タイトル・説明・本文で検索できる（同 6 章）。実際のインターネットのサイトからの取得は導入時に利用者の手元で確かめる |
-| 9. 整理の補助 | 埋め込みによるフォルダ・タグの候補、小型 LLM による要約 | **実装済み**。Inbox の文書におすすめのフォルダが出る（同 7 章）。LLM のモデルは sarashina2.2-1b（Q4_K_M）を仮の既定とし、Pi 5 での計測（`scripts/poc/bench_llm.py`）で決める。しきい値は `docseed eval-suggest` で実データから決める |
+| 9. 整理の補助 | 埋め込みによるフォルダ・タグの候補、小型 LLM による要約 | **実装済み**。Inbox の文書におすすめのフォルダが出る（同 7 章）。LLM のモデルは Pi 5 での比較（`scripts/bench_llm.sh`、12 件・3 モデル）で lfm2.5-1.2b-jp（Q4_K_M）に決めた。しきい値は `docseed eval-suggest` で実データから決める |
 
 ## 12. 未決事項・リスク
 

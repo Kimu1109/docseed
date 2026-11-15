@@ -1,194 +1,289 @@
-"""監視と通知（docs/design/security.md 11 章）。"""
-
-from __future__ import annotations
+"""監視の詳細（/admin/system）と通知（docs/design/deployment.md 6 章・6.1）。"""
 
 import dataclasses
 import datetime as dt
+import io
+import json
+import os
+import time
 
+import httpx
 import pytest
+from fastapi.testclient import TestClient
 
-from docseed import notify
-from docseed.audit import audit
-from docseed.db import Tx
+from docseed import monitor, notify
+from docseed.config import Settings
+from docseed.db import connect
+from docseed.inbox import InboxScanner
+from docseed.storage import BlobStore
+
+
+class Hook:
+    """httpx のモックの送り先。送られた (URL, JSON) を記録する。fail に入れた URL は 500 を返す。"""
+
+    def __init__(self):
+        self.sent: list[tuple[str, dict]] = []
+        self.fail: set[str] = set()
+        self.client = httpx.Client(transport=httpx.MockTransport(self.handle))
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url in self.fail:
+            return httpx.Response(500)
+        self.sent.append((url, json.loads(request.content)))
+        return httpx.Response(200)
 
 
 @pytest.fixture()
-def nsettings(settings):
-    return dataclasses.replace(settings, notify_url="https://ntfy.example/docseed-alerts", host="docs.example.com")
+def hook():
+    return Hook()
 
 
-def _audit(conn, action, **kw):
-    with Tx(conn):
-        audit(conn, action, **kw)
+@pytest.fixture()
+def nset(settings):
+    return dataclasses.replace(settings, notify_urls=("https://hooks.example/a",), host="docs.example")
 
 
-def _check(conn, s):
-    return notify.check(conn, s)
+# ---------------------------------------------------------------------------
+# 設定
+# ---------------------------------------------------------------------------
+
+def test_settings_from_env():
+    s = Settings.from_env({"DOCSEED_NOTIFY_URLS": "ntfy+https://ntfy.example/t, https://discord.com/api/webhooks/1/x",
+                           "DOCSEED_NOTIFY_EVENTS": "alert", "DOCSEED_THERMAL_WARN_C": "72"})
+    assert s.notify_urls == ("ntfy+https://ntfy.example/t", "https://discord.com/api/webhooks/1/x")
+    assert s.notify_events == {"alert"} and s.thermal_warn_c == 72 and s.notify_enabled
+    assert not Settings.from_env({}).notify_enabled
+    assert Settings.from_env({}).notify_events == {"alert", "share_upload", "inbox"}
+    # メールは SMTP サーバーと宛先の両方が要る
+    assert not Settings.from_env({"DOCSEED_NOTIFY_EMAIL": "a@example.com"}).notify_enabled
+    assert Settings.from_env({"DOCSEED_NOTIFY_EMAIL": "a@example.com", "DOCSEED_SMTP_HOST": "smtp"}).notify_enabled
 
 
-def _titles(msgs):
-    return [m.title for m in msgs]
+def test_parse_destination():
+    p = notify.parse_destination
+    assert p("https://discord.com/api/webhooks/1/abc") == ("discord", "https://discord.com/api/webhooks/1/abc")
+    assert p("https://hooks.slack.com/services/x")[0] == "slack"
+    assert p("https://ntfy.sh/topic")[0] == "ntfy"
+    assert p("ntfy+https://ntfy.home.example/docs") == ("ntfy", "https://ntfy.home.example/docs")
+    assert p("slack+https://chat.example/hooks/1") == ("slack", "https://chat.example/hooks/1")
+    assert p("https://example.com/hook")[0] == "json"
+    # 秘密を含む URL の道は画面に出さない
+    assert notify.describe_destination("https://discord.com/api/webhooks/1/secret") == "discord（discord.com）"
 
 
-def test_first_run_does_not_replay_history(conn, users, nsettings):
-    _audit(conn, "user_create", user_id=users["admin"].id, target_type="user", target_id=users["bob"].id, ip="1.2.3.4")
-    assert [m for m in _check(conn, nsettings) if m.event == "user_create"] == []
-    _audit(conn, "user_update", user_id=users["admin"].id, target_type="user", target_id=users["bob"].id, ip="1.2.3.4")
-    msgs = [m for m in _check(conn, nsettings) if m.event == "user_update"]
-    assert len(msgs) == 1 and "admin" in msgs[0].body and "bob" in msgs[0].body
-    assert [m for m in _check(conn, nsettings) if m.event == "user_update"] == []   # 同じ記録は 1 回だけ
+# ---------------------------------------------------------------------------
+# 送る
+# ---------------------------------------------------------------------------
+
+def test_disabled_enqueues_nothing(settings, conn):
+    assert notify.enqueue(conn, settings, "alert", "t", "b") is None
+    assert conn.execute("SELECT count(*) FROM notifications").fetchone()[0] == 0
 
 
-def test_new_ip_login(conn, users, nsettings):
-    _check(conn, nsettings)
-    alice = users["alice"].id
-    _audit(conn, "login", user_id=alice, ip="203.0.113.10", method="password")
-    m = [m for m in _check(conn, nsettings) if m.event == "new_ip_login"]
-    assert len(m) == 1 and "alice" in m[0].body and "203.0.113.10" in m[0].body
-    # 同じ /24 からは知らせない
-    _audit(conn, "passkey_login", user_id=alice, ip="203.0.113.99")
-    assert not [m for m in _check(conn, nsettings) if m.event == "new_ip_login"]
-    # 別の接続元
-    _audit(conn, "oidc_login", user_id=alice, ip="2001:db8:1:2::5")
-    m = [m for m in _check(conn, nsettings) if m.event == "new_ip_login"]
-    assert len(m) == 1 and "外部アカウント" in m[0].body
-    # 同じ /64 の IPv6 は知らせない
-    _audit(conn, "login", user_id=alice, ip="2001:db8:1:2::77")
-    assert not [m for m in _check(conn, nsettings) if m.event == "new_ip_login"]
-    # LAN・Tailscale・IP の形でないものは知らせない
-    for ip in ("192.168.1.5", "100.101.102.103", "fd7a:115c:a1e0::9", "testclient"):
-        _audit(conn, "login", user_id=alice, ip=ip)
-    assert not [m for m in _check(conn, nsettings) if m.event == "new_ip_login"]
+def test_event_filter(nset, conn):
+    s = dataclasses.replace(nset, notify_events=frozenset({"alert"}))
+    assert notify.enqueue(conn, s, "share_upload", "t", "b") is None
+    assert notify.enqueue(conn, s, "alert", "t", "b") is not None
 
 
-def test_trusted_nets_follow_caddy_setting(conn, users, nsettings):
-    s = dataclasses.replace(nsettings, trusted_nets="100.64.0.0/10")   # LAN も外側扱い
-    _check(conn, s)
-    _audit(conn, "login", user_id=users["alice"].id, ip="192.168.1.5")
-    assert [m for m in _check(conn, s) if m.event == "new_ip_login"]
+def test_formats(settings, hook):
+    s = dataclasses.replace(settings, notify_urls=(
+        "ntfy+https://ntfy.example/docs", "https://discord.com/api/webhooks/1/x",
+        "https://hooks.slack.com/services/x", "https://example.com/hook"))
+    assert notify.deliver(s, "件名", "本文", "error", http=hook.client) == []
+    by = dict(hook.sent)
+    assert by["https://ntfy.example/"] == {"topic": "docs", "title": "件名", "message": "本文", "priority": 5,
+                                           "tags": ["rotating_light"]}
+    assert by["https://discord.com/api/webhooks/1/x"] == {"content": "**件名**\n本文"}
+    assert by["https://hooks.slack.com/services/x"] == {"text": "*件名*\n本文"}
+    assert by["https://example.com/hook"]["message"] == "本文" and by["https://example.com/hook"]["level"] == "error"
 
 
-def test_login_failure_surge(conn, users, nsettings):
-    s = dataclasses.replace(nsettings, notify_login_failures=5)
-    _check(conn, s)
-    for i in range(4):
-        _audit(conn, "login_failed", ip=f"198.51.100.{i}")
-    assert not [m for m in _check(conn, s) if m.event == "login_failures"]
-    _audit(conn, "second_factor_failed", user_id=users["alice"].id, ip="198.51.100.0")
-    m = [m for m in _check(conn, s) if m.event == "login_failures"]
-    assert len(m) == 1 and "5 回" in m[0].body and "198.51.100.0（2 回）" in m[0].body
-    _audit(conn, "login_failed", ip="198.51.100.9")
-    assert not [m for m in _check(conn, s) if m.event == "login_failures"]   # 1 時間に 1 回まで
+def test_send_pending_groups_and_marks_sent(nset, conn, hook):
+    notify.enqueue(conn, nset, "share_upload", "受け取りました", "a.pdf\nhttps://x/f/1", group_key="share:1")
+    notify.enqueue(conn, nset, "share_upload", "受け取りました", "b.pdf\nhttps://x/f/1", group_key="share:1")
+    notify.enqueue(conn, nset, "alert", "警告", "disk", level="warning")
+    assert notify.send_pending(conn, nset, http=hook.client) == 2
+    msgs = [m["message"] for _, m in hook.sent]
+    assert "a.pdf\nb.pdf\nhttps://x/f/1" in msgs and "disk" in msgs
+    assert {r[0] for r in conn.execute("SELECT status FROM notifications")} == {"sent"}
+    assert notify.send_pending(conn, nset, http=hook.client) == 0       # 送り直さない
 
 
-def test_share_password_failures(conn, users, nsettings):
-    _check(conn, nsettings)
-    for _ in range(notify.SHARE_PASSWORD_FAILURES):
-        _audit(conn, "share_access", ip="198.51.100.1", share_id=7, what="password_failed")
-    m = [m for m in _check(conn, nsettings) if m.event == "share_password"]
-    assert len(m) == 1 and "#7" in m[0].body
-    _audit(conn, "share_access", ip="198.51.100.1", share_id=7, what="password_failed")
-    assert not [m for m in _check(conn, nsettings) if m.event == "share_password"]
+def test_partial_failure_is_recorded_but_not_retried(settings, conn, hook):
+    s = dataclasses.replace(settings, notify_urls=("https://ok.example/h", "https://ng.example/h"))
+    hook.fail.add("https://ng.example/h")
+    notify.enqueue(conn, s, "alert", "t", "b")
+    assert notify.send_pending(conn, s, http=hook.client) == 1
+    r = conn.execute("SELECT status, error FROM notifications").fetchone()
+    assert r["status"] == "sent" and "ng.example" in r["error"]
 
 
-def test_new_system_alert(conn, users, nsettings, monkeypatch):
-    from docseed import monitor
-    alerts = []
+def test_total_failure_retries_then_gives_up(nset, conn, hook):
+    hook.fail.add("https://hooks.example/a")
+    notify.enqueue(conn, nset, "alert", "t", "b")
+    for i in range(notify.MAX_ATTEMPTS):
+        notify.send_pending(conn, nset, http=hook.client)
+        st = conn.execute("SELECT status, attempts FROM notifications").fetchone()
+        assert st["attempts"] == i + 1
+    assert st["status"] == "failed"
+    hook.fail.clear()
+    assert notify.send_pending(conn, nset, http=hook.client) == 0
+
+
+def test_email(settings, conn):
+    s = dataclasses.replace(settings, smtp_host="smtp.example", notify_email=("me@example.com",))
+    got = []
+    notify.enqueue(conn, s, "alert", "件名", "本文")
+    notify.send_pending(conn, s, email=lambda st, t, b: got.append((t, b)))
+    assert got == [("件名", "本文")]
+
+
+def test_cleanup(nset, conn, hook):
+    notify.enqueue(conn, nset, "alert", "t", "b")
+    notify.send_pending(conn, nset, http=hook.client)
+    assert notify.cleanup(conn) == 0
+    assert notify.cleanup(conn, now_=dt.datetime.now(dt.UTC) + dt.timedelta(days=31)) == 1
+
+
+# ---------------------------------------------------------------------------
+# 監視の警告
+# ---------------------------------------------------------------------------
+
+def _alerts(monkeypatch, items):
     real = monitor.status
 
-    def fake(conn, settings, now=None):
-        st = real(conn, settings, now=now)
-        st["alerts"] = list(alerts)
+    def fake(conn, settings, **kw):
+        st = real(conn, settings, **kw)
+        st["alerts"] = [{"level": lv, "code": c, "message": m} for lv, c, m in items()]
         return st
     monkeypatch.setattr(monitor, "status", fake)
-    _check(conn, nsettings)
-    alerts.append({"level": "error", "code": "disk_full", "message": "SSD の空きが 5% を下回っています"})
-    alerts.append({"level": "info", "code": "restic_none", "message": "info は送らない"})
-    m = [m for m in _check(conn, nsettings) if m.event.startswith("alert:")]
-    assert [x.event for x in m] == ["alert:disk_full"] and m[0].level == "error"
-    assert not [m for m in _check(conn, nsettings) if m.event.startswith("alert:")]   # 続いている間は 1 回
-    alerts.clear()
-    _check(conn, nsettings)
-    alerts.append({"level": "error", "code": "disk_full", "message": "再び"})
-    assert [m.event for m in _check(conn, nsettings) if m.event.startswith("alert:")] == ["alert:disk_full"]
 
 
-@pytest.mark.parametrize("url,fmt,want_url,key", [
-    ("https://ntfy.sh/my-secret-topic", "auto", "https://ntfy.sh/", "topic"),
-    ("https://discord.com/api/webhooks/1/abc", "auto", "https://discord.com/api/webhooks/1/abc", "content"),
-    ("https://hooks.slack.com/services/T/B/x", "auto", "https://hooks.slack.com/services/T/B/x", "text"),
-    ("https://example.com/hook", "auto", "https://example.com/hook", "event"),
-    ("https://push.example.com/alerts", "ntfy", "https://push.example.com/", "topic"),
-])
-def test_payload_formats(settings, url, fmt, want_url, key):
-    s = dataclasses.replace(settings, notify_url=url, notify_format=fmt, host="docs.example.com")
-    got_url, body = notify._payload(s, notify.Message("題名", "本文", "error", "x"))
-    assert got_url == want_url and key in body
-    if key == "topic":
-        assert body["topic"] == url.rsplit("/", 1)[1] and body["priority"] == 5
-        assert body["title"] == "[docs.example.com] 題名"
+def _kinds(conn):
+    return [(r["title"], r["body"].splitlines()[0]) for r in
+            conn.execute("SELECT title, body FROM notifications ORDER BY id")]
 
 
-def test_deliver_summarizes_many(settings, monkeypatch):
-    sent = []
-    monkeypatch.setattr(notify, "send", lambda s, m: sent.append(m) or True)
-    msgs = [notify.Message(f"t{i}", "b", "warning", "e") for i in range(25)]
-    assert notify.deliver(settings, msgs) == notify.MAX_PER_ROUND
-    assert sent[-1].title == f"ほか {25 - notify.MAX_PER_ROUND + 1} 件の通知"
+def test_check_alerts_lifecycle(nset, conn, monkeypatch):
+    current = [("warning", "disk_low", "SSD の空きが少ない"), ("info", "restic_none", "記録なし")]
+    _alerts(monkeypatch, lambda: current)
+    t0 = dt.datetime(2026, 11, 1, tzinfo=dt.UTC)
+    assert notify.check_alerts(conn, nset, now_=t0) == 0                       # 1 回目は様子を見る
+    assert notify.check_alerts(conn, nset, now_=t0 + dt.timedelta(minutes=5)) == 1
+    assert _kinds(conn) == [("[注意] docseed の警告", "SSD の空きが少ない")]      # info は知らせない
+    assert "https://docs.example/admin" in conn.execute("SELECT body FROM notifications").fetchone()[0]
+    assert notify.check_alerts(conn, nset, now_=t0 + dt.timedelta(minutes=10)) == 0   # 続いていても知らせ直さない
+    # 重くなったら知らせ直す
+    current[0] = ("error", "disk_low", "SSD がいっぱい")
+    assert notify.check_alerts(conn, nset, now_=t0 + dt.timedelta(minutes=15)) == 1
+    # 1 日たっても続いていれば知らせ直す
+    assert notify.check_alerts(conn, nset, now_=t0 + dt.timedelta(hours=23)) == 0
+    assert notify.check_alerts(conn, nset, now_=t0 + dt.timedelta(hours=25)) == 1
+    # 消えたら「解消」
+    current.clear()
+    assert notify.check_alerts(conn, nset, now_=t0 + dt.timedelta(hours=26)) == 1
+    assert _kinds(conn)[-1] == ("[解消] docseed の警告", "解消しました: SSD がいっぱい")
+    assert notify.check_alerts(conn, nset, now_=t0 + dt.timedelta(hours=27)) == 0
 
 
-def test_send_posts_json(settings, monkeypatch):
-    import httpx
-    calls = []
-
-    def fake_post(url, json, timeout):
-        calls.append((url, json))
-        return httpx.Response(200)
-    monkeypatch.setattr(httpx, "post", fake_post)
-    s = dataclasses.replace(settings, notify_url="https://ntfy.sh/t0pic")
-    assert notify.send(s, notify.Message("a", "b"))
-    assert calls == [("https://ntfy.sh/", {"topic": "t0pic", "title": "[docseed] a", "message": "b", "priority": 3,
-                                           "tags": ["docseed", "info"]})]
-    monkeypatch.setattr(httpx, "post", lambda *a, **k: httpx.Response(500, text="no"))
-    assert not notify.send(s, notify.Message("a", "b"))
+def test_transient_alert_is_not_notified(nset, conn, monkeypatch):
+    current = [("error", "worker_stale", "worker が止まった")]
+    _alerts(monkeypatch, lambda: current)
+    notify.check_alerts(conn, nset)
+    current.clear()                                                            # 再起動で直った
+    assert notify.check_alerts(conn, nset) == 0
+    assert conn.execute("SELECT count(*) FROM notifications").fetchone()[0] == 0
 
 
-def test_cooldown_expires(conn, users, nsettings):
-    s = dataclasses.replace(nsettings, notify_login_failures=1)
-    t0 = dt.datetime.now(dt.UTC)
-    notify.check(conn, s, now=t0)
-    _audit(conn, "login_failed", ip="198.51.100.1")
-    assert [m for m in notify.check(conn, s, now=t0) if m.event == "login_failures"]
-    assert not [m for m in notify.check(conn, s, now=t0 + dt.timedelta(minutes=30)) if m.event == "login_failures"]
+# ---------------------------------------------------------------------------
+# 受け取り
+# ---------------------------------------------------------------------------
+
+def test_share_upload_notifies(app, login, conn, nset):
+    app.state.settings = nset
+    alice = login("alice")
+    f = alice.post("/api/v1/folders", json={"parent_id": alice.root, "name": "受け取り"}).json()
+    url = alice.post("/api/v1/shares", json={"target_type": "folder", "target_id": f["id"],
+                                              "permission": "upload"}).json()["url"]
+    anon = TestClient(app, base_url="http://testserver")
+    anon.post(f"/s/{url.rsplit('/s/', 1)[1]}/upload", files=[("files", ("書類.pdf", io.BytesIO(b"%PDF-1.4 x"))),
+                                                             ("files", ("写真.jpg", io.BytesIO(b"\xff\xd8\xff x")))])
+    r = conn.execute("SELECT * FROM notifications").fetchone()
+    assert r["kind"] == "share_upload" and r["group_key"].startswith("share:")
+    assert "Alice さんの「受け取り」に 2 件" in r["body"] and "書類.pdf" in r["body"]
+    assert f"https://docs.example/f/{f['id']}" in r["body"]
 
 
-def test_run_once_sends_over_http(conn, users, settings, monkeypatch):
-    """本物の HTTP で、ローカルの受け口に届くこと。"""
-    import http.server
-    import json
-    import threading
+def test_inbox_notifies(settings, nset, app, login, users):
+    login("alice")
+    conn = connect(settings.db_path)
+    scanner = InboxScanner(settings.inbox_dir, BlobStore(settings.files_dir, settings.tmp_dir), max_bytes=10_000,
+                           settings=nset)
+    scanner.ensure_user_dirs(conn)
+    ok = settings.inbox_dir / "alice" / "スキャン.pdf"
+    ok.write_bytes(b"%PDF-1.4 inbox")
+    big = settings.inbox_dir / "alice" / "big.bin"
+    big.write_bytes(b"x" * 20_000)
+    for p in (ok, big):
+        t = time.time() - 60
+        os.utime(p, (t, t))
+    scanner.scan(conn)
+    scanner.scan(conn)
+    rows = {r["level"]: r for r in conn.execute("SELECT * FROM notifications")}
+    assert rows["info"]["body"] == "alice: スキャン.pdf → Inbox/スキャン.pdf"
+    assert rows["warning"]["title"] == "受け取り箱のファイルを取り込めませんでした"
+    assert "big.bin" in rows["warning"]["body"]
 
-    got = []
 
-    class H(http.server.BaseHTTPRequestHandler):
-        def do_POST(self):
-            got.append((self.path, json.loads(self.rfile.read(int(self.headers["Content-Length"])))))
-            self.send_response(204)
-            self.end_headers()
+# ---------------------------------------------------------------------------
+# 管理画面・API
+# ---------------------------------------------------------------------------
 
-        def log_message(self, *a):
-            pass
+def test_admin_system_api(login):
+    admin = login("admin")
+    alice = login("alice")
+    alice.upload(alice.root, {"a.txt": b"one"})
+    alice.upload(alice.root, {"a.txt": b"two"}, on_conflict="replace")
+    s = admin.get("/api/v1/admin/system").json()
+    assert s["schema_version"] >= 9 and s["counts"]["documents"] == 1 and s["counts"]["versions"] == 1
+    assert s["storage"]["version_only_bytes"] == 3
+    assert {"cpu", "memory", "disk", "db_bytes", "models", "version", "uptime_s"} <= s.keys()
+    assert s["models"]["embedding"] and s["models"]["llm"] is None
+    assert alice.get("/api/v1/admin/system").status_code == 403
+    page = admin.get("/admin").text
+    assert "検索の索引" in page and "過去の版 1" in page and "通知の宛先が設定されていません" in page
 
-    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    monkeypatch.setenv("NO_PROXY", "127.0.0.1")
-    monkeypatch.setenv("no_proxy", "127.0.0.1")
-    try:
-        s = dataclasses.replace(settings, notify_url=f"http://127.0.0.1:{srv.server_port}/hook")
-        notify.run_once(s)                       # 初回は過去を送らない
-        _audit(conn, "auth_settings_change", user_id=users["admin"].id, ip="203.0.113.1")
-        assert notify.run_once(s) == 1
-    finally:
-        srv.shutdown()
-    path, body = got[-1]
-    assert path == "/hook" and body["event"] == "auth_settings_change" and "admin" in body["message"]
+
+def test_memory_and_temperature_alerts(settings, conn, monkeypatch):
+    monkeypatch.setattr(monitor, "memory", lambda: {"total": 8 << 30, "available": 400 << 20,
+                                                    "swap_total": 0, "swap_free": 0})
+    monkeypatch.setattr(monitor, "cpu_temp", lambda: 76.0)
+    c = {a["code"]: a["level"] for a in monitor.status(conn, settings)["alerts"]}
+    assert c["memory_low"] == "warning" and c["thermal_high"] == "warning" and "thermal" not in c
+    monkeypatch.setattr(monitor, "memory", lambda: {"total": 8 << 30, "available": 4 << 30,
+                                                    "swap_total": 0, "swap_free": 0})
+    monkeypatch.setattr(monitor, "cpu_temp", lambda: 60.0)
+    c = {a["code"] for a in monitor.status(conn, settings)["alerts"]}
+    assert not {"memory_low", "thermal_high"} & c
+
+
+def test_admin_notify_test(app, login, nset, monkeypatch, hook):
+    admin = login("admin")
+    r = admin.post("/api/v1/admin/notify/test")
+    assert r.status_code == 422                                                # 宛先が無い
+    app.state.settings = nset
+    real = notify.deliver
+    monkeypatch.setattr(notify, "deliver", lambda *a, **kw: real(*a, http=hook.client))
+    r = admin.post("/api/v1/admin/notify/test").json()
+    assert r["status"] == "sent" and r["kind"] == "test" and hook.sent[0][1]["title"] == "docseed のテスト通知"
+    hook.fail.add("https://hooks.example/a")
+    r = admin.post("/admin/notify/test", data={"csrf_token": admin.csrf}, follow_redirects=False)
+    assert r.headers["location"].startswith("/admin?done=notify_failed")
+    j = admin.get("/api/v1/admin/notifications").json()
+    assert j["enabled"] and j["destinations"] == ["json（hooks.example）"]
+    assert [n["status"] for n in j["notifications"]] == ["failed", "sent"]
+    page = admin.get("/admin").text
+    assert "テスト通知を送る" in page and "json（hooks.example）" in page and "失敗" in page
+    assert login("alice").post("/api/v1/admin/notify/test").status_code == 403

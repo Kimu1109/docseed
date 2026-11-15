@@ -1,322 +1,340 @@
-"""監視と通知。docs/design/security.md 11 章。
+"""通知（docs/design/deployment.md 6.1）。
 
-api の中で 1 分ごとに監査ログ（audit_log）と状態（monitor.status）を確かめ、次のことが起きたら
-DOCSEED_NOTIFY_URL（ntfy・Discord・Slack・汎用の Webhook）に知らせる。
-
-- ログインの失敗の急増（15 分に DOCSEED_NOTIFY_LOGIN_FAILURES 回以上。1 時間に 1 回まで）
-- 外側（LAN・Tailscale 以外）の新しい接続元からのログインの成功（IPv4 は /24、IPv6 は /64 で比べる）
-- 管理者の操作（ユーザーの作成・変更、ログインの設定の変更、ログイン方法のリセット）と、
-  確認コードの無効化・パスキーの複製の疑い
-- 共有リンクのパスワードの失敗の急増（同じリンクで 15 分に 5 回以上。リンクごとに 1 時間に 1 回まで）
-- 管理画面の「確認が必要な項目」（error・warning）が新しく出たとき
-
-worker は外部と通信しない設定なので、通知は外部へ出られる api が送る。
+- 監視の警告（monitor.status）が出た・重くなった・解消したとき、共有リンクからファイルを受け取ったとき、
+  受け取り箱（inbox）からファイルを取り込んだときに、Webhook（ntfy / Discord / Slack / JSON）とメールで知らせる。
+- 知らせることは notifications 表に積み、api の中のスレッドがまとめて送る（worker は外部と通信しないため）。
+- 宛先（DOCSEED_NOTIFY_URLS / DOCSEED_NOTIFY_EMAIL）が無ければ何も積まない。
 """
 
 from __future__ import annotations
 
 import datetime as dt
-import ipaddress
 import json
 import logging
+import smtplib
 import sqlite3
 import threading
 import time
-from dataclasses import dataclass
-from urllib.parse import urlsplit
+from collections.abc import Callable
+from email.message import EmailMessage
+from urllib.parse import urlsplit, urlunsplit
+
+import httpx
 
 from .config import Settings
-from .db import Tx, connect
+from .db import Tx, connect, now
 
-log = logging.getLogger("docseed.notify")
+log = logging.getLogger(__name__)
 
-INTERVAL_S = 60
-FIRST_DELAY_S = 30
-WINDOW_S = 15 * 60
-COOLDOWN_S = 3600
-SHARE_PASSWORD_FAILURES = 5
-NEW_IP_LOOKBACK_DAYS = 180
-MAX_PER_ROUND = 10       # 1 回に送る件数の上限（超えた分はまとめて 1 件にする）
-TIMEOUT_S = 10
-
-LOGIN_ACTIONS = ("login", "passkey_login", "oidc_login")
-FAILURE_ACTIONS = ("login_failed", "second_factor_failed")
-WATCHED_ACTIONS = {
-    "user_create": "ユーザーを作成しました",
-    "user_update": "ユーザーを変更しました",
-    "auth_settings_change": "ログインの設定を変更しました",
-    "auth_reset": "ユーザーのログイン方法をリセットしました",
-    "totp_disable": "確認コード（2 段階認証）を無効にしました",
-    "passkey_clone_suspected": "パスキーの複製が疑われる使用がありました",
-}
-
-
-@dataclass
-class Message:
-    title: str
-    body: str
-    level: str = "info"      # info / warning / error
-    event: str = ""
+LEVELS = {"info": 0, "warning": 1, "error": 2}
+LEVEL_LABEL = {"info": "お知らせ", "warning": "注意", "error": "異常"}
+EVENTS = ("alert", "share_upload", "inbox")
+EVENT_LABEL = {"alert": "監視の警告", "share_upload": "共有リンクでの受け取り", "inbox": "受け取り箱の取り込み",
+               "test": "テスト"}
+SEND_EVERY_S = 60             # 送信待ちを送る間隔
+CHECK_EVERY_S = 300           # 監視の警告を確かめる間隔
+FIRST_DELAY_S = 90            # 起動直後（worker の再起動中など）は少し待ってから確かめる
+REMIND_S = 24 * 3600          # 続いている警告は 1 日ごとに知らせ直す
+MAX_ATTEMPTS = 5
+KEEP_DAYS = 30                # 送った記録を残す日数
+MAX_LINES = 20                # まとめて送るときの行数の上限
+HTTP_TIMEOUT_S = 10.0
+FORMATS = ("ntfy", "discord", "slack", "json")
 
 
 # ---------------------------------------------------------------------------
-# 状態（settings 表の notify.*）
+# 積む
 # ---------------------------------------------------------------------------
 
-def _get(conn: sqlite3.Connection, key: str) -> str | None:
-    r = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
-    return r[0] if r else None
-
-
-def _set(conn: sqlite3.Connection, key: str, value: str) -> None:
-    conn.execute("INSERT INTO settings(key, value) VALUES (?, ?)"
-                 " ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
-
-
-def _iso(t: dt.datetime) -> str:
-    return t.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-# ---------------------------------------------------------------------------
-# 内側の接続元（Caddy の DOCSEED_TRUSTED_NETS と同じ書き方）
-# ---------------------------------------------------------------------------
-
-# Caddy の private_ranges と同じ範囲（Python の is_private は説明用のアドレスなども含むので使わない）
-CADDY_PRIVATE_RANGES = ("192.168.0.0/16", "172.16.0.0/12", "10.0.0.0/8", "127.0.0.1/8", "fd00::/8", "::1")
-
-
-def trusted_networks(spec: str) -> list[ipaddress._BaseNetwork]:
-    nets = []
-    for tok in spec.split():
-        if tok == "private_ranges":
-            nets.extend(ipaddress.ip_network(n, strict=False) for n in CADDY_PRIVATE_RANGES)
-            continue
-        try:
-            nets.append(ipaddress.ip_network(tok, strict=False))
-        except ValueError:
-            log.warning("DOCSEED_TRUSTED_NETS の %r は CIDR ではないので無視します", tok)
-    return nets
-
-
-def is_inside(ip: str | None, spec: str) -> bool:
-    try:
-        addr = ipaddress.ip_address(ip or "")
-    except ValueError:
-        return True          # IP の形でないもの（テストの testclient など）は数えない
-    nets = trusted_networks(spec)
-    return any(addr in n for n in nets if n.version == addr.version)
-
-
-def _prefix(ip: str) -> ipaddress._BaseNetwork | None:
-    try:
-        addr = ipaddress.ip_address(ip)
-    except ValueError:
+def enqueue(conn: sqlite3.Connection, settings: Settings, kind: str, title: str, body: str, *,
+            level: str = "info", group_key: str | None = None) -> int | None:
+    """通知を積む。宛先が無い・その種類を知らせない設定なら何もしない（None）。"""
+    if not settings.notify_enabled or (kind != "test" and kind not in settings.notify_events):
         return None
-    return ipaddress.ip_network(f"{ip}/{24 if addr.version == 4 else 64}", strict=False)
-
-
-# ---------------------------------------------------------------------------
-# 確かめる
-# ---------------------------------------------------------------------------
-
-def _username(conn: sqlite3.Connection, user_id: int | None) -> str:
-    if user_id is None:
-        return "（不明）"
-    r = conn.execute("SELECT username FROM users WHERE id = ?", (user_id,)).fetchone()
-    return r[0] if r else f"#{user_id}"
-
-
-def _cooled(conn: sqlite3.Connection, key: str, now: dt.datetime) -> bool:
-    """key の通知を前回から COOLDOWN_S 以上たっていれば記録して True。"""
-    raw = _get(conn, "notify.cooldown")
-    cd = json.loads(raw) if raw else {}
-    last = cd.get(key)
-    if last and (now - dt.datetime.fromisoformat(last.replace("Z", "+00:00"))).total_seconds() < COOLDOWN_S:
-        return False
-    cd[key] = _iso(now)
-    # 古いものは捨てる
-    cd = {k: v for k, v in cd.items()
-          if (now - dt.datetime.fromisoformat(v.replace("Z", "+00:00"))).total_seconds() < 2 * COOLDOWN_S}
-    _set(conn, "notify.cooldown", json.dumps(cd))
-    return True
-
-
-def _new_ip_login(conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings) -> Message | None:
-    ip = row["ip"]
-    if is_inside(ip, settings.trusted_nets):
-        return None
-    pfx = _prefix(ip)
-    if pfx is None:
-        return None
-    since = _iso(dt.datetime.now(dt.UTC) - dt.timedelta(days=NEW_IP_LOOKBACK_DAYS))
-    marks = ",".join("?" * len(LOGIN_ACTIONS))
-    seen = conn.execute(
-        f"SELECT DISTINCT ip FROM audit_log WHERE user_id = ? AND action IN ({marks}) AND id < ? AND at >= ?",
-        (row["user_id"], *LOGIN_ACTIONS, row["id"], since)).fetchall()
-    for (old,) in seen:
-        try:
-            if old and ipaddress.ip_address(old) in pfx:
-                return None
-        except ValueError:
-            continue
-    how = {"passkey_login": "パスキー", "oidc_login": "外部アカウント"}.get(row["action"], "パスワード")
-    return Message("新しい接続元からのログイン",
-                   f"{_username(conn, row['user_id'])} が {ip} から{how}でログインしました（{row['at']}）。"
-                   "心当たりが無ければ、設定画面の「ログイン中の端末」から終了させ、パスワードを変えてください",
-                   "warning", "new_ip_login")
-
-
-def check(conn: sqlite3.Connection, settings: Settings, *, now: dt.datetime | None = None) -> list[Message]:
-    """前回からの監査ログと状態を確かめ、送る通知を返す（状態は settings 表に記録する）。"""
-    now = now or dt.datetime.now(dt.UTC)
-    out: list[Message] = []
     with Tx(conn):
-        last_raw = _get(conn, "notify.last_audit_id")
-        max_id = conn.execute("SELECT coalesce(max(id), 0) FROM audit_log").fetchone()[0]
-        if last_raw is None:
-            # 初回は過去の記録を通知しない
-            _set(conn, "notify.last_audit_id", str(max_id))
-            last_id = max_id
-        else:
-            last_id = int(last_raw)
-        rows = conn.execute("SELECT * FROM audit_log WHERE id > ? AND id <= ? ORDER BY id",
-                            (last_id, max_id)).fetchall()
-
-        for r in rows:
-            if r["action"] in LOGIN_ACTIONS:
-                m = _new_ip_login(conn, r, settings)
-                if m:
-                    out.append(m)
-            elif r["action"] in WATCHED_ACTIONS:
-                target = f"（対象: {_username(conn, r['target_id'])}）" if r["target_type"] == "user" else ""
-                level = "error" if r["action"] == "passkey_clone_suspected" else "warning"
-                out.append(Message(WATCHED_ACTIONS[r["action"]],
-                                   f"{_username(conn, r['user_id'])} が{WATCHED_ACTIONS[r['action']]}{target}"
-                                   f"（{r['ip'] or '-'}、{r['at']}）", level, r["action"]))
-
-        since = _iso(now - dt.timedelta(seconds=WINDOW_S))
-        marks = ",".join("?" * len(FAILURE_ACTIONS))
-        fails = conn.execute(f"SELECT count(*), count(DISTINCT ip) FROM audit_log WHERE action IN ({marks})"
-                             " AND at >= ?", (*FAILURE_ACTIONS, since)).fetchone()
-        if fails[0] >= settings.notify_login_failures and _cooled(conn, "login_failures", now):
-            top = conn.execute(f"SELECT ip, count(*) n FROM audit_log WHERE action IN ({marks}) AND at >= ?"
-                               " GROUP BY ip ORDER BY n DESC LIMIT 3", (*FAILURE_ACTIONS, since)).fetchall()
-            ips = "、".join(f"{t['ip'] or '-'}（{t['n']} 回）" for t in top)
-            out.append(Message("ログインの失敗が増えています",
-                               f"直近 15 分で {fails[0]} 回（接続元 {fails[1]} 件）。多い順: {ips}",
-                               "warning", "login_failures"))
-
-        for s in conn.execute(
-                "SELECT json_extract(detail, '$.share_id') sid, count(*) n FROM audit_log"
-                " WHERE action = 'share_access' AND json_extract(detail, '$.what') = 'password_failed'"
-                " AND at >= ? GROUP BY sid HAVING n >= ?", (since, SHARE_PASSWORD_FAILURES)).fetchall():
-            if _cooled(conn, f"share_password:{s['sid']}", now):
-                out.append(Message("共有リンクのパスワードの失敗が続いています",
-                                   f"共有リンク #{s['sid']} で、直近 15 分に {s['n']} 回パスワードを間違えています。"
-                                   "心当たりが無ければ、リンクを無効にしてください", "warning", "share_password"))
-
-        _set(conn, "notify.last_audit_id", str(max_id))
-
-    out.extend(_new_alerts(conn, settings, now))
-    return out
+        cur = conn.execute("INSERT INTO notifications(kind, level, title, body, group_key, created_at)"
+                           " VALUES (?,?,?,?,?,?)", (kind, level, title, body, group_key, now()))
+    return int(cur.lastrowid)
 
 
-def _new_alerts(conn: sqlite3.Connection, settings: Settings, now: dt.datetime) -> list[Message]:
-    """管理画面の「確認が必要な項目」のうち、前回は無かった error・warning。"""
+def _link(settings: Settings, path: str) -> str:
+    """本文の最後に付けるリンク（"\nhttps://..."）。外から開く URL が分からなければ付けない。"""
+    base = settings.public_base
+    return "\n" + base.rstrip("/") + path if base else ""
+
+
+def share_upload(conn: sqlite3.Connection, settings: Settings, share: sqlite3.Row, owner_name: str,
+                 folder_id: int, folder_name: str, names: list[str]) -> None:
+    """共有リンク（受け取り用）からファイルを受け取った。"""
+    if not names:
+        return
+    lines = [f"・{n}" for n in names]
+    enqueue(conn, settings, "share_upload", "共有リンクでファイルを受け取りました",
+            f"{owner_name} さんの「{folder_name or 'マイファイル'}」に {len(names)} 件\n" + "\n".join(lines)
+            + _link(settings, f"/f/{folder_id}"), group_key=f"share:{share['id']}")
+
+
+def inbox_imported(conn: sqlite3.Connection, settings: Settings, username: str, path: str, *,
+                   ok: bool, message: str = "") -> None:
+    """受け取り箱（inbox）からファイルを取り込んだ（または取り込めなかった）。"""
+    if ok:
+        enqueue(conn, settings, "inbox", "受け取り箱からファイルを取り込みました", f"{username}: {path}",
+                group_key=f"inbox:{username}")
+    else:
+        enqueue(conn, settings, "inbox", "受け取り箱のファイルを取り込めませんでした",
+                f"{username}: {path}（{message}）", level="warning", group_key=f"inbox-failed:{username}")
+
+
+# ---------------------------------------------------------------------------
+# 監視の警告
+# ---------------------------------------------------------------------------
+
+def _state(conn: sqlite3.Connection) -> dict:
+    r = conn.execute("SELECT value FROM settings WHERE key = 'notify.alerts'").fetchone()
+    try:
+        return json.loads(r[0]) if r else {}
+    except ValueError:
+        return {}
+
+
+def _age_s(ts: str | None, t: dt.datetime) -> float:
+    if not ts:
+        return float("inf")
+    return (t - dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))).total_seconds()
+
+
+def check_alerts(conn: sqlite3.Connection, settings: Settings, *, now_: dt.datetime | None = None) -> int:
+    """警告（warning 以上）を前回の状態と比べて、知らせるものを積む。積んだ数を返す。
+
+    一時的なもの（worker の再起動中など）で知らせないよう、2 回続けて出たときに知らせる。
+    知らせた警告がもっと重くなったら知らせ直し、続いていれば 1 日ごとに知らせ直す。消えたら「解消」を知らせる。
+    """
     from .monitor import status
-    try:
-        alerts = [a for a in status(conn, settings, now=now)["alerts"] if a["level"] in ("error", "warning")]
-    except Exception:  # noqa: BLE001 - 状態の取得に失敗しても、ほかの通知は送る
-        log.exception("status for notify failed")
-        return []
-    codes = sorted({a["code"] for a in alerts})
+    t = now_ or dt.datetime.now(dt.UTC)
+    ts = t.strftime("%Y-%m-%dT%H:%M:%SZ")
+    current = {a["code"]: a for a in status(conn, settings)["alerts"] if LEVELS[a["level"]] >= LEVELS["warning"]}
+    prev = _state(conn)
+    state: dict[str, dict] = {}
+    n = 0
+    admin = _link(settings, "/admin")
+    for code, a in current.items():
+        p = prev.get(code)
+        p = p or {}
+        s = {"level": a["level"], "message": a["message"], "first_seen": p.get("first_seen", ts),
+             "notified_at": p.get("notified_at"), "notified_level": p.get("notified_level")}
+        due = bool(p) and (
+            s["notified_at"] is None
+            or LEVELS[a["level"]] > LEVELS.get(s["notified_level"] or "info", 0)
+            or _age_s(s["notified_at"], t) >= REMIND_S)
+        if due and enqueue(conn, settings, "alert", f"[{LEVEL_LABEL[a['level']]}] docseed の警告",
+                           a["message"] + admin, level=a["level"]):
+            s["notified_at"], s["notified_level"] = ts, a["level"]
+            n += 1
+        state[code] = s
+    for code, p in prev.items():
+        if code not in current and p.get("notified_at"):
+            if enqueue(conn, settings, "alert", "[解消] docseed の警告", f"解消しました: {p.get('message', code)}"):
+                n += 1
     with Tx(conn):
-        prev_raw = _get(conn, "notify.alerts")
-        _set(conn, "notify.alerts", json.dumps(codes))
-    if prev_raw is None:
-        return []            # 初回は今ある項目を通知しない（再起動のたびに届かないように）
-    prev = set(json.loads(prev_raw))
-    return [Message("確認が必要な項目", a["message"], a["level"], f"alert:{a['code']}")
-            for a in alerts if a["code"] not in prev]
+        conn.execute("INSERT INTO settings(key, value) VALUES ('notify.alerts', ?)"
+                     " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                     (json.dumps(state, ensure_ascii=False),))
+    return n
 
 
 # ---------------------------------------------------------------------------
 # 送る
 # ---------------------------------------------------------------------------
 
-def _payload(settings: Settings, msg: Message) -> tuple[str, dict]:
-    """(送り先の URL, JSON)。DOCSEED_NOTIFY_FORMAT が auto なら URL から決める。"""
-    url = settings.notify_url
-    u = urlsplit(url)
-    fmt = settings.notify_format
-    if fmt == "auto":
-        host = (u.hostname or "").lower()
-        if host in ("discord.com", "discordapp.com") and u.path.startswith("/api/webhooks/"):
-            fmt = "discord"
-        elif host == "hooks.slack.com":
-            fmt = "slack"
-        elif "ntfy" in host:
-            fmt = "ntfy"
-        else:
-            fmt = "json"
-    name = settings.host.split(",")[0].strip() or "docseed"
-    if fmt == "discord":
-        return url, {"content": f"**[{name}] {msg.title}**\n{msg.body}"[:1900]}
-    if fmt == "slack":
-        return url, {"text": f"*[{name}] {msg.title}*\n{msg.body}"}
+def parse_destination(url: str) -> tuple[str, str]:
+    """宛先の URL を (形式, URL) にする。「ntfy+https://...」のように形式を前に付けられる。
+
+    付けなければ、Discord・Slack の Webhook と ntfy.sh はホスト名で見分け、それ以外は JSON にする。
+    """
+    head, sep, rest = url.partition("+")
+    if sep and head in FORMATS and rest.startswith(("http://", "https://")):
+        return head, rest
+    host = (urlsplit(url).hostname or "").lower()
+    if host in ("discord.com", "discordapp.com", "canary.discord.com", "ptb.discord.com"):
+        return "discord", url
+    if host == "hooks.slack.com":
+        return "slack", url
+    if host == "ntfy.sh":
+        return "ntfy", url
+    return "json", url
+
+
+def describe_destination(url: str) -> str:
+    """画面に出す宛先（Webhook の URL は秘密を含むので、形式とホスト名だけにする）。"""
+    fmt, u = parse_destination(url)
+    return f"{fmt}（{urlsplit(u).hostname or '?'}）"
+
+
+def _webhook_request(fmt: str, url: str, title: str, body: str, level: str) -> tuple[str, dict, dict]:
+    """(URL, JSON, ヘッダ)。"""
     if fmt == "ntfy":
-        # 日本語の題名を送れるよう、ヘッダではなく JSON で送る（https://<server>/ に topic を付けて POST）
-        topic = u.path.strip("/")
-        prio = {"error": 5, "warning": 4}.get(msg.level, 3)
-        return f"{u.scheme}://{u.netloc}/", {"topic": topic, "title": f"[{name}] {msg.title}", "message": msg.body,
-                                             "priority": prio, "tags": ["docseed", msg.level]}
-    return url, {"title": msg.title, "message": msg.body, "level": msg.level, "event": msg.event, "host": name}
+        # JSON で送る（ヘッダの Title は日本語を入れにくいため）。https://host/topic → https://host/ に topic を付ける
+        parts = urlsplit(url)
+        topic = parts.path.strip("/")
+        root = urlunsplit((parts.scheme, parts.netloc, "/", "", ""))
+        return root, {"topic": topic, "title": title, "message": body,
+                      "priority": {"error": 5, "warning": 4, "info": 3}[level],
+                      "tags": [{"error": "rotating_light", "warning": "warning", "info": "inbox_tray"}[level]]}, {}
+    if fmt == "discord":
+        return url, {"content": f"**{title}**\n{body}"[:2000]}, {}
+    if fmt == "slack":
+        return url, {"text": f"*{title}*\n{body}"}, {}
+    return url, {"source": "docseed", "level": level, "title": title, "message": body, "text": f"{title}\n{body}"}, {}
 
 
-def send(settings: Settings, msg: Message) -> bool:
-    import httpx
-    url, body = _payload(settings, msg)
+def _send_email(settings: Settings, title: str, body: str) -> None:
+    msg = EmailMessage()
+    msg["Subject"] = title
+    msg["From"] = settings.smtp_from or settings.smtp_user
+    msg["To"] = ", ".join(settings.notify_email)
+    msg.set_content(body + "\n\n-- \ndocseed")
+    cls = smtplib.SMTP_SSL if settings.smtp_security == "ssl" else smtplib.SMTP
+    with cls(settings.smtp_host, settings.smtp_port, timeout=HTTP_TIMEOUT_S) as s:
+        if settings.smtp_security == "starttls":
+            s.starttls()
+        if settings.smtp_user:
+            s.login(settings.smtp_user, settings.smtp_password)
+        s.send_message(msg)
+
+
+def deliver(settings: Settings, title: str, body: str, level: str = "info", *,
+            http: httpx.Client | None = None, email: Callable[[Settings, str, str], None] | None = None) -> list[str]:
+    """すべての宛先へ送る。失敗した宛先の説明の一覧を返す（すべて失敗したら例外）。"""
+    errors: list[str] = []
+    sent = 0
+    client = http or httpx.Client(timeout=HTTP_TIMEOUT_S, follow_redirects=False)
     try:
-        r = httpx.post(url, json=body, timeout=TIMEOUT_S)
-        if r.status_code >= 300:
-            log.warning("notify failed: HTTP %s %s", r.status_code, r.text[:200])
-            return False
-        return True
-    except httpx.HTTPError as e:
-        log.warning("notify failed: %s", e)
-        return False
-
-
-def deliver(settings: Settings, messages: list[Message]) -> int:
-    if len(messages) > MAX_PER_ROUND:
-        rest = messages[MAX_PER_ROUND - 1:]
-        messages = messages[:MAX_PER_ROUND - 1] + [Message(
-            f"ほか {len(rest)} 件の通知", "\n".join(f"・{m.title}: {m.body[:80]}" for m in rest)[:1500],
-            max((m.level for m in rest), key=["info", "warning", "error"].index), "summary")]
-    return sum(send(settings, m) for m in messages)
-
-
-def run_once(settings: Settings) -> int:
-    conn = connect(settings.db_path)
-    try:
-        return deliver(settings, check(conn, settings))
+        for u in settings.notify_urls:
+            fmt, url = parse_destination(u)
+            try:
+                target, payload, headers = _webhook_request(fmt, url, title, body, level)
+                r = client.post(target, json=payload, headers=headers)
+                r.raise_for_status()
+                sent += 1
+            except Exception as e:  # noqa: BLE001 - 宛先ごとに記録して、ほかの宛先へは送る
+                errors.append(f"{describe_destination(u)}: {type(e).__name__}: {str(e)[:200]}")
     finally:
-        conn.close()
+        if http is None:
+            client.close()
+    if settings.smtp_host and settings.notify_email:
+        try:
+            (email or _send_email)(settings, title, body)
+            sent += 1
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"メール（{settings.smtp_host}）: {type(e).__name__}: {str(e)[:200]}")
+    if errors and not sent:
+        raise RuntimeError("; ".join(errors))
+    return errors
 
+
+def _merge(rows: list[sqlite3.Row]) -> tuple[str, str, str]:
+    """同じ group_key の送信待ちを 1 通にする。"""
+    level = max((r["level"] for r in rows), key=lambda x: LEVELS[x])
+    if len(rows) == 1:
+        return rows[0]["title"], rows[0]["body"], level
+    lines: list[str] = []
+    for r in rows:
+        lines += r["body"].splitlines()
+    # 同じリンク（最後の行の URL）は 1 つにまとめる
+    urls = list(dict.fromkeys(x for x in lines if x.startswith(("http://", "https://"))))
+    text = [x for x in lines if x not in urls]
+    if len(text) > MAX_LINES:
+        text = text[:MAX_LINES] + [f"ほか {len(text) - MAX_LINES} 行"]
+    return f"{rows[0]['title']}（{len(rows)} 回分）", "\n".join(text + urls), level
+
+
+def send_pending(conn: sqlite3.Connection, settings: Settings, **kw) -> int:
+    """送信待ちを送る。送った通数を返す。kw は deliver へ（テスト用）。"""
+    rows = conn.execute("SELECT * FROM notifications WHERE status = 'pending' ORDER BY id").fetchall()
+    groups: dict[str, list[sqlite3.Row]] = {}
+    for r in rows:
+        groups.setdefault(r["group_key"] or f"id:{r['id']}", []).append(r)
+    n = 0
+    for grp in groups.values():
+        ids = [r["id"] for r in grp]
+        q = ",".join("?" * len(ids))
+        title, body, level = _merge(grp)
+        try:
+            errors = deliver(settings, title, body, level, **kw)
+        except Exception as e:  # noqa: BLE001
+            attempts = max(r["attempts"] for r in grp) + 1
+            with Tx(conn):
+                conn.execute(f"UPDATE notifications SET attempts = ?, error = ?, status = ? WHERE id IN ({q})",
+                             (attempts, str(e)[:1000], "failed" if attempts >= MAX_ATTEMPTS else "pending", *ids))
+            log.warning("通知を送れませんでした（%d 回目）: %s", attempts, e)
+            continue
+        with Tx(conn):
+            conn.execute(f"UPDATE notifications SET status = 'sent', sent_at = ?, error = ?,"
+                         f" attempts = attempts + 1 WHERE id IN ({q})", (now(), "; ".join(errors) or None, *ids))
+        n += 1
+    return n
+
+
+def cleanup(conn: sqlite3.Connection, *, now_: dt.datetime | None = None) -> int:
+    cutoff = ((now_ or dt.datetime.now(dt.UTC)) - dt.timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with Tx(conn):
+        return conn.execute("DELETE FROM notifications WHERE status <> 'pending' AND created_at < ?",
+                            (cutoff,)).rowcount
+
+
+def recent(conn: sqlite3.Connection, limit: int = 20) -> list[sqlite3.Row]:
+    return conn.execute("SELECT * FROM notifications ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+
+
+def send_test(conn: sqlite3.Connection, settings: Settings, **kw) -> sqlite3.Row:
+    """テスト通知を積んで、すぐに送る（管理画面の「テスト通知を送る」）。結果の行を返す。"""
+    nid = enqueue(conn, settings, "test", "docseed のテスト通知",
+                  "通知の設定ができています。" + _link(settings, "/admin"))
+    if nid is None:
+        raise ValueError("通知の宛先が設定されていません")
+    row = conn.execute("SELECT * FROM notifications WHERE id = ?", (nid,)).fetchone()
+    title, body, level = _merge([row])
+    try:
+        errors = deliver(settings, title, body, level, **kw)
+        with Tx(conn):
+            conn.execute("UPDATE notifications SET status = 'sent', sent_at = ?, attempts = 1, error = ?"
+                         " WHERE id = ?", (now(), "; ".join(errors) or None, nid))
+    except Exception as e:  # noqa: BLE001 - テストは再送しない
+        with Tx(conn):
+            conn.execute("UPDATE notifications SET status = 'failed', attempts = 1, error = ? WHERE id = ?",
+                         (str(e)[:1000], nid))
+    return conn.execute("SELECT * FROM notifications WHERE id = ?", (nid,)).fetchone()
+
+
+# ---------------------------------------------------------------------------
+# api の中で動かす
+# ---------------------------------------------------------------------------
 
 def start_background(settings: Settings) -> threading.Thread | None:
-    """api の中で 1 分ごとに確かめるスレッドを起動する（DOCSEED_NOTIFY_URL が無ければ何もしない）。"""
-    if not settings.notify_url:
+    """送信待ちを 1 分ごとに送り、警告を 5 分ごとに確かめるスレッド（宛先が無ければ起動しない）。"""
+    if not settings.notify_enabled:
         return None
 
     def loop():
         time.sleep(FIRST_DELAY_S)
+        last_check = last_cleanup = 0.0
         while True:
             try:
-                run_once(settings)
+                conn = connect(settings.db_path)
+                try:
+                    t = time.monotonic()
+                    if "alert" in settings.notify_events and t - last_check >= CHECK_EVERY_S:
+                        check_alerts(conn, settings)
+                        last_check = t
+                    send_pending(conn, settings)
+                    if t - last_cleanup >= 24 * 3600:
+                        cleanup(conn)
+                        last_cleanup = t
+                finally:
+                    conn.close()
             except Exception:  # noqa: BLE001 - 通知の失敗で api を止めない
-                log.exception("notify check failed")
-            time.sleep(INTERVAL_S)
+                log.exception("notify loop failed")
+            time.sleep(SEND_EVERY_S)
 
     th = threading.Thread(target=loop, name="notify", daemon=True)
     th.start()

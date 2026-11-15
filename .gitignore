@@ -8,3 +8,6 @@ __pycache__/
 /data/
 /docker/certs/*
 !/docker/certs/.gitkeep
+# 手元で動かしたときのログ（scripts/poc/results/ の計測結果は残す）
+*.log
+!scripts/poc/results/*.log

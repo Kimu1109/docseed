@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block title %}共有されたフォルダ{% endblock %}
 {% block main %}
-<div class="page-head"><h1 class="page-title">共有されたフォルダ</h1></div>
+<div class="page-head"><h1 class="page-title">{{ icon("folder_shared") }} 共有されたフォルダ</h1></div>
 {% if not shared %}
   <div class="empty">
+    {{ icon("folder_shared") }}
     <p>ほかの人から共有されたフォルダはまだありません。</p>
-    <p class="muted">フォルダの所有者があなたをメンバーに追加すると、ここに表示されます。</p>
   </div>
 {% else %}
 <table class="files">
@@ -14,7 +14,7 @@
   {% for f in shared %}
     <tr>
       <td class="col-kind"><span class="kind kind-folder"></span></td>
-      <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon("folder_shared") }}</span><a class="name" href="/f/{{ f.id }}">{{ f.name or "（ルート）" }}</a></div></td>
+      <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon("folder_shared") }}</span><a class="name" href="{{ base }}/f/{{ f.id }}">{{ f.name or "（ルート）" }}</a></div></td>
       <td>{{ f.owner_name }}</td>
       <td>{{ {"editor": "編集できる", "viewer": "閲覧のみ"}[f.role] }}</td>
     </tr>

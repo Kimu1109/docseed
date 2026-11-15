@@ -93,6 +93,18 @@
 		remote_ip {$DOCSEED_TUNNEL_SUBNET:10.213.47.0/28}
 	}
 	respond @internal_only_tunnel 404
+	# URL の起点を変えた場合（DOCSEED_BASE_PATH=/docseed など）の「/docseed/admin」。
+	# .env の書き方（先頭・末尾の / の有無）に左右されないよう、接頭辞の中身は問わずに末尾で合わせる
+	@internal_only_prefixed {
+		path_regexp (?i)^(/[^/]+)+/(admin|admin/.*|api/v1/admin|api/v1/admin/.*|api/docs|api/docs/.*|api/v1/openapi\.json|healthz)$
+		not client_ip {$DOCSEED_TRUSTED_NETS:private_ranges 100.64.0.0/10}
+	}
+	respond @internal_only_prefixed 404
+	@internal_only_prefixed_tunnel {
+		path_regexp (?i)^(/[^/]+)+/(admin|admin/.*|api/v1/admin|api/v1/admin/.*|api/docs|api/docs/.*|api/v1/openapi\.json|healthz)$
+		remote_ip {$DOCSEED_TUNNEL_SUBNET:10.213.47.0/28}
+	}
+	respond @internal_only_prefixed_tunnel 404
 }
 
 (app) {

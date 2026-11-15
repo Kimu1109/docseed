@@ -13,11 +13,11 @@ import traceback
 from .. import db
 from ..config import Settings
 from ..db import Tx, now
-from ..documents import purge_expired
+from ..documents import gc_blobs, prune_versions, purge_expired
 from ..monitor import cpu_temp
 from ..storage import BlobStore
 from . import queue
-from .process import Context, derive_blob, process_blob, reembed_blob, reset_blob, summarize_blob
+from .process import Context, derive_blob, process_blob, reembed_blob, reset_blob, reset_pages, summarize_blob
 
 log = logging.getLogger("docseed.worker")
 
@@ -45,7 +45,7 @@ class Worker:
         if settings.inbox_enabled:
             from ..inbox import InboxScanner
             self.inbox = InboxScanner(settings.inbox_dir, self.store, max_bytes=settings.max_upload_bytes,
-                                      keep=settings.inbox_keep)
+                                      keep=settings.inbox_keep, settings=settings)
 
     # ---- 合間の処理（ページごと・埋め込みのバッチごと） -------------------
     def _between_pages(self) -> None:
@@ -82,10 +82,17 @@ class Worker:
         today = dt.date.today().isoformat()
         if last and last[0] == today:
             return
-        cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(days=self.settings.trash_retention_days)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ")
-        n = purge_expired(self.conn, self.store, cutoff)
+        from ..limits import retention_cutoffs  # ゴミ箱の保持日数は利用者ごとに選べる
+        n = purge_expired(self.conn, self.store, retention_cutoffs(self.conn, self.settings.trash_retention_days))
+        # DOCSEED_VERSIONS_KEEP を減らしたときに、多すぎる過去の版を消す
+        with Tx(self.conn):
+            pruned = prune_versions(self.conn, None, self.settings.versions_keep)
+        if pruned:
+            gc_blobs(self.conn, self.store)
+            log.info("daily: 過去の版を %d 件削除しました", pruned)
         queue.cleanup(self.conn)
+        from ..resumable import expire_stale  # 途中で止まった分割アップロード
+        expire_stale(self.conn, self.store)
         with Tx(self.conn):
             self.conn.execute("INSERT INTO settings(key, value) VALUES ('worker.daily', ?)"
                               " ON CONFLICT(key) DO UPDATE SET value = excluded.value", (today,))
@@ -114,11 +121,20 @@ class Worker:
         try:
             if job["type"] == "process_blob":
                 payload = json.loads(job["payload"]) if job["payload"] else {}
+                pages = [int(n) for n in payload.get("pages") or []]
                 if payload.get("reset"):
                     reset_blob(self.conn, job["blob_id"])
-                result = process_blob(self.conn, self.ctx, job["blob_id"], force_ocr=bool(payload.get("force_ocr")))
+                elif pages and job["attempts"] == 1:   # やり直しのときは、途中まで読んだページを活かす
+                    reset_pages(self.conn, job["blob_id"], pages)
+                result = process_blob(self.conn, self.ctx, job["blob_id"], force_ocr=bool(payload.get("force_ocr")),
+                                      pages=pages or None)
             elif job["type"] == "reembed_blob":
-                result = reembed_blob(self.conn, self.ctx, job["blob_id"])
+                payload = json.loads(job["payload"]) if job["payload"] else {}
+                if payload.get("missing_only"):   # 手で直した要約など、ベクトルの無いチャンクだけ
+                    from .process import embed_chunks
+                    result = f"embedded {embed_chunks(self.conn, self.ctx, job['blob_id'])}"
+                else:
+                    result = reembed_blob(self.conn, self.ctx, job["blob_id"])
             elif job["type"] == "suggest_document":
                 from ..suggest import run_job
                 doc_id = json.loads(job["payload"] or "{}").get("document_id")
@@ -200,7 +216,17 @@ def default_context(settings: Settings, between_pages) -> Context:
         embedder_factory=lambda: OnnxEmbedder(settings.models_dir, settings.embed_model,
                                               threads=settings.embed_threads),
         dpi=settings.ocr_dpi, min_score=settings.ocr_min_score, between_pages=between_pages,
-        data_dir=settings.data_dir, suggest_enabled=settings.suggest_enabled,
+        data_dir=settings.data_dir, suggest_enabled=settings.suggest_enabled, pdf_images=settings.ocr_pdf_images,
         llm=LlmClient(settings.llm_url, settings.llm_model, timeout_s=settings.llm_timeout_s,
                       max_input_chars=settings.llm_max_input_chars) if settings.llm_enabled else None,
+        asr=_asr(settings), tmp_dir=settings.tmp_dir, video_proxy=settings.video_proxy,
     )
+
+
+def _asr(settings: Settings):
+    """音声・動画の文字起こし（DOCSEED_ASR_ENABLED=true のときだけ）。"""
+    if not settings.asr_enabled:
+        return None
+    from ..pipeline.transcribe import WhisperCli
+    return WhisperCli(settings.asr_bin, settings.asr_model_path, language=settings.asr_language,
+                      threads=settings.asr_threads, timeout_s=settings.asr_timeout_s)

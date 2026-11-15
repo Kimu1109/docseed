@@ -104,6 +104,16 @@ RFC 9457（`application/problem+json`）形式。
 | GET | `/me/tokens` | API トークン一覧（先頭 8 文字・名前・最終使用日時） |
 | POST | `/me/tokens` | `{name, scopes, expires_at}` → `{token}`（この 1 回だけ表示） |
 | DELETE | `/me/tokens/{id}` | 無効化 |
+| GET | `/me/usage` | 使用量 `{current, trash, versions, total, quota, ratio, custom}`（バイト。quota 0 = 上限なし） |
+| GET / PUT | `/me/trash-retention` | ゴミ箱の保持日数 `{days}`（7 / 14 / 30 / 60 / 90 / 180 / 365、null で既定に戻す）。応答 `{days, default, custom}` |
+| GET / PUT | `/me/theme` | 画面の色 `{theme: "auto" \| "light" \| "dark"}` |
+| GET | `/me/favorites` | お気に入り（`{favorites: [{type, id, filename\|name, ..., favorited_at}]}`。見られるものだけ） |
+| PUT / DELETE | `/me/favorites/{type}/{id}` | お気に入りに入れる・外す（type = document \| folder）。204 |
+| GET / DELETE | `/me/recent` | 最近開いたファイル（画面で開いたもの。`?limit=` 最大 50）/ 記録を消す |
+| GET | `/me/search-history` | 画面で検索した条件の履歴（`{history: [{id, params, url, label, searched_at}]}`） |
+| DELETE | `/me/search-history`、`/me/search-history/{id}` | 履歴をすべて・1 件消す |
+| GET / POST | `/me/saved-searches` | 保存した検索の一覧 / `{name?, params}` で保存（params は画面の `/search` と同じキー: q・mode・type・tag・after・before・taken_from・taken_to・folder。ほかは捨てる）。201 |
+| PATCH / DELETE | `/me/saved-searches/{id}` | `{name}` で名前を変える / 消す |
 
 ### 3.2 フォルダ
 
@@ -111,7 +121,7 @@ RFC 9457（`application/problem+json`）形式。
 |---|---|---|
 | GET | `/folders/shared-with-me` | 他のユーザーから共有されたフォルダの一覧 |
 | GET | `/folders/{id}` | フォルダ情報 |
-| GET | `/folders/{id}/children` | 子フォルダと文書の一覧。`?sort=name\|updated_at\|size&order=asc\|desc&cursor=&limit=` |
+| GET | `/folders/{id}/children` | 子フォルダと文書の一覧。`?sort=name\|updated_at\|size&order=asc\|desc&cursor=&limit=`。`limit`（1〜1000）を付けるとページ送り: フォルダ（名前順）→ 文書の順に並べた全体から `limit` 件を返し、続きがあれば `next_cursor` を返す（次は `cursor=<next_cursor>`）。省略時はすべて。応答に `total: {folders, documents}` |
 | POST | `/folders` | `{parent_id, name}` |
 | PATCH | `/folders/{id}` | `{name?, parent_id?}`（名前変更・移動） |
 | DELETE | `/folders/{id}` | 配下ごとゴミ箱へ |
@@ -125,16 +135,24 @@ RFC 9457（`application/problem+json`）形式。
 | メソッド | パス | 説明 |
 |---|---|---|
 | POST | `/documents` | アップロード（3.3.1） |
+| OPTIONS・POST・HEAD・PATCH・GET・DELETE | `/uploads`・`/uploads/{id}` | 分割・再開できるアップロード（tus 1.0。3.3.2） |
 | GET | `/documents/{id}` | Document |
 | GET | `/documents/{id}/content` | 原本ダウンロード。`Range` 対応。`?inline=1` で許可形式のみプレビュー表示 |
 | GET | `/documents/{id}/thumbnail` | WebP サムネイル（未生成なら種類別のアイコン） |
-| GET | `/documents/{id}/pages/{page_no}/image` | ページ画像（PDF のプレビュー・OCR 結果の確認用。WebP、`?width=` で幅指定、最大 2000） |
+| GET | `/documents/{id}/pages/{page_no}/image` | ページ画像（PDF のプレビュー・OCR 結果の確認用。WebP、`?width=` で長辺を指定（200〜2000、既定 1600）。OCR に渡したのと同じ向き（PDF の /Rotate・画像の EXIF の回転を適用）。保存せず開いたときに描く。PDF と画像だけ） |
+| POST | `/documents/{id}/pages/{page_no}/reprocess` | そのページだけを読み直す（PDF・画像、editor 以上。`{force_ocr?}` はそのページだけに効く。202。処理待ち・処理中は 422） |
 | GET | `/documents/{id}/text` | 抽出テキスト。`?page=` でページ指定。応答 `{pages: [{page_no, source, text, ocr_confidence}]}` |
-| GET | `/documents/{id}/ocr` | OCR の行と座標。`?page=`（ページ画像上に枠を重ねて表示するため） |
+| GET | `/documents/{id}/ocr` | OCR の行と座標。`?page=`（ページ画像上に枠を重ねて表示するため）。応答に `width`・`height`（座標の基準の画像の大きさ）と `min_score`（これ未満の行は本文に使っていない） |
 | PATCH | `/documents/{id}` | `{filename?, folder_id?, tags?}` |
 | POST | `/documents/{id}/copy` | `{folder_id, filename?}` |
 | DELETE | `/documents/{id}` | ゴミ箱へ |
 | POST | `/documents/{id}/reprocess` | `{force_ocr: bool}`（editor 以上） |
+| GET | `/documents/{id}/related` | 内容が似ている文書（`?limit=`、既定 5・最大 20）。`{documents: [{id, filename, kind, mime_type, folder_id, updated_at, similarity, path}]}`。文書のベクトル（先頭 20 チャンクの平均）に近いチャンクを持つ文書を、類似度 0.80 以上・見られるものだけ・同じ中身のコピーを除いて並べる。文字を読み取れていない文書は空 |
+| GET | `/documents/{id}/versions` | 過去の版の一覧（新しい順）。`{versions: [{id, filename, size_bytes, mime_type, sha256, created_by, created_at, archived_by, archived_at}]}` |
+| POST | `/documents/{id}/versions` | 新しい版をアップロード（multipart の `file`、editor 以上）。名前・フォルダ・タグはそのまま、今の中身は過去の版になる。201 `{changed, document}`（中身が今と同じなら `changed: false` で版は増えない）。Web クリップは 422（再取得を使う） |
+| GET | `/documents/{id}/versions/{version_id}/content` | 過去の版のダウンロード（常に attachment） |
+| POST | `/documents/{id}/versions/{version_id}/restore` | 過去の版に戻す（editor 以上）。今の版は過去の版として残る。応答は Document |
+| DELETE | `/documents/{id}/versions/{version_id}` | 過去の版を完全に削除（editor 以上。ゴミ箱には入らない）。204 |
 
 #### 3.3.1 アップロード
 
@@ -161,19 +179,47 @@ files=@領収書.jpg
 ```
 
 - `deduplicated: true` は同じ内容のファイルが既にあり、処理結果を使い回したことを示す。
+- `on_conflict=replace` で置き換えたときは `status: "replaced"`。それまでの中身は過去の版（`/documents/{id}/versions`）に残る。
 - フォルダ構造ごとのアップロード: `files` と同じ順番で `relative_paths`（例 `2026/10/見積書.pdf`）を送ると、`folder_id` の下に必要なフォルダを作成する（空文字のファイルはそのまま `folder_id` に置く）。
-- 大きなファイル: Caddy とアプリの上限は 1GB。分割・再開可能なアップロード（tus 等）は初版では対応しない。
+- 大きなファイル: Caddy とアプリの上限は 1GB。通信が不安定な環境や、1 リクエストの大きさに上限がある経路（Cloudflare Tunnel は 100MB）では、分割・再開できるアップロード（3.3.2）を使う。画面からのアップロードはすべてこちらを使う。
+
+#### 3.3.2 分割・再開できるアップロード（tus 1.0）
+
+[tus 1.0](https://tus.io/protocols/resumable-upload) の core と、拡張 `creation`・`creation-with-upload`・`termination`・`expiration` に対応する。tus-js-client などの既存のクライアントも使える。処理は `resumable.py`、表は data-model.md 3.3 の `resumable_uploads`。
+
+| メソッド | パス | 説明 |
+|---|---|---|
+| OPTIONS | `/uploads` | `Tus-Version`・`Tus-Extension`・`Tus-Max-Size`（= `DOCSEED_MAX_UPLOAD_MB`） |
+| POST | `/uploads` | 受け取りを始める。`Upload-Length`（必須。`Upload-Defer-Length` は不可）と `Upload-Metadata`（`filename`・`folder_id` が必須、`relative_path`・`on_conflict` は 3.3.1 と同じ）。201 と `Location`。`Content-Type: application/offset+octet-stream` で本文を付けると、そのまま書き始める |
+| HEAD | `/uploads/{id}` | `Upload-Offset`（受け取り済みのバイト数）・`Upload-Length`・`Upload-Expires` |
+| PATCH | `/uploads/{id}` | 続きを送る。`Content-Type: application/offset+octet-stream`（以外は 415）と `Upload-Offset`（受け取り済みと違えば 409 `offset_mismatch`）。204 と新しい `Upload-Offset` |
+| GET | `/uploads/{id}` | docseed 独自。`{id, offset, length, complete, expires_at, result}` |
+| DELETE | `/uploads/{id}` | 取り消す（受け取った分も消す）。204 |
+
+- 送り始める前（POST）に、フォルダの権限（editor 以上）・1 ファイルの上限（413）・容量の上限（507）・空き容量を確かめる。遅い回線で送り終えてから断らないため。
+- PATCH の途中で接続が切れても、届いた分は残る。クライアントは HEAD で位置を聞き、そこから送る。同じアップロードへの書き込みは 1 本ずつで、前の接続がまだ書いている間は 423 `upload_busy`（少し待って再試行する）。
+- 最後まで届いた PATCH（または POST）では文書として保存し、**200（POST は 201）と GET と同じ JSON** を返す（tus の決まりでは 204 だが、既存のクライアントは 2xx を成功として扱う）。`result` は 3.3.1 の `results[]` の 1 件と同じ形で、名前の重複（`on_conflict=error`）などの失敗も `status: "error"` としてここに入る。
+- 最後の応答を受け取れなかったときは、`Upload-Offset` を最後の位置にした空の PATCH（または GET）で、同じ結果をもう一度受け取れる（2 回保存しない）。
+- 期限は最後の書き込みから 24 時間（`Upload-Expires`）。過ぎると 410 `upload_gone`。受け取り中のデータ（`files/.tmp/tus-<id>`）は worker の毎日の片付けで消す。受け取り中のまま置ける数は 1 人 200 件まで。
+- 他の人のアップロードは 404（存在を明かさない）。API トークン（write）でも使える。ブラウザのセッションでは、POST・PATCH・DELETE に `X-CSRF-Token` が必要。
+
+画面（`app.js`）は 1 ファイルを 8MB ずつ PATCH で送る。通信が失敗したら（接続の失敗・60 秒進まない・408・423・429・5xx・409）、1・2・4・8・15・30…秒待ってから HEAD で位置を聞き直して続きを送る。前に進めば待ち時間は最初に戻り、オフラインの間は回線が戻るのを待つ。送り先の URL は localStorage に覚えるので、再読み込みのあと同じファイルを選び直すと続きから送る。待っても届かなければ失敗として「再試行」ボタンを出す。
 
 ### 3.4 ゴミ箱
 
 | メソッド | パス | 説明 |
 |---|---|---|
 | GET | `/trash` | 自分が owner のフォルダ配下で削除された項目（削除単位でまとめる） |
+| GET | `/trash/folder/{id}` | ゴミ箱の中のフォルダと、一緒に削除された文書 `{id, name, deleted_at, location, folders, documents: [{id, filename, path, size, mime_type}]}`（path はフォルダの中の相対パス） |
+| GET | `/trash/document/{id}/content` | ゴミ箱の中の文書の原本（`?inline=1` でプレビュー用。`/documents/{id}/content` と同じ） |
+| GET | `/trash/document/{id}/thumbnail` ・ `/view` | ゴミ箱の中の文書のサムネイル・表示用のプレビュー |
 | POST | `/trash/{type}/{id}/restore` | 復元（type = folder \| document） |
 | DELETE | `/trash/{type}/{id}` | 完全削除 |
 | DELETE | `/trash` | ゴミ箱を空にする |
 
 ### 3.5 検索
+
+（質問に答える `POST /ask` はこの節の最後）
 
 ```
 GET /api/v1/search?q=振込先 請求書&mode=hybrid&type=pdf&tag=経理&folder=10&after=2026-01-01&limit=20&offset=0
@@ -204,8 +250,22 @@ GET /api/v1/search?q=振込先 請求書&mode=hybrid&type=pdf&tag=経理&folder=
 ```
 
 - `text` は HTML エスケープ済みで、`<mark>` タグだけを含む。
-- `q` 内の `type:` `tag:` `folder:` `after:` `before:` もパラメータと同じ意味で解釈する（[検索設計](search.md) 2 章）。
+- `q` 内の `type:` `tag:` `folder:` `after:` `before:` `taken:` もパラメータと同じ意味で解釈する（[検索設計](search.md) 2 章）。
+- `taken`: 写真の撮影日（`2026` / `2026-05` / `2026-05-03` / `2026-05-01..2026-05-10` / `..2025`）。結果の `document.taken_at` に撮影日時（無ければ null）。
+- 検索語が無く `type` `tag` `after` `before` `taken` のどれかがあれば、条件に合う文書を並べる（`mode: "filter"`、`snippets` は空）。
 - `sem_min`（0〜1、省略可）: 意味検索の類似度の下限を一時的に変える。評価スクリプト用で、省略時は設定値（既定 0.80）。
+
+#### 3.5.1 質問に答える（RAG。実装で追加）
+
+```
+POST /api/v1/ask
+{"question": "A社への振込先は？", "filters": {"type": "pdf", "folder": "10"}, "stream": false}
+```
+
+- 見られる文書だけを根拠に、LLM が答える（[検索設計](search.md) 10 章）。`DOCSEED_LLM_ENABLED=false` なら 409 `ask_disabled`。
+- `stream: false`: `{question, answer, sources: [{n, document_id, filename, page_no, path, text}], cited: [n…], model, took_ms, notices}`。資料が見つからなければ `answer` は空（LLM を呼ばない）。
+- `stream: true`: `application/x-ndjson`。`{"type": "sources", …}` → `{"type": "text", "text"}` … → `{"type": "done", "cited", "took_ms"}`（資料が無ければ `"no_sources": true`）。途中の失敗は `{"type": "error", "code", "message"}`。
+- 混んでいる（同時に 2 件）: 429 `ask_busy`。llm サービスの失敗・時間切れ: 503 `ask_failed`。
 - 実装では `total_estimate` ではなく `total`（絞り込み後の文書数）を返す。
 
 ### 3.6 タグ
@@ -243,14 +303,18 @@ GET /api/v1/search?q=振込先 請求書&mode=hybrid&type=pdf&tag=経理&folder=
 
 | メソッド | パス | 説明 |
 |---|---|---|
-| GET | `/admin/users` | ユーザー一覧 |
+| GET | `/admin/users` | ユーザー一覧（`quota: {bytes, custom, used}` を含む。bytes 0 = 上限なし、custom = 個別に決めたか） |
+| GET / PUT | `/admin/quota` | 容量の上限の全体の既定 `{quota_bytes}`（0 = 上限なし）。ユーザーごとは `PATCH /admin/users/{id}` の `quota_bytes`（0 = 上限なし）か `quota_default: true`（既定に戻す） |
 | POST | `/admin/users` | `{username, display_name, password, role}` |
 | PATCH | `/admin/users/{id}` | ロール変更、無効化、パスワード再設定 |
 | GET | `/admin/jobs` | ジョブ一覧（`?status=`）と状態ごとの件数 |
 | POST | `/admin/jobs/{id}/retry` | 失敗ジョブの再実行 |
 | POST | `/admin/reprocess` | `{scope: "failed" \| "outdated" \| "unsupported" \| "all", force_ocr: bool}` で一括再処理（`unsupported` は対応形式が増えたとき用） |
-| GET | `/admin/status` | 状態と警告（Phase 5）。`alerts`（`level`: error / warning / info、`code`、`message`）、worker の最終応答、ジョブの件数、ディスク、CPU 温度、バックアップ（DB スナップショット・restic の最終結果）。外部の監視からは API トークンで呼ぶ |
-| GET | `/admin/system` | CPU 温度・負荷、メモリ、ディスク使用量、DB サイズ、文書数・チャンク数、モデル名、版（未実装。`/admin/status` と管理画面で代替） |
+| GET | `/admin/status` | 状態と警告（Phase 5）。`alerts`（`level`: error / warning / info、`code`、`message`）、worker の最終応答、ジョブの件数、ディスク、CPU 温度、バックアップ（DB スナップショット・restic の最終結果）。外部の監視からは管理者の API トークン（read）で呼べる |
+| GET | `/admin/metrics` | Prometheus のテキスト形式の指標（[配置・運用](deployment.md) 6.2）。管理者のセッションか、管理者の API トークン（read） |
+| GET | `/admin/system` | CPU 温度・負荷・コア数、メモリ（`total`・`available`・スワップ）、ディスク（`total`・`used`・`free`・`free_ratio`）、`db_bytes`、件数（`documents`・`documents_trash`・`versions`・`folders`・`users`・`blobs`・`pages`・`chunks`）、`storage`（`blob_bytes`・過去の版だけが使う `version_only_bytes`）、モデル（`ocr`・`embedding`・`llm`）、版（`version`・`schema_version`・`python`・`machine`）、`uptime_s` |
+| GET | `/admin/notifications` | 通知の設定（`enabled`・`events`・`destinations`（形式とホスト名だけ））と最近の通知（`?limit=`、既定 50） |
+| POST | `/admin/notify/test` | テスト通知をすぐに送る。応答の `status` が `sent` なら送れた（`error` は一部の宛先の失敗）。宛先が無ければ 422 |
 | GET | `/admin/audit` | 監査ログ（`?user_id=&action=&from=&to=`） |
 
 ### 3.10 その他

@@ -3,14 +3,15 @@
 {% block main %}
 <div class="page-head">
   {% set link_last = False %}{% include "_crumbs.html" %}
-  <div class="actions">
-    <a class="btn" href="/api/v1/folders/{{ folder.id }}/archive" title="このフォルダをまとめてダウンロード">{{ icon("folder_zip") }}ZIP</a>
-    <button type="button" class="btn" data-open-dialog="dlg-share" hx-get="/x/share?type=folder&id={{ folder.id }}"
-            hx-target="#share-body" hx-swap="outerHTML">{{ icon("share") }}共有</button>
+  <div class="actions m-ic">
+    {% set fav, fav_type, fav_id, small = folder.id in favs.folder, "folder", folder.id, False %}{% include "_fav.html" %}
+    <a class="btn" href="{{ base }}/api/v1/folders/{{ folder.id }}/archive" title="このフォルダをまとめてダウンロード">{{ icon("folder_zip") }}<span class="lbl">ZIP</span></a>
+    <button type="button" class="btn" data-open-dialog="dlg-share" hx-get="{{ base }}/x/share?type=folder&id={{ folder.id }}"
+            hx-target="#share-body" hx-swap="outerHTML">{{ icon("share") }}<span class="lbl">共有</span></button>
     {% if can_edit %}
-    <button type="button" class="btn" data-open-dialog="dlg-folder">{{ icon("create_new_folder") }}新しいフォルダ</button>
-    {% if webclip_enabled %}<button type="button" class="btn" data-open-dialog="dlg-webclip">{{ icon("link") }}URL を追加</button>{% endif %}
-    <button type="button" class="btn btn-primary" data-upload-pick>{{ icon("upload") }}アップロード</button>
+    <button type="button" class="btn pc-only" data-open-dialog="dlg-folder">{{ icon("create_new_folder") }}新しいフォルダ</button>
+    {% if webclip_enabled %}<button type="button" class="btn pc-only" data-open-dialog="dlg-webclip">{{ icon("link") }}URL を追加</button>{% endif %}
+    <button type="button" class="btn btn-primary pc-only" data-upload-pick>{{ icon("upload") }}アップロード</button>
     {% endif %}
   </div>
 </div>
@@ -20,17 +21,36 @@
 
 {% if can_edit %}
 <input type="file" id="upload-input" multiple hidden data-folder-id="{{ folder.id }}">
+<input type="file" id="camera-input" accept="image/*" capture="environment" hidden>
+{#- スマホ: 右下の「＋」から、アップロード・撮影・新しいフォルダ・URL の追加を選ぶ -#}
+<button type="button" class="fab" data-open-dialog="dlg-add" aria-label="追加（アップロード・撮影・新しいフォルダ）">{{ icon("add") }}</button>
+<dialog id="dlg-add" class="dialog sheet-menu" aria-label="追加">
+  <div class="dialog-in">
+    <h2>{{ icon("add") }} 「{{ folder.name or "マイファイル" }}」に追加</h2>
+    <button type="button" class="sheet-item" data-close-dialog data-upload-pick>{{ icon("upload") }}ファイルをアップロード</button>
+    <button type="button" class="sheet-item" data-close-dialog data-camera-pick>{{ icon("photo_camera") }}カメラで撮ってアップロード</button>
+    <button type="button" class="sheet-item" data-close-dialog data-open-dialog="dlg-folder">{{ icon("create_new_folder") }}新しいフォルダ</button>
+    {% if webclip_enabled %}<button type="button" class="sheet-item" data-close-dialog data-open-dialog="dlg-webclip">{{ icon("link") }}URL を追加</button>{% endif %}
+    <div class="dialog-actions"><button type="button" class="btn" data-close-dialog>キャンセル</button></div>
+  </div>
+</dialog>
 <section class="uploads" id="uploads" hidden aria-live="polite">
   <div class="uploads-head"><span id="uploads-title">アップロード中</span>
-    <button type="button" class="linkish" data-uploads-close hidden>閉じる</button></div>
+    <button type="button" class="linkish" data-uploads-close hidden>{{ icon("close") }}閉じる</button></div>
   <ol class="uploads-list" id="uploads-list"></ol>
 </section>
-<div class="dropzone" id="dropzone" hidden><div>ここにドロップして「{{ folder.name or "マイファイル" }}」にアップロード</div></div>
+<div class="dropzone" id="dropzone" hidden><div>{{ icon("upload_file") }} ここにドロップして「{{ folder.name or "マイファイル" }}」にアップロード</div></div>
 <div class="selbar" id="selbar" hidden role="toolbar" aria-label="選択した項目の操作">
   <span class="selbar-count" aria-live="polite"><b data-sel-count>0</b> 件を選択中</span>
   <button type="button" class="btn btn-sm" data-sel-move>{{ icon("drive_file_move") }}移動</button>
+  <button type="button" class="btn btn-sm" data-sel-tags data-sel-docs title="選んだファイルにタグを付ける・外す">{{ icon("label") }}タグ</button>
+  <button type="button" class="btn btn-sm" data-sel-reprocess data-sel-docs title="選んだファイルの文字の読み取りをやり直す">{{ icon("refresh") }}再処理</button>
+  {% set st = request.app.state.settings %}
+  {% if st.llm_enabled or st.suggest_enabled %}
+  <button type="button" class="btn btn-sm" data-sel-redo data-sel-docs title="選んだファイルの{% if st.llm_enabled %}要約と{% endif %}タグ・フォルダの候補を作り直す">{{ icon("wand_stars") }}{% if st.llm_enabled %}要約とタグをやり直す{% else %}候補をやり直す{% endif %}</button>
+  {% endif %}
   <button type="button" class="btn btn-sm btn-danger-ghost" data-sel-delete>{{ icon("delete") }}ゴミ箱に移動</button>
-  <button type="button" class="linkish" data-sel-clear>選択を解除</button>
+  <button type="button" class="linkish" data-sel-clear>{{ icon("deselect") }}選択を解除</button>
   <span class="selbar-hint muted small">ドラッグしてフォルダやパンくずへ移動できます</span>
 </div>
 <form id="batch-form" hidden hx-target="#listing" hx-swap="outerHTML">
@@ -42,57 +62,75 @@
 
 <dialog id="dlg-share" class="dialog dialog-wide">
   <div class="dialog-in">
-    <h2>「{{ folder.name or "マイファイル" }}」を共有</h2>
+    <h2>{{ icon("share") }} 「{{ folder.name or "マイファイル" }}」を共有</h2>
     <div id="share-body"><p class="muted">読み込んでいます…</p></div>
-    <div class="dialog-actions"><button type="button" class="btn" data-close-dialog>閉じる</button></div>
+    <div class="dialog-actions"><button type="button" class="btn" data-close-dialog>{{ icon("close") }}閉じる</button></div>
   </div>
 </dialog>
 {% if can_edit %}
 <dialog id="dlg-folder" class="dialog">
-  <form hx-post="/f/{{ folder.id }}/folders" hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
-    <h2>新しいフォルダ</h2>
+  <form hx-post="{{ base }}/f/{{ folder.id }}/folders" hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
+    <h2>{{ icon("create_new_folder") }} 新しいフォルダ</h2>
     <label>フォルダ名 <input name="name" required maxlength="200" autocomplete="off"></label>
     <div class="dialog-actions">
       <button type="button" class="btn" data-close-dialog>キャンセル</button>
-      <button type="submit" class="btn btn-primary">作成</button>
+      <button type="submit" class="btn btn-primary">{{ icon("check") }}作成</button>
     </div>
   </form>
 </dialog>
 {% if webclip_enabled %}
 <dialog id="dlg-webclip" class="dialog">
-  <form hx-post="/f/{{ folder.id }}/webclips" hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
-    <h2>URL を追加</h2>
-    <p class="muted small">ページを取得して、タイトル・説明・本文で検索できるように保存します。PDF や画像の URL は、そのファイルを保存します。</p>
+  <form hx-post="{{ base }}/f/{{ folder.id }}/webclips" hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
+    <h2>{{ icon("link") }} URL を追加</h2>
+    <p class="muted small">PDF や画像の URL は、そのファイルを保存します。</p>
     <label>URL <input name="url" type="url" required maxlength="2048" placeholder="https://" autocomplete="off" inputmode="url"></label>
     <div class="dialog-actions">
       <button type="button" class="btn" data-close-dialog>キャンセル</button>
-      <button type="submit" class="btn btn-primary">追加</button>
+      <button type="submit" class="btn btn-primary">{{ icon("add") }}追加</button>
     </div>
   </form>
 </dialog>
 {% endif %}
 <dialog id="dlg-rename" class="dialog">
   <form hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
-    <h2>名前を変更</h2>
+    <h2>{{ icon("edit") }} 名前を変更</h2>
     <input type="hidden" name="current" value="{{ folder.id }}">
     <label>新しい名前 <input name="name" required maxlength="255" autocomplete="off"></label>
     <div class="dialog-actions">
       <button type="button" class="btn" data-close-dialog>キャンセル</button>
-      <button type="submit" class="btn btn-primary">変更</button>
+      <button type="submit" class="btn btn-primary">{{ icon("check") }}変更</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="dlg-tags" class="dialog">
+  <form hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
+    <h2>{{ icon("label") }} タグ</h2>
+    <p class="muted" data-tags-name></p>
+    <input type="hidden" name="current" value="{{ folder.id }}">
+    <label>付けるタグ <span class="muted small">（カンマ区切り）</span>
+      <input name="add" placeholder="例: 経理, 2026" autocomplete="off">
+    </label>
+    <label>外すタグ <span class="muted small">（カンマ区切り）</span>
+      <input name="remove" placeholder="例: 未整理" autocomplete="off">
+    </label>
+    <p class="muted small">フォルダは対象外です。</p>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-close-dialog>キャンセル</button>
+      <button type="submit" class="btn btn-primary">{{ icon("check") }}変更</button>
     </div>
   </form>
 </dialog>
 <dialog id="dlg-move" class="dialog">
   <form hx-target="#listing" hx-swap="outerHTML" data-close-on-success>
-    <h2>移動</h2>
+    <h2>{{ icon("drive_file_move") }} 移動</h2>
     <p class="muted" data-move-name></p>
     <input type="hidden" name="current" value="{{ folder.id }}">
     <label>移動先
-      <select name="target" hx-get="/x/folders/{{ folder.id }}/targets" hx-trigger="load-targets" hx-target="this" hx-swap="innerHTML" required></select>
+      <select name="target" hx-get="{{ base }}/x/folders/{{ folder.id }}/targets" hx-trigger="load-targets" hx-target="this" hx-swap="innerHTML" required></select>
     </label>
     <div class="dialog-actions">
       <button type="button" class="btn" data-close-dialog>キャンセル</button>
-      <button type="submit" class="btn btn-primary">移動</button>
+      <button type="submit" class="btn btn-primary">{{ icon("drive_file_move") }}移動</button>
     </div>
   </form>
 </dialog>

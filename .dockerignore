@@ -1,0 +1,9 @@
+# docker/Dockerfile のビルドに送るのは、イメージに入れるものだけにする（許可するものを並べる）。
+# .env（秘密の値）・.git・tests・docs などを送らない。Dockerfile で COPY するものを増やしたら、ここにも足す
+*
+!pyproject.toml
+!README.md
+!src/
+!docs/
+**/__pycache__
+**/*.py[cod]

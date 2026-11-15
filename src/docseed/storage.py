@@ -109,6 +109,22 @@ class BlobStore:
         sha = h.hexdigest()
         return StoredFile(sha, size, detect_mime(head, filename), blob_rel_path(sha), tmp)
 
+    def adopt(self, path: Path, filename: str) -> StoredFile:
+        """tmp_dir に受け取り済みのファイル（分割アップロード）を、コピーせずにそのまま使う。
+
+        SHA-256 と種類を求めるために 1 度読むだけで、commit では rename する。"""
+        h = hashlib.sha256()
+        size = 0
+        head = b""
+        with path.open("rb") as f:
+            while buf := f.read(CHUNK):
+                size += len(buf)
+                if len(head) < 8192:
+                    head += buf[: 8192 - len(head)]
+                h.update(buf)
+        sha = h.hexdigest()
+        return StoredFile(sha, size, detect_mime(head, filename), blob_rel_path(sha), path)
+
     def commit(self, f: StoredFile) -> None:
         """一時ファイルを本来の場所へ移す（同じファイルシステム内の rename なので途中で壊れない）。"""
         dest = self.path(f.rel_path)

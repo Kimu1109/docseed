@@ -13,9 +13,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          # 依存の wheel をジョブをまたいで使い回す（pyproject.toml が変わったら取り直す）
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - run: pip install -e ".[dev]"
-      # tests/test_deploy.py の fail2ban-regex の確認に使う
-      - run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends fail2ban
+      # tests/test_deploy.py の fail2ban-regex と、tests/test_ops.py の復旧の練習（restic）の確認に使う
+      - run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends fail2ban restic
       - run: ruff check src tests
       - run: pytest
       - run: python scripts/build_icons.py --check
@@ -38,6 +41,7 @@ jobs:
               # 外側からの管理系のパスの 404 と、IP のサイトの切断（docs/design/security.md 8 章）
               grep -q '"100.64.0.0/10"' /tmp/out.json
               grep -q '"/api/v1/admin/\*"' /tmp/out.json
+              grep -q '"path_regexp"' /tmp/out.json   # 接頭辞つきの /docseed/admin なども隠す
               grep -q '"abort":true' /tmp/out.json
               grep -q 'Permissions-Policy' /tmp/out.json
               grep -q '"install_trust":false' /tmp/out.json
@@ -63,10 +67,13 @@ jobs:
             done
           }
           probe "10.99.0.0/16" "/ 200" "/s/x 200" "/api/v1/folders 200" "/admin 404" "/admin/users 404" \
-            "/api/v1/admin/users 404" "/api/v1/%61dmin/users 404" "/api/docs 404" "/api/v1/openapi.json 404" "/healthz 404"
+            "/api/v1/admin/users 404" "/api/v1/%61dmin/users 404" "/api/docs 404" "/api/v1/openapi.json 404" "/healthz 404" \
+            "/docseed/ 200" "/docseed/d/1 200" "/docseed/admin 404" "/docseed/Admin/users 404" \
+            "/docseed/api/v1/%61dmin/users 404" "/docseed/api/docs 404" "/docseed/api/v1/openapi.json 404" \
+            "/docseed/healthz 404"
           got=$(docker run --rm --network ct curlimages/curl:8.10.1 -sk -o /dev/null -w '%{http_code}' https://c1/ || true)
           echo "IP site from outside -> $got"; [ "$got" = "000" ]
-          probe "private_ranges 100.64.0.0/10" "/admin 200" "/api/docs 200" "/healthz 200"
+          probe "private_ranges 100.64.0.0/10" "/admin 200" "/api/docs 200" "/healthz 200" "/docseed/admin 200"
           h=$(docker run --rm --network ct curlimages/curl:8.10.1 -skI https://c1/)
           echo "$h"
           echo "$h" | grep -qi '^permissions-policy:'
@@ -96,6 +103,8 @@ jobs:
           check "tunnel CF=public /admin"  "$(code tun $tun_ip /admin -H 'CF-Connecting-IP: 203.0.113.9')" 404
           check "tunnel CF=private /admin" "$(code tun $tun_ip /admin -H 'CF-Connecting-IP: 192.168.1.5')" 404
           check "tunnel no CF /healthz"    "$(code tun $tun_ip /healthz)" 404
+          check "tunnel CF=private /docseed/admin" \
+            "$(code tun $tun_ip /docseed/admin -H 'CF-Connecting-IP: 192.168.1.5')" 404
           check "tunnel xff" "$(req tun $tun_ip / -H 'CF-Connecting-IP: 203.0.113.9' -H 'X-Forwarded-For: 6.6.6.6')" \
             "xff=203.0.113.9"
           check "tunnel IP site" "$(docker run --rm --network tun curlimages/curl:8.10.1 -sk -o /dev/null \
@@ -140,6 +149,18 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      # api のイメージ（target base）の層を GitHub Actions のキャッシュに置き、次の実行で使い回す
+      - uses: docker/setup-buildx-action@v3
+      - name: api のイメージを作る
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: base
+          tags: docseed:latest
+          load: true
+          cache-from: type=gha,scope=docseed-base
+          cache-to: type=gha,scope=docseed-base,mode=max
       - name: 起動
         run: |
           sudo mkdir -p /srv/docseed-ci && sudo chown 1000:1000 /srv/docseed-ci
@@ -148,8 +169,8 @@ jobs:
           DOCSEED_SECRET_KEY=ci-secret-key-ci-secret-key-ci-secret-key-ci
           DOCSEED_DATA_DIR=/srv/docseed-ci
           ENV
-          docker compose build api
-          docker compose up -d caddy api worker
+          # イメージは上で作ったもの（docseed:latest）を使う。compose ではビルドしない
+          docker compose up -d --no-build caddy api worker
           for i in $(seq 1 30); do
             [ "$(docker inspect -f '{{.State.Health.Status}}' docseed-api-1)" = healthy ] && break; sleep 2
           done
@@ -165,6 +186,8 @@ jobs:
           head -c 5000000 /dev/urandom > /tmp/big.bin
           $C -H "X-CSRF-Token: $csrf" -F folder_id=$root -F files=@/tmp/big.bin https://docseed.example.com/api/v1/documents \
             | grep -q '"size_bytes":5000000'
+          # 画面のヘルプ: イメージに docs/ が入っていて、文書が画面に出る（docs/design/ui.md S12）
+          $C https://docseed.example.com/help/user | grep -q '<h1 id="利用者ガイド">'
       - name: コンテナが書き換えられないこと
         run: |
           if docker compose exec -T api touch /app/x; then echo "api の /app に書けてしまう"; exit 1; fi

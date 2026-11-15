@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import html
+import json
 import re
 import sqlite3
 import time
@@ -25,7 +26,8 @@ SNIPPET_LEN = 160
 SNIPPETS_PER_DOC = 3
 MAX_OFFSET = 500
 MODES = ("hybrid", "semantic", "keyword")
-FILTER_KEYS = ("type", "tag", "folder", "after", "before")
+FILTER_KEYS = ("type", "tag", "folder", "after", "before", "taken")
+LIST_FILTERS = ("type", "tag", "after", "before", "taken")   # 検索語が無くても、これがあれば一覧を出す
 _TOKEN = re.compile(r'-?"[^"]*"|\S+')
 
 
@@ -59,7 +61,7 @@ def parse_query(q: str) -> ParsedQuery:
     pq = ParsedQuery(raw=q)
     sem: list[str] = []
     for tok in _TOKEN.findall(_norm(q)):
-        m = re.fullmatch(r"(type|tag|folder|after|before):(.+)", tok)
+        m = re.fullmatch(r"(type|tag|folder|after|before|taken):(.+)", tok)
         if m:
             pq.filters[m.group(1)] = m.group(2).strip('"')
             continue
@@ -104,6 +106,7 @@ class Snippet:
     page_no: int | None
     html: str
     match: list[str]
+    summary: bool = False      # 要約（LLM）のチャンクでヒットした
 
 
 @dataclass
@@ -158,6 +161,41 @@ def _date(s: str) -> str | None:
         return None
 
 
+def _taken_bound(s: str, end: bool) -> str | None:
+    """「2026」「2026-05」「2026-05-03」→ その期間の初日（end なら翌日）。"""
+    s = s.strip().replace("/", "-")
+    try:
+        if re.fullmatch(r"\d{4}", s):
+            y = int(s)
+            return dt.date(y + 1 if end else y, 1, 1).isoformat()
+        if re.fullmatch(r"\d{4}-\d{1,2}", s):
+            y, m = (int(x) for x in s.split("-"))
+            d = dt.date(y, m, 1)
+            if end:
+                d = dt.date(y + 1, 1, 1) if m == 12 else dt.date(y, m + 1, 1)
+            return d.isoformat()
+        d = dt.date.fromisoformat(s if len(s) == 10 else "-".join(f"{int(x):02d}" for x in s.split("-")))
+        return (d + dt.timedelta(days=1) if end else d).isoformat()
+    except ValueError:
+        return None
+
+
+def taken_range(v: str) -> tuple[str | None, str | None] | None:
+    """taken: の値 → (この日以降, この日より前)。「2026-05」「2026-05-01..2026-05-10」「..2025」など。
+
+    撮影日時は写真に記録された現地の日付で比べる（時差は見ない）。読めなければ None。
+    """
+    if ".." in v:
+        a, _, b = v.partition("..")
+        start = _taken_bound(a, False) if a.strip() else None
+        end = _taken_bound(b, True) if b.strip() else None
+        if (a.strip() and start is None) or (b.strip() and end is None) or (start is None and end is None):
+            return None
+        return start, end
+    start, end = _taken_bound(v, False), _taken_bound(v, True)
+    return (start, end) if start and end else None
+
+
 def search(conn: sqlite3.Connection, user: User, q: str, *, mode: str = "hybrid", embedder=None,
            limit: int = 20, offset: int = 0, filters: dict[str, str] | None = None,
            embed_error: str | None = None, sem_min: float | None = None) -> SearchResult:
@@ -170,7 +208,15 @@ def search(conn: sqlite3.Connection, user: User, q: str, *, mode: str = "hybrid"
     limit = max(1, min(limit, 100))
     offset = max(0, min(offset, MAX_OFFSET))
     notices: list[str] = []
+    taken = None
+    if "taken" in pq.filters:
+        taken = taken_range(pq.filters["taken"])
+        if taken is None:
+            notices.append("taken: は 2026、2026-05、2026-05-03 か、2026-05-01..2026-05-10 のように指定してください")
+            pq.filters.pop("taken")
     if pq.empty:
+        if any(k in pq.filters for k in LIST_FILTERS):
+            return _filter_only(conn, user, q, pq, taken, limit, offset, notices, t0)
         return SearchResult(q, mode, 0, 0, [], notices, pq)
 
     use_sem = mode in ("hybrid", "semantic") and bool(pq.semantic_text)
@@ -223,7 +269,7 @@ def search(conn: sqlite3.Connection, user: User, q: str, *, mode: str = "hybrid"
             sem_rank = {r[0]: i + 1 for i, r in enumerate(rows)}
             sem_sim = {r[0]: 1.0 - r[1] for r in rows}
         cand = set(sem_rank) | set(kw_rank)
-        docs, chunk_docs, texts = _resolve(conn, cand, allowed, after, before, pq, kind_of)
+        docs, chunk_docs, texts = _resolve(conn, cand, allowed, after, before, pq, kind_of, taken)
         # 本文で条件を確かめる: 除外語を含まない・ダブルクォートの語を含む（必須）
         # キーワードのヒット = すべての語を含むチャンク（3 文字以上は FTS、2 文字以下は本文で照合）
         valid: set[int] = set()
@@ -293,18 +339,85 @@ def search(conn: sqlite3.Connection, user: User, q: str, *, mode: str = "hybrid"
                 match.append("keyword")
             if c in sem_rank and c not in kw_final:
                 match.append("semantic")
-            snippets.append(Snippet(c, texts_page(conn, c), make_snippet(texts[c], marks), match))
+            page_no, source = chunk_place(conn, c)
+            snippets.append(Snippet(c, page_no, make_snippet(texts[c], marks), match, source == "summary"))
         hits.append(Hit(docs[d], round(s, 5), snippets))
     took = int((time.perf_counter() - t0) * 1000)
     return SearchResult(q, mode, total, took, hits, notices, pq)
 
 
-def texts_page(conn: sqlite3.Connection, chunk_id: int) -> int | None:
-    r = conn.execute("SELECT page_no FROM chunks WHERE id = ?", (chunk_id,)).fetchone()
-    return r[0] if r else None
+def chunk_place(conn: sqlite3.Connection, chunk_id: int) -> tuple[int | None, str]:
+    """(ページ番号, 本文か要約か)。"""
+    r = conn.execute("SELECT page_no, source FROM chunks WHERE id = ?", (chunk_id,)).fetchone()
+    return (r[0], r[1]) if r else (None, "body")
 
 
-def _resolve(conn, cand: set[int], allowed: set[int], after, before, pq: ParsedQuery, kind_of):
+def _doc_dict(r: sqlite3.Row) -> dict:
+    return {"id": r["id"], "filename": r["filename"], "kind": r["kind"], "folder_id": r["folder_id"],
+            "mime_type": r["mime_type"], "size_bytes": r["size_bytes"], "status": r["status"],
+            "updated_at": r["updated_at"], "created_at": r["created_at"], "taken_at": r["taken_at"]}
+
+
+def _taken_ok(taken_at: str | None, taken: tuple[str | None, str | None] | None) -> bool:
+    if taken is None:
+        return True
+    if not taken_at:
+        return False
+    day = taken_at[:10]
+    return (taken[0] is None or day >= taken[0]) and (taken[1] is None or day < taken[1])
+
+
+def _filter_only(conn: sqlite3.Connection, user: User, q: str, pq: ParsedQuery, taken, limit: int, offset: int,
+                 notices: list[str], t0: float) -> SearchResult:
+    """検索語が無く絞り込みだけのとき: 条件に合う文書を並べる（撮影日で絞ったら撮影日の新しい順、ほかは更新日順）。
+
+    文字の無い写真（チャンクが無い）も撮影日で探せるように、索引を通さず文書から選ぶ。
+    """
+    from .web.helpers import kind_of
+    allowed = accessible_folders(conn, user)
+    if "folder" in pq.filters:
+        try:
+            fid = int(pq.filters["folder"])
+            allowed &= _subtree(conn, fid) if fid in allowed else set()
+        except ValueError:
+            allowed = set()
+    after = _date(pq.filters["after"]) if "after" in pq.filters else None
+    before = _date(pq.filters["before"]) if "before" in pq.filters else None
+    if before:
+        before = (dt.date.fromisoformat(before) + dt.timedelta(days=1)).isoformat()
+    sql = ("SELECT d.id, d.filename, d.kind, d.folder_id, d.updated_at, d.created_at, b.mime_type, b.size_bytes,"
+           " b.status, json_extract(b.image_meta, '$.taken_at') AS taken_at"
+           " FROM documents d JOIN blobs b ON b.id = d.blob_id"
+           " WHERE d.deleted_at IS NULL AND d.folder_id IN (SELECT value FROM json_each(?))")
+    args: list[Any] = [json.dumps(sorted(allowed))]
+    if after:
+        sql += " AND d.updated_at >= ?"
+        args.append(after)
+    if before:
+        sql += " AND d.updated_at < ?"
+        args.append(before)
+    if taken:
+        sql += " AND taken_at IS NOT NULL"
+        if taken[0]:
+            sql += " AND substr(taken_at, 1, 10) >= ?"
+            args.append(taken[0])
+        if taken[1]:
+            sql += " AND substr(taken_at, 1, 10) < ?"
+            args.append(taken[1])
+    if pq.filters.get("tag"):
+        sql += (" AND d.id IN (SELECT dt.document_id FROM document_tags dt JOIN tags t ON t.id = dt.tag_id"
+                " WHERE t.name = ?)")
+        args.append(pq.filters["tag"])
+    sql += " ORDER BY taken_at DESC, d.id DESC" if taken else " ORDER BY d.updated_at DESC, d.id DESC"
+    want_type = pq.filters.get("type")
+    rows = [r for r in conn.execute(sql, args)
+            if not want_type or kind_of(r["mime_type"], r["filename"], r["kind"]) == want_type]
+    hits = [Hit(_doc_dict(r), 0.0, []) for r in rows[offset:offset + limit]]
+    took = int((time.perf_counter() - t0) * 1000)
+    return SearchResult(q, "filter", len(rows), took, hits, notices, pq)
+
+
+def _resolve(conn, cand: set[int], allowed: set[int], after, before, pq: ParsedQuery, kind_of, taken=None):
     """候補チャンク → 見られる文書。(文書の辞書, チャンク→文書 ID の一覧, チャンク本文) を返す。"""
     if not cand or not allowed:
         return {}, {}, {}
@@ -314,8 +427,12 @@ def _resolve(conn, cand: set[int], allowed: set[int], after, before, pq: ParsedQ
         part = ids[i:i + 500]
         rows += conn.execute(
             f"SELECT c.id AS chunk_id, c.text, d.id, d.filename, d.kind, d.folder_id, d.updated_at, d.created_at,"
-            f" b.mime_type, b.size_bytes, b.status"
+            f" b.mime_type, b.size_bytes, b.status, json_extract(b.image_meta, '$.taken_at') AS taken_at"
             f" FROM chunks c JOIN documents d ON d.blob_id = c.blob_id AND d.deleted_at IS NULL"
+            # 手で直した要約のチャンクはその文書だけ。手で直した（消した）文書は、自動の要約では当てない
+            f" AND (c.document_id IS NULL OR c.document_id = d.id)"
+            f" AND NOT (c.source = 'summary' AND c.document_id IS NULL"
+            f"          AND d.id IN (SELECT document_id FROM document_summaries))"
             f" JOIN blobs b ON b.id = c.blob_id WHERE c.id IN ({','.join('?' * len(part))})", part).fetchall()
     tag = pq.filters.get("tag")
     tagged: set[int] | None = None
@@ -337,9 +454,9 @@ def _resolve(conn, cand: set[int], allowed: set[int], after, before, pq: ParsedQ
             continue
         if want_type and kind_of(r["mime_type"], r["filename"], r["kind"]) != want_type:
             continue
-        docs[r["id"]] = {"id": r["id"], "filename": r["filename"], "kind": r["kind"], "folder_id": r["folder_id"],
-                         "mime_type": r["mime_type"], "size_bytes": r["size_bytes"], "status": r["status"],
-                         "updated_at": r["updated_at"], "created_at": r["created_at"]}
+        if not _taken_ok(r["taken_at"], taken):
+            continue
+        docs[r["id"]] = _doc_dict(r)
         chunk_docs.setdefault(r["chunk_id"], []).append(r["id"])
         texts[r["chunk_id"]] = r["text"]
     return docs, chunk_docs, texts

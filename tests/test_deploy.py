@@ -215,5 +215,22 @@ def test_dependabot_and_security_workflow():
 
 def test_notify_private_ranges_match_caddy():
     """通知の「内側」の判定は Caddy の private_ranges と同じ範囲（CI の caddy でも実物と比べる）。"""
-    from docseed.notify import CADDY_PRIVATE_RANGES
+    from docseed.security_notify import CADDY_PRIVATE_RANGES
     assert CADDY_PRIVATE_RANGES == ("192.168.0.0/16", "172.16.0.0/12", "10.0.0.0/8", "127.0.0.1/8", "fd00::/8", "::1")
+
+
+def test_internal_paths_hidden_under_any_prefix():
+    """DOCSEED_BASE_PATH=/docseed のときの「/docseed/admin」なども、外からは 404（docs/design/security.md 8 章）。"""
+    block = CADDYFILE.split("(internal_paths) {", 1)[1].split("\n}\n", 1)[0]
+    regexps = re.findall(r"^\s*path_regexp (\S+)$", block, flags=re.MULTILINE)
+    assert len(regexps) == 2 and len(set(regexps)) == 1   # 外側から・トンネル経由の両方
+    assert "respond @internal_only_prefixed 404" in block
+    assert "respond @internal_only_prefixed_tunnel 404" in block
+    rx = re.compile(regexps[0])   # RE2 と同じ意味になる書き方だけを使っている
+    for hidden in ("/docseed/admin", "/docseed/admin/users", "/docseed/ADMIN", "/a/b/api/docs",
+                   "/docseed/api/docs/oauth2", "/docseed/api/v1/admin/jobs", "/docseed/api/v1/openapi.json",
+                   "/docseed/healthz"):
+        assert rx.match(hidden), hidden
+    for shown in ("/docseed/", "/docseed/d/1", "/docseed/api/v1/documents", "/docseed/administrator",
+                  "/docseed/api/v1/openapi_json", "/admin"):   # 接頭辞なしの /admin は path の一覧で隠す
+        assert not rx.match(shown), shown

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Container
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -80,7 +81,7 @@ def doc_vector(conn: sqlite3.Connection, blob_id: int) -> np.ndarray | None:
     """先頭 20 チャンクのベクトルの平均を L2 正規化したもの。ベクトルが無ければ None。"""
     rows = conn.execute(
         "SELECT v.embedding FROM chunks c JOIN chunk_vectors v ON v.rowid = c.id WHERE c.blob_id = ?"
-        " ORDER BY c.seq LIMIT ?", (blob_id, DOC_CHUNKS)).fetchall()
+        " AND c.source = 'body' ORDER BY c.seq LIMIT ?", (blob_id, DOC_CHUNKS)).fetchall()
     if not rows:
         return None
     m = np.mean([_vec(r[0]) for r in rows], axis=0)
@@ -157,8 +158,12 @@ class Result:
 
 
 def similar_documents(conn: sqlite3.Connection, vec: np.ndarray, doc_id: int,
-                      allowed: dict[int, str]) -> list[tuple[int, int, float]]:
-    """似ている文書の上位 10 件 (文書 ID, フォルダ ID, 類似度)。候補のフォルダの文書だけ。"""
+                      allowed: Container[int], *, top: int = TOP_DOCS,
+                      exclude_blob: int | None = None) -> list[tuple[int, int, float]]:
+    """似ている文書の上位 top 件 (文書 ID, フォルダ ID, 類似度)。allowed のフォルダの文書だけ。
+
+    exclude_blob: 同じ中身（同じ blob）の文書を除く（関連する文書の表示で、ただのコピーを出さない）。
+    """
     rows = conn.execute(
         "SELECT rowid, distance FROM chunk_vectors WHERE embedding MATCH ? AND k = ?",
         (vec.astype(np.float32).tobytes(), NEAR_K)).fetchall()
@@ -171,15 +176,16 @@ def similar_documents(conn: sqlite3.Connection, vec: np.ndarray, doc_id: int,
         part = ids[i:i + 500]
         for r in conn.execute(
                 f"SELECT c.id, d.id AS doc_id, d.folder_id FROM chunks c JOIN documents d ON d.blob_id = c.blob_id"
-                f" WHERE c.id IN ({','.join('?' * len(part))}) AND d.deleted_at IS NULL AND d.id != ?",
-                (*part, doc_id)):
+                f" WHERE c.id IN ({','.join('?' * len(part))}) AND d.deleted_at IS NULL AND d.id != ?"
+                f" AND c.source = 'body' AND d.blob_id IS NOT ?",
+                (*part, doc_id, exclude_blob)):
             if r["folder_id"] not in allowed:
                 continue
             s = sim[r["id"]]
             if r["doc_id"] not in best or s > best[r["doc_id"]][1]:
                 best[r["doc_id"]] = (r["folder_id"], s)
-    top = sorted(best.items(), key=lambda kv: -kv[1][1])[:TOP_DOCS]
-    return [(d, f, s) for d, (f, s) in top]
+    ranked = sorted(best.items(), key=lambda kv: (-kv[1][1], kv[0]))[:top]
+    return [(d, f, s) for d, (f, s) in ranked]
 
 
 def compute(conn: sqlite3.Connection, doc: sqlite3.Row, embedder=None, *, sim_min: float = SIM_MIN,
@@ -358,6 +364,48 @@ def reject(conn: sqlite3.Connection, user: User, doc_id: int, sid: int) -> None:
         conn.execute("UPDATE document_suggestions SET status = 'rejected', decided_at = ? WHERE id = ?", (now(), sid))
 
 
+def rejected_list(conn: sqlite3.Connection, user_id: int, doc_id: int | None = None,
+                  limit: int = 500) -> list[dict]:
+    """自分のファイル（持ち主のフォルダにある文書）で却下した候補。新しく却下した順。doc_id で 1 文書に絞る。"""
+    sql = ("SELECT s.id, s.document_id, s.kind, s.folder_id, s.tag_name, s.source, s.decided_at, d.filename"
+           " FROM document_suggestions s JOIN documents d ON d.id = s.document_id"
+           " JOIN folders f ON f.id = d.folder_id"
+           " WHERE s.status = 'rejected' AND f.owner_id = ? AND d.deleted_at IS NULL")
+    args: list = [user_id]
+    if doc_id is not None:
+        sql += " AND d.id = ?"
+        args.append(doc_id)
+    out = []
+    for r in conn.execute(sql + " ORDER BY s.decided_at DESC, s.id DESC LIMIT ?", (*args, limit)):
+        out.append({"id": r["id"], "document_id": r["document_id"], "filename": r["filename"], "kind": r["kind"],
+                    "label": folder_label(conn, r["folder_id"]) if r["kind"] == "folder" else r["tag_name"],
+                    "source": r["source"], "decided_at": r["decided_at"]})
+    return out
+
+
+def unreject(conn: sqlite3.Connection, user: User, sid: int) -> str:
+    """却下を取り消して、候補に戻す。今の状態に合わない候補（もうそのフォルダにある・もうそのタグが付いている）は
+    候補に戻さず、記録だけを消す（今後、また候補に出せるようになる）。"restored" か "cleared" を返す。
+    """
+    from . import documents as dm
+    r = conn.execute("SELECT * FROM document_suggestions WHERE id = ? AND status = 'rejected'", (sid,)).fetchone()
+    if r is None:
+        raise NotFound("却下した候補が見つかりません")
+    d = dm.get_document(conn, user, r["document_id"], "editor")
+    if r["kind"] == "folder":
+        stale = r["folder_id"] == d["folder_id"]
+    else:
+        stale = (r["tag_name"] or "").lower() in {t.lower() for t in dm.document_tags(conn, d["id"])}
+    with Tx(conn):
+        if stale:
+            conn.execute("DELETE FROM document_suggestions WHERE id = ?", (sid,))
+        else:
+            conn.execute("UPDATE document_suggestions SET status = 'open', decided_at = NULL WHERE id = ?", (sid,))
+        audit(conn, "suggest_unreject", user_id=user.id, target_type="document", target_id=d["id"],
+              kind=r["kind"], value=r["tag_name"] if r["kind"] == "tag" else r["folder_id"])
+    return "cleared" if stale else "restored"
+
+
 # ---------------------------------------------------------------------------
 # worker: suggest_document ジョブ
 # ---------------------------------------------------------------------------
@@ -434,9 +482,11 @@ def auto_moved(conn: sqlite3.Connection, user_id: int, limit: int = 20) -> list[
 # ---------------------------------------------------------------------------
 
 def for_document(conn: sqlite3.Connection, doc: sqlite3.Row, *, embedder=None, enabled: bool = True,
-                 llm_enabled: bool = False) -> dict:
-    """文書の候補と要約。まだ一度も計算していなければ、その場で計算して保存する（100ms 程度）。"""
-    from .llm import get_summary
+                 llm_enabled: bool = False, llm_model: str | None = None) -> dict:
+    """文書の候補と要約。まだ一度も計算していなければ、その場で計算して保存する（100ms 程度）。
+
+    llm_model（今のモデル）を渡すと、別のモデルで作った要約を古いもの（old_model）として返す。
+    """
     owner_id = conn.execute("SELECT owner_id FROM folders WHERE id = ?", (doc["folder_id"],)).fetchone()[0]
     prefs = get_prefs(conn, owner_id)
     out = {"folders": [], "tags": [], "summary": None, "prefs": prefs}
@@ -450,8 +500,49 @@ def for_document(conn: sqlite3.Connection, doc: sqlite3.Row, *, embedder=None, e
         s = open_suggestions(conn, doc["id"])
         out["folders"] = s["folders"] if prefs["suggest_folders"] else []
         out["tags"] = s["tags"] if prefs["suggest_tags"] else []
+        out["rejected"] = conn.execute("SELECT count(*) FROM document_suggestions WHERE document_id = ?"
+                                       " AND status = 'rejected'", (doc["id"],)).fetchone()[0]
     if llm_enabled and prefs["show_summary"]:
-        out["summary"] = get_summary(conn, doc["blob_id"])
+        from .llm import document_summary, manual_summary
+        out["summary"] = document_summary(conn, doc, llm_model)
+        m = manual_summary(conn, doc["id"])
+        out["summary_hidden"] = bool(m and m["hidden"])
+    if llm_enabled:
+        from .llm import summary_pending
+        out["summary_pending"] = summary_pending(conn, doc["blob_id"])
+    return out
+
+
+def redo(conn: sqlite3.Connection, user: User, doc: sqlite3.Row, *, embedder=None, enabled: bool = True,
+         llm_enabled: bool = False, priority: int = 5) -> dict:
+    """文書の画面の「要約とタグをやり直す」。
+
+    フォルダ・タグの候補（埋め込み）はその場で計算し直し、要約と LLM のタグは優先度を上げたジョブで
+    作り直す（既に要約があっても上書きする。手で直した・消した要約もやめて、自動の要約に戻す）。
+    却下した候補は、やり直しても出さない。
+    返り値: {"suggest": 候補を作り直したか, "summary": "queued" / "too_short" / None}
+    """
+    from .llm import clear_manual_summary, enqueue_summary, summary_input
+    out: dict = {"suggest": False, "summary": None}
+    status = conn.execute("SELECT status FROM blobs WHERE id = ?", (doc["blob_id"],)).fetchone()[0]
+    if status != "ready":
+        raise ValidationFailed("文字の読み取りが済んでから、やり直してください")
+    owner_id = conn.execute("SELECT owner_id FROM folders WHERE id = ?", (doc["folder_id"],)).fetchone()[0]
+    prefs = get_prefs(conn, owner_id)
+    if enabled and (prefs["suggest_folders"] or prefs["suggest_tags"]):
+        store(conn, doc["id"], compute(conn, doc, embedder), folders=prefs["suggest_folders"],
+              tags=prefs["suggest_tags"])
+        out["suggest"] = True
+    if llm_enabled:
+        clear_manual_summary(conn, doc, user.id)
+        if summary_input(conn, doc["blob_id"]) is None:
+            out["summary"] = "too_short"
+        else:
+            enqueue_summary(conn, doc["blob_id"], priority=priority)
+            out["summary"] = "queued"
+    with Tx(conn):
+        audit(conn, "suggest_redo", user_id=user.id, target_type="document", target_id=doc["id"],
+              summary=out["summary"])
     return out
 
 

@@ -20,6 +20,11 @@ from .text import looks_garbled, normalize
 MAX_PAGES = 2000
 MIN_TEXT_CHARS = 20          # これ未満のテキスト層は OCR する
 MAX_IMAGE_PIXELS = 100_000_000
+# テキスト層のある PDF のページに貼られた画像（図・表・写真の中の文字）を OCR する条件
+EMBED_MIN_PX = 48            # 画像の短辺（px）がこれ未満なら読まない（アイコン・罫線など）
+EMBED_MIN_AREA = 0.01        # ページに占める割合がこれ未満なら読まない（小さなロゴなど）
+EMBED_MAX_AREA = 0.85        # これ以上はスキャンしたページ（テキスト層は OCR 済み）とみなして読まない
+EMBED_MAX_IMAGES = 8         # 1 ページで読む画像の数の上限（大きい順）
 Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS  # 画像の展開爆弾対策（security.md 6 章）
 
 TEXT_TYPES = {"application/json", "application/xml", "application/x-yaml"}
@@ -62,6 +67,7 @@ class Page:
     source: str                    # text / text_layer / ocr
     text: str | None = None        # source が text / text_layer のとき
     image: Image.Image | None = None  # source が ocr のとき（OCR する画像）
+    images: list[Image.Image] = field(default_factory=list)  # text_layer のページに貼られた画像（OCR して足す）
     warnings: list[dict] = field(default_factory=list)  # blobs.warnings に加える警告
 
 
@@ -76,6 +82,8 @@ def kind(mime: str) -> str:
         return office.MIME_KIND[mime.lower()]
     if mime.startswith("text/") or mime in TEXT_TYPES:
         return "text"
+    if mime.startswith(("audio/", "video/")):
+        return "media"   # 文字起こし（任意機能。pipeline/transcribe.py）。無効なら保存のみ
     return "unsupported"
 
 
@@ -212,11 +220,42 @@ def webclip_page(src: str, clip: dict) -> tuple[str, list[dict]]:
     return text, warnings
 
 
+def embedded_images(page, *, max_images: int = EMBED_MAX_IMAGES) -> list[Image.Image]:
+    """PDF のページに貼られた画像のうち、文字が含まれていそうな大きさのものを取り出す（大きい順）。
+
+    テキスト層のあるページでも、図・表・写真・スクリーンショットの中の文字はテキスト層に無い。
+    ページ全体を覆う画像は、スキャンしたページに OCR 済みのテキスト層を重ねたもの（読み直すと
+    同じ文字が二重になり、時間もかかる）とみなして除く。取り出せない画像（壊れた・未対応の圧縮）は飛ばす。
+    """
+    import pypdfium2.raw as pdfium_c
+    pw, ph = page.get_size()
+    page_area = max(pw * ph, 1.0)
+    found: list[tuple[float, object]] = []
+    for obj in page.get_objects(filter=[pdfium_c.FPDF_PAGEOBJ_IMAGE], max_depth=4):
+        try:
+            left, bottom, right, top = obj.get_bounds()
+            w, h = obj.get_px_size()
+        except Exception:  # noqa: BLE001 - 壊れた画像は飛ばす
+            continue
+        frac = max(0.0, right - left) * max(0.0, top - bottom) / page_area
+        if min(w, h) < EMBED_MIN_PX or frac < EMBED_MIN_AREA or frac >= EMBED_MAX_AREA:
+            continue
+        found.append((frac, obj))
+    out: list[Image.Image] = []
+    for _frac, obj in sorted(found, key=lambda x: -x[0])[:max_images]:
+        try:
+            out.append(obj.get_bitmap(render=True).to_pil())
+        except Exception:  # noqa: BLE001 - 取り出せない画像は飛ばす（ページのテキストは使える）
+            continue
+    return out
+
+
 def iter_pages(path: Path, mime: str, *, dpi: int = 200, skip: set[int] | None = None,
-               force_ocr: bool = False, webclip: dict | None = None) -> Iterator[Page]:
+               force_ocr: bool = False, webclip: dict | None = None, pdf_images: bool = False) -> Iterator[Page]:
     """ページを順に取り出す。skip のページ番号は飛ばす（途中再開用）。
 
     webclip を渡すと（Web クリップの HTML）、1 ページ目をタイトル・サイト名・説明・本文にする。
+    pdf_images を True にすると、テキスト層のある PDF のページに貼られた画像も渡す（呼び出し側で OCR する）。
     """
     skip = skip or set()
     k = kind(mime)
@@ -270,7 +309,8 @@ def iter_pages(path: Path, mime: str, *, dpi: int = 200, skip: set[int] | None =
                     text = normalize(tp.get_text_range(), join_broken_lines=True)
                     tp.close()
                 if not force_ocr and len(re.sub(r"\s", "", text)) >= MIN_TEXT_CHARS and not looks_garbled(text):
-                    yield Page(i + 1, "text_layer", text=text)
+                    images = embedded_images(page) if pdf_images else []
+                    yield Page(i + 1, "text_layer", text=text, images=images)
                 else:
                     image = page.render(scale=dpi / 72).to_pil()
                     yield Page(i + 1, "ocr", image=image)

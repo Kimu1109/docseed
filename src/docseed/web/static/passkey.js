@@ -3,6 +3,9 @@
 (() => {
   "use strict";
 
+  // URL の起点（DOCSEED_BASE_PATH。例 "/docseed"）。base.html の <meta name="docseed-base"> から読む
+  const BASE = (document.querySelector('meta[name="docseed-base"]') || {}).content || "";
+
   const $ = (sel, root = document) => root.querySelector(sel);
   const supported = !!(window.PublicKeyCredential && navigator.credentials);
 
@@ -83,7 +86,7 @@
   let conditionalAbort = null;
 
   async function login(form, conditional) {
-    const opts = await post("/auth/passkeys/login/options");
+    const opts = await post(BASE + "/auth/passkeys/login/options");
     const req = { publicKey: requestOptions(opts.publicKey) };
     if (conditional) {
       conditionalAbort = new AbortController();
@@ -101,10 +104,10 @@
     }
     if (!cred) return;
     const remember = !!$("input[name=remember]", form)?.checked;
-    const res = await post("/auth/passkeys/login/verify", {
+    const res = await post(BASE + "/auth/passkeys/login/verify", {
       challenge_id: opts.challenge_id, credential: credentialJSON(cred), next: form.dataset.next || null, remember,
     });
-    location.assign(res.redirect || "/");
+    location.assign(res.redirect || BASE + "/");
   }
 
   document.addEventListener("DOMContentLoaded", async () => {
@@ -134,13 +137,13 @@
     e.preventDefault();
     if (!supported) { showError("このブラウザはパスキーに対応していません"); return; }
     try {
-      const opts = await post("/api/v1/me/passkeys/register/options");
+      const opts = await post(BASE + "/api/v1/me/passkeys/register/options");
       const cred = await navigator.credentials.create({ publicKey: creationOptions(opts.publicKey) });
-      await post("/api/v1/me/passkeys/register/verify", {
+      await post(BASE + "/api/v1/me/passkeys/register/verify", {
         challenge_id: opts.challenge_id, credential: credentialJSON(cred),
         name: $("input[name=name]", form)?.value || null,
       });
-      location.assign("/settings/security?done=passkey_added");
+      location.assign(BASE + "/settings/security?done=passkey_added");
     } catch (err) {
       if (err && err.name === "InvalidStateError") showError("この端末のパスキーは既に登録されています");
       else if (!cancelled(err)) showError(err.message || String(err));
@@ -152,10 +155,10 @@
     if (!e.target.closest("[data-passkey-reauth]")) return;
     if (!supported) { showError("このブラウザはパスキーに対応していません"); return; }
     try {
-      const opts = await post("/auth/passkeys/login/options");
+      const opts = await post(BASE + "/auth/passkeys/login/options");
       const cred = await navigator.credentials.get({ publicKey: requestOptions(opts.publicKey) });
-      await post("/auth/reauth", { challenge_id: opts.challenge_id, credential: credentialJSON(cred) });
-      location.assign("/settings/security?done=reauthed");
+      await post(BASE + "/auth/reauth", { challenge_id: opts.challenge_id, credential: credentialJSON(cred) });
+      location.assign(BASE + "/settings/security?done=reauthed");
     } catch (err) {
       if (!cancelled(err)) showError(err.message || String(err));
     }

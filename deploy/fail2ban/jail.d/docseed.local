@@ -5,7 +5,7 @@
 #   Docker が用意する DOCKER-USER チェーンで止める。SSH などホストのサービス向けに INPUT でも止める
 # - LAN・Tailscale・Docker の中のアドレスは遮断しない（Docker を通った IPv6 の接続は 172.x に見えるため、
 #   これを遮断すると全員が止まる）
-# - Cloudflare Tunnel 経由の通信はこの方法では止められない（Cloudflare の側で止める。README）
+# - Cloudflare Tunnel 経由の通信はこの方法では止められない（Cloudflare の側で止める。docs/admin/exposure.md）
 
 [docseed]
 enabled  = true

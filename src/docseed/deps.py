@@ -86,7 +86,7 @@ async def _check_csrf(request: Request, expected: str) -> None:
 
 
 # 2 段階認証が必須で未設定のときにも使える画面・API（設定・ログアウト）
-SETUP_ALLOWED_PREFIXES = ("/settings/security", "/auth/", "/logout", "/api/v1/auth/", "/api/v1/me/security",
+SETUP_ALLOWED_PREFIXES = ("/settings/security", "/help", "/auth/", "/logout", "/api/v1/auth/", "/api/v1/me/security",
                           "/api/v1/me/totp", "/api/v1/me/passkeys", "/api/v1/me/recovery-codes")
 
 
@@ -106,6 +106,15 @@ async def require_session(auth: Auth = Depends(require_auth)) -> Auth:
     """API トークンでは行えない操作（トークン発行・ユーザー管理など）。"""
     if auth.kind != "session":
         raise Forbidden("この操作は API トークンでは行えません。ブラウザからログインして行ってください")
+    return auth
+
+
+async def require_admin_read(auth: Auth = Depends(require_auth)) -> Auth:
+    """管理者の読み取りだけの API（状態・指標）。外部の監視から、管理者の API トークン（read）でも呼べる。"""
+    if not auth.user.is_admin:
+        raise Forbidden("管理者だけが行える操作です")
+    if auth.kind == "token" and "read" not in auth.scopes:
+        raise Forbidden("この API トークンには read の権限がありません")
     return auth
 
 

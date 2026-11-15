@@ -335,7 +335,12 @@ def test_refetch_replaces_content(login, settings, site, worker):  # noqa: F811
     text = alice.get(f"/api/v1/documents/{did}/text").json()["pages"][0]["text"]
     assert "新しい本文" in text and "古い本文" not in text
     conn = connect(settings.db_path)
-    # 古い blob は消える
+    # 前に取得した中身は過去の版として残り、版を消すと blob も消える
+    assert conn.execute("SELECT count(*) FROM blobs WHERE mime_type = 'text/html'").fetchone()[0] == 2
+    vers = alice.get(f"/api/v1/documents/{did}/versions").json()["versions"]
+    assert len(vers) == 1
+    assert "古い本文" in alice.get(f"/api/v1/documents/{did}/versions/{vers[0]['id']}/content").text
+    assert alice.delete(f"/api/v1/documents/{did}/versions/{vers[0]['id']}").status_code == 204
     assert conn.execute("SELECT count(*) FROM blobs WHERE mime_type = 'text/html'").fetchone()[0] == 1
     # 本文が短いページには警告
     warn = alice.get(f"/api/v1/documents/{did}").json()["processing"]["warnings"]

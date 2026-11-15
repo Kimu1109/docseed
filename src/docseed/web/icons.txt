@@ -50,3 +50,60 @@ label
 wand_stars
 check
 close
+# 見出し・ボタン・状態を分かりやすくするために追加
+# 操作
+add
+add_link
+link_off
+save
+send
+undo
+history
+star
+bookmark
+keyboard
+replay
+deselect
+delete_sweep
+upload_file
+bookmark_add
+lock_open
+lock_reset
+login
+# 移動・ページ送り
+arrow_back
+chevron_left
+chevron_right
+home
+# 見出し・状態
+folder_open
+search_off
+help
+info
+tune
+visibility
+visibility_off
+location_on
+lock
+public
+text_snippet
+document_scanner
+monitoring
+backup
+security
+verified_user
+password
+token
+devices
+# ユーザー
+person
+person_add
+person_remove
+person_check
+person_off
+group
+# スマホ用の画面
+photo_camera
+open_in_new
+sort
+checklist

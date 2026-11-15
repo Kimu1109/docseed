@@ -67,7 +67,7 @@ services:
 
   # Samba はコンテナにせず、Pi 本体の samba パッケージで /srv/docseed/inbox/<ユーザー名> を公開する（Phase 4 で決定）。
   # 理由: 保守されている arm64 のイメージの選択肢が少ないこと、ファイルの持ち主（UID 1000）を
-  # force user で合わせるだけで済み、設定が単純なこと。手順は README の「受け取り箱」。
+  # force user で合わせるだけで済み、設定が単純なこと。手順は docs/admin/inbox.md。
 
 networks:
   default: {}
@@ -90,6 +90,10 @@ FROM python:3.12-slim-bookworm（arm64）
 ```
 
 - 依存は当面 `pip install .`（`pyproject.toml` の下限指定）で入れる。Phase 2 で依存が増えた時点で `uv` のロックファイル（`uv.lock`）に切り替えて再現性を保つ。
+- ビルドで取り直す量を減らすため、依存（`pyproject.toml` の `dependencies`）を入れる層と、本体（`src`・`README.md`）を入れる層を分ける。コードや文書だけの変更では依存の層をキャッシュから使う。
+- pip は BuildKit のキャッシュマウント（`--mount=type=cache,target=/root/.cache/pip`）を使う。`pyproject.toml` を変えても、前に取った wheel は取り直さない。キャッシュはイメージには入らず、`docker builder prune` で消える。BuildKit は Docker Engine 23 以降の既定。
+- ビルドに送るファイルは `.dockerignore` で `pyproject.toml`・`README.md`・`src` だけにする（`.env` や `.git` を送らない）。
+- CI の compose ジョブは、api のイメージの層を GitHub Actions のキャッシュ（`type=gha`）に置いて使い回す。
 - モデルはイメージに含めない（大きいため。`/srv/docseed/models` に置く）。
 - Pi 上で直接ビルドするか、GitHub Actions の arm64 ランナーでビルドして GHCR に置く（Phase 1 で決める）。
 
@@ -138,10 +142,12 @@ FROM python:3.12-slim-bookworm（arm64）
 | 変数 | 既定値 | 説明 |
 |---|---|---|
 | `DOCSEED_HOST` | — | 公開ホスト名（例 `docseed.tailxxxx.ts.net`） |
+| `DOCSEED_BASE_PATH` | （空） | URL の接頭辞（例 `/docseed` で `https://<名前>/docseed/` に置く）。下の 3.1 |
 | `DOCSEED_DATA_DIR` | `/srv/docseed` | データディレクトリ |
 | `DOCSEED_SECRET_KEY` | — | Cookie 署名用。32 バイト以上の乱数（必須） |
 | `DOCSEED_MAX_UPLOAD_MB` | `1024` | 1 ファイルの上限 |
-| `DOCSEED_TRASH_RETENTION_DAYS` | `30` | ゴミ箱の保持日数 |
+| `DOCSEED_TRASH_RETENTION_DAYS` | `30` | ゴミ箱の保持日数の既定（利用者は設定で 7〜365 日から選べる） |
+| `DOCSEED_VERSIONS_KEEP` | `10` | 1 文書あたりに残す過去の版の数（0 なら残さない） |
 | `DOCSEED_OCR_ENGINE` | `ppocrv6_small` | OCR エンジン（`ppocrv6_small` / `ppocrv6_medium`） |
 | `DOCSEED_OCR_DPI` | `200` | PDF のページ画像化の解像度 |
 | `DOCSEED_OCR_THREADS` | `3` | ONNX Runtime のスレッド数 |
@@ -151,6 +157,17 @@ FROM python:3.12-slim-bookworm（arm64）
 | `DOCSEED_THERMAL_PAUSE_C` | `80` | worker が一時停止する CPU 温度 |
 | `DOCSEED_INBOX_ENABLED` | `false` | inbox 取り込みの有効化 |
 | `DOCSEED_LOG_LEVEL` | `INFO` | |
+
+### 3.1 パスの下で動かす（`DOCSEED_BASE_PATH`）
+
+- アプリの中のパスは接頭辞なし（`/d/1`）のまま。一番外側の ASGI ミドルウェア（`docseed/urls.py` の `BasePathMiddleware`）が、届いた `/docseed/…` から接頭辞を外す。外側のプロキシが先に外して送ってきた場合も、そのまま受け付ける
+- `scope["root_path"]` は使わない。Starlette は `path` が `root_path` で始まる前提で `Mount`（`/static`）を扱うため、外した `path` と組み合わせられない。接頭辞はリクエストごとの `ContextVar` に入れ、URL を作る側が読む
+  - テンプレート: `{{ base }}/d/{{ id }}`。JS: `<meta name="docseed-base">` を読んだ `BASE`。Python: `urls.href()`・`urls.public_root()`
+  - リダイレクト（`Location`・`HX-Redirect` など）と `Set-Cookie` の `Path` は、ミドルウェアが応答のヘッダにまとめて接頭辞を付ける（アプリは今まで通り `/d/1` や `Path=/` を書く）
+- 外から開く URL: `public_url` はオリジンだけ（パスキーの origin）、`public_base` は接頭辞まで（OIDC のリダイレクト URI・通知のリンク・ブックマークレット）
+- 接頭辞の最初の部分がアプリのパス（`/s`・`/api` など）と重なる値は、起動時に止める（外して送られたときに区別できないため）
+- Caddy の「外側からは 404」（security.md 8 章）は、接頭辞の中身を問わず末尾で合わせる `path_regexp` でも行う（`.env` の書き方に左右されないように）
+- 接頭辞を付けたときに、画面のリンク・フォーム・htmx・画像がすべて接頭辞の下を指し、たどれることは `tests/test_base_path.py` で確かめる
 
 ## 4. 初期セットアップ手順
 
@@ -215,9 +232,14 @@ SSD の故障などで Pi を作り直す場合:
 
 ### 5.3 復旧の練習
 
-`sudo scripts/ops/restore-drill.sh` で、動いている docseed に触れずに 5.2 の 2・3・6 を試せる。restic の最新スナップショットを一時ディレクトリ（`/var/tmp/docseed-drill.*`）に復元し、そこで `restore-db` と `verify-files` を実行し、終わったら消す（`--keep` で残す）。原本と同じだけの空き容量が必要なので、定期実行はせず、設定を変えたときと数か月に 1 度、手で実行する。
+`sudo scripts/ops/restore-drill.sh` で、動いている docseed に触れずに 5.2 の 2・3・6 を試せる。restic の最新スナップショットを一時ディレクトリ（`/var/tmp/docseed-drill.*`）に復元し、そこで `restore-db` と `verify-files` を実行し、終わったら消す（`--keep` で残す）。
 
-Phase 5 では開発環境で、アップロード → `backup.sh`（restic のローカルリポジトリ）→ `restore-drill.sh` が成功すること、復元した原本を 1 件書き換え・1 件削除すると `verify-files` が検出して失敗することを確かめた。Pi 実機（USB ドライブへのバックアップ）での練習は、導入時に利用者の手元で行う。
+- **毎月の自動の練習**（実装で追加）: `docseed-restore-drill.timer`（毎月第 1 日曜 5:30。`install-backup.sh` が入れる）が `restore-drill.sh --auto` を実行する。
+  - 先に `restic stats --mode restore-size` で復元する大きさを調べ、`DOCSEED_DRILL_DIR`（既定 `/var/tmp`）の空きがその `DOCSEED_DRILL_MARGIN`（既定 1.2）倍に足りなければ、練習を飛ばして記録だけを残す（終了コード 0）。これで「原本と同じだけの空きが要る」ために定期実行できなかった問題を避ける。手で実行したとき（`--auto` なし）は、足りなければ失敗にする。
+  - 結果（`ok` / `failed` / `skipped`、スナップショット、復元した大きさ、所要時間、最後に成功した日時（飛ばした・失敗したときも前の記録から引き継ぐ））を `<データディレクトリ>/backup/restore-drill-status.json` に書く（`backup.sh` はこのファイルをバックアップに入れない）。手で実行したときも書く。
+  - 管理画面の「バックアップ」に結果を出し、警告にする: 記録が無い（info）、失敗（error）、空きが足りず飛ばした（warning）、40 日以上成功していない（warning）。警告なので、通知（6.1）が設定されていれば知らせる。指標（6.2）は `docseed_backup_last_success_timestamp_seconds{kind="restore_drill"}` と `docseed_restore_drill_ok`。
+
+Phase 5 では開発環境で、アップロード → `backup.sh`（restic のローカルリポジトリ）→ `restore-drill.sh` が成功すること、復元した原本を 1 件書き換え・1 件削除すると `verify-files` が検出して失敗することを確かめた。Pi 実機（USB ドライブへのバックアップ）での練習は、導入時に利用者の手元で行う。自動の練習は、本物の restic で `backup.sh` → `restore-drill.sh --auto` を動かすテスト（`tests/test_drill.py`。成功・空きが足りず飛ばす・原本の書き換えで失敗・restic の設定が無い）で確かめる（CI に restic を入れている）。
 
 ## 6. 監視・ログ
 
@@ -227,13 +249,45 @@ Phase 5 では開発環境で、アップロード → `backup.sh`（restic の�
 | 死活 | `/healthz`。Docker の healthcheck に設定（Dockerfile） |
 | worker の生存 | worker が 30 秒ごとに `settings.worker.heartbeat` を更新。2 分以上止まっていたら警告（error） |
 | ジョブの失敗 | 失敗したジョブがあれば警告（warning） |
-| 温度 | 管理画面に表示。`DOCSEED_THERMAL_PAUSE_C`（既定 80℃）以上なら警告。`vcgencmd get_throttled` 相当のスロットリング履歴はホストで確認 |
+| 温度 | 管理画面に表示。`DOCSEED_THERMAL_WARN_C`（既定 75℃）以上で「高め」の警告、`DOCSEED_THERMAL_PAUSE_C`（既定 80℃）以上で一時停止の警告。`vcgencmd get_throttled` 相当のスロットリング履歴はホストで確認 |
+| メモリ | `/proc/meminfo` の MemAvailable が `DOCSEED_MEMORY_WARN_PCT`（既定 10%）を下回ったら警告（warning） |
 | ディスク | 空き容量が 10% を切ったら警告（warning）。5% を切ったら警告（error）し、アップロードを拒否（507） |
 | バックアップ | DB スナップショットが無い・36 時間以上新しくない、restic の記録が無い（info）・失敗（error）・36 時間以上成功していない（warning） |
 | SSD の状態 | `smartctl` / `nvme smart-log` を週 1 回ホストで実行（任意） |
 
 - 警告は `docseed.monitor.status()` で一か所にまとめ、管理画面の「確認が必要な項目」、左メニューの「管理」のバッジ（error と warning の件数）、`GET /api/v1/admin/status`、`docseed status`（error があれば終了コード 1）で同じものを見せる。
-- 外部の監視サービスへの通知は初版では行わない。必要になったら、API トークンで `/api/v1/admin/status` を定期的に取得し、ntfy 等へ送るスクリプトをホストに置く。
+- 管理画面の「システム」と `GET /api/v1/admin/system`（`monitor.system_info()`）に、CPU 温度・負荷（1・5・15 分）・コア数、メモリ（機械全体）、SSD、DB の大きさ、件数（ファイル・ゴミ箱・過去の版・フォルダ・ユーザー・実体・ページ・チャンク）、過去の版だけが使っている容量、モデル、版（docseed・スキーマ・Python）、起動からの時間を出す。
+
+### 6.1 通知
+
+| 項目 | 内容 |
+|---|---|
+| 宛先 | `DOCSEED_NOTIFY_URLS`（Webhook。カンマか空白区切り）と、`DOCSEED_SMTP_HOST` + `DOCSEED_NOTIFY_EMAIL`（メール）。どちらも無ければ通知の仕組みは動かない |
+| Webhook の形式 | `ntfy`（`https://host/topic` を `https://host/` への JSON 発行にする。priority は error 5 / warning 4 / info 3）、`discord`（`{"content"}`、2000 字まで）、`slack`（`{"text"}`）、`json`（`{"source", "level", "title", "message", "text"}`）。`ntfy+https://...` のように形式を前に付けられ、無ければ discord.com / hooks.slack.com / ntfy.sh をホスト名で見分け、それ以外は json |
+| 知らせること | `DOCSEED_NOTIFY_EVENTS`（既定 `alert,share_upload,inbox`）。`alert`: `monitor.status()` の warning 以上。`share_upload`: 受け取り用の共有リンクからの受け取り。`inbox`: 受け取り箱の取り込み・取り込みの失敗 |
+| 警告の知らせ方 | 5 分ごとに `status()` を確かめ、前回の状態（`settings` の `notify.alerts`）と比べる。2 回続けて出たら知らせる（worker の再起動などの一時的なものを除く）。知らせた警告が重くなったら知らせ直し、続いていれば 24 時間ごとに知らせ直す。知らせた警告が消えたら「解消」を知らせる |
+| 送り方 | 知らせることは `notifications` 表（0009）に積み、api の中のスレッドが 1 分ごとに送る。worker（外部と通信しない）は積むだけ。同じ `group_key`（共有リンクごと・受け取り箱のユーザーごと）の送信待ちは 1 通にまとめる。一部の宛先だけ失敗したら送ったことにしてエラーを残し、すべて失敗したら 1 分おきに 5 回まで送り直して `failed` にする。送った記録は 30 日で消す |
+| 確認 | 管理画面の「通知」（宛先は形式とホスト名だけを出す。Webhook の URL は秘密を含むため）、「テスト通知を送る」（`POST /api/v1/admin/notify/test`。積んですぐ送る）、最近の通知（`GET /api/v1/admin/notifications`） |
+
+- ユーザーごとの宛先（自分の共有リンクの受け取りだけを自分に送る）は持たない。宛先は管理者が `.env` で決める。
+
+### 6.2 指標（Prometheus）
+
+- `GET /api/v1/admin/metrics` が Prometheus のテキスト形式（`text/plain; version=0.0.4`）で返す（`docseed.metrics`。依存は増やさず自前で書く）。管理者のセッションか、**管理者の API トークン（read）** で呼べる（`deps.require_admin_read`。`/admin/status`・`/admin/system` も同じ。ほかの管理の操作はこれまでどおりブラウザのセッションだけ）。
+- 出すもの: 版（`docseed_info`）、文書・過去の版・フォルダ・ページ・チャンク・実体の数と大きさ、ジョブの数（type・status ごと）といちばん古い処理待ちの待ち時間、直近 24 時間に終わったジョブの平均・最大の所要時間（OCR と埋め込みは `process_blob`）、worker の生存と最終応答、警告の数（level ごと）と出ている警告（code）、CPU 温度・負荷・メモリ・SSD・DB の大きさ、バックアップの最終成功時刻（DB スナップショット・restic）、証明書の期限、ユーザーごとの使用量・上限・有効か、通知の数、検索の時間のヒストグラム（`docseed_search_duration_seconds`、mode ごと。api の中で数えるので再起動で 0 に戻る）。
+- 取得のたびに少しの集計（SELECT）を行う。取得の間隔は 30 秒〜1 分を想定。
+- Prometheus の設定の例（Pi の外の Prometheus から）:
+
+```yaml
+scrape_configs:
+  - job_name: docseed
+    scheme: https
+    metrics_path: /api/v1/admin/metrics
+    authorization:
+      credentials_file: /etc/prometheus/docseed-token   # 管理者の API トークン（read）
+    static_configs:
+      - targets: ["docs.example.com"]
+```
 
 ## 7. 更新手順
 

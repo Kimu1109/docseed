@@ -25,6 +25,7 @@ from ..pipeline import derive
 from ..storage import BlobStore
 from ..users import User, get_user
 from . import meta as mt
+from . import render as rd
 from .safefetch import Fetched, FetchError, SafeFetcher, check_url
 
 log = logging.getLogger("docseed.webclip")
@@ -132,7 +133,8 @@ def clip_json(c: sqlite3.Row, image_url: str | None = None) -> dict:
             "final_url": c["final_url"], "canonical_url": c["canonical_url"], "title": c["title"],
             "description": c["description"], "site_name": c["site_name"], "author": c["author"],
             "published_at": c["published_at"], "status": c["status"], "error": err,
-            "http_status": c["http_status"], "fetched_at": c["fetched_at"], "created_at": c["created_at"],
+            "http_status": c["http_status"], "rendered": bool(c["rendered"]),
+            "fetched_at": c["fetched_at"], "created_at": c["created_at"],
             "image_url": image_url}
 
 
@@ -203,7 +205,16 @@ def _save_page(conn: sqlite3.Connection, settings: Settings, store: BlobStore, f
         raise FetchError("fetch_unsupported_type", "HTML として読めませんでした（中身がバイナリです）",
                          http_status=f.status)
     text = mt.decode_html(raw, f.charset)
-    m = mt.parse(text, f.url)
+    base_url, rendered = f.url, False
+    # JavaScript で描くページ（本文が短い）は描画サービスで描いた HTML を保存する（6.10）。
+    # 失敗したら取得した HTML のまま保存する
+    if settings.webclip_render_url and rd.looks_client_rendered(text, f.url):
+        try:
+            r = rd.render(settings.webclip_render_url, f.url, max_bytes=settings.webclip_max_mb * 1024 * 1024)
+            text, base_url, rendered = r.html, r.final_url, True
+        except rd.RenderError as e:
+            log.info("render %s: %s", f.url, e)
+    m = mt.parse(text, base_url)
     tr_title = None
     if not m.author or not m.published_at or not m.title:
         try:
@@ -250,9 +261,9 @@ def _save_page(conn: sqlite3.Connection, settings: Settings, store: BlobStore, f
         conn.execute(
             "UPDATE web_clips SET document_id = ?, final_url = ?, canonical_url = ?, title = ?, description = ?,"
             " site_name = ?, author = ?, published_at = ?, image_blob_id = ?, meta = ?, http_status = ?,"
-            " status = 'done', error = NULL, fetched_at = ? WHERE id = ?",
+            " rendered = ?, status = 'done', error = NULL, fetched_at = ? WHERE id = ?",
             (doc_id, f.url, m.canonical_url, m.title, m.description, m.site_name, m.author, m.published_at,
-             image_blob_id, json.dumps(raw_meta, ensure_ascii=False), f.status, now(), c["id"]))
+             image_blob_id, json.dumps(raw_meta, ensure_ascii=False), f.status, int(rendered), now(), c["id"]))
     dm.gc_blobs(conn, store)
     # サムネイルは og:image から作り、HTML の blob の thumb_path にする
     if image_path is not None:
@@ -334,8 +345,8 @@ def _store_document(conn: sqlite3.Connection, store: BlobStore, settings: Settin
             if mime:
                 stored.mime_type = mime
             blob_id, _dedup = dm._register_blob(conn, store, stored)
-            conn.execute("UPDATE documents SET blob_id = ?, updated_at = ? WHERE id = ?", (blob_id, now(), d["id"]))
+            dm.replace_blob(conn, int(d["id"]), blob_id, user.id, settings.versions_keep)
             return int(d["id"])
     res = dm.upload(conn, store, user, c["folder_id"], name, src, max_bytes=settings.max_upload_bytes,
-                    mime_type=mime, kind=kind)
+                    mime_type=mime, kind=kind, keep_versions=settings.versions_keep)
     return res.document_id

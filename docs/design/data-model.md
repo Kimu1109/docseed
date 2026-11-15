@@ -173,7 +173,43 @@ CREATE TABLE document_tags (
 ```
 
 - 同じフォルダに同名ファイルをアップロードした場合は、API の指定に従い「別名で保存（`name (2).pdf`）」「置き換え」「エラー」のいずれかにする。既定は「別名で保存」。
-- 版管理（履歴）は初版では持たない。「置き換え」は `documents.blob_id` を差し替え、古い blob は参照がなくなれば削除する。
+- 「置き換え」は `documents.blob_id` を差し替え、それまでの中身を **過去の版**（`document_versions`、0008）として残す。中身が同じ（同じ blob）なら版は増やさない。Web クリップの再取得も同じ。
+
+```sql
+CREATE TABLE document_versions (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,   -- 消した版の ID を使い回さない
+  document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  blob_id     INTEGER NOT NULL REFERENCES blobs(id),
+  filename    TEXT NOT NULL,                  -- その版だったときのファイル名
+  created_by  INTEGER REFERENCES users(id),   -- その版を追加した人
+  created_at  TEXT NOT NULL,                  -- その版が今の版になった日時
+  archived_by INTEGER REFERENCES users(id),   -- 次の版で置き換えた人
+  archived_at TEXT NOT NULL                   -- 過去の版になった日時
+);
+-- documents に content_updated_at / content_updated_by（今の版を追加した日時と人。NULL なら created_at / created_by）
+```
+
+- 1 文書あたり新しいものから `DOCSEED_VERSIONS_KEEP`（既定 10）件だけ残し、古いものから消す（置き換えのたびと、毎日の片付け（`purge_trash`）で）。0 なら版を残さない。
+- 過去の版の blob は、どの文書からも参照されていなくても、版がある間は消さない（`gc_blobs`）。版を消す・文書を完全に削除する（カスケード）と、参照がなくなった blob を消す。
+- 過去の版は検索の対象にしない（チャンクは blob に付くが、検索は今の版の文書からたどる）。使用量（`usage_bytes`）にも数えない。
+- 過去の版に戻すと、今の版を過去の版として残し、戻した版の行を消す（戻したことも取り消せる）。
+
+分割・再開できるアップロード（api.md 3.3.2、0013）。受け取り中のデータは `files/.tmp/tus-<id>` に置き、受け取ったバイト数はそのファイルの大きさで表す（表には持たない）。最後まで届いたら文書として保存し、結果を `result` に残す。
+
+```sql
+CREATE TABLE resumable_uploads (
+  id            TEXT PRIMARY KEY,           -- URL に使う乱数
+  user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  folder_id     INTEGER NOT NULL,
+  filename      TEXT NOT NULL,
+  relative_path TEXT,
+  on_conflict   TEXT NOT NULL DEFAULT 'rename',
+  length        INTEGER NOT NULL,           -- Upload-Length
+  result        TEXT,                       -- 保存し終えたら JSON（失敗も含む）。NULL なら受け取り中
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  expires_at    TEXT NOT NULL               -- 最後の書き込みから 24 時間。過ぎたら worker の毎日の片付けで消す
+);
+```
 
 ### 3.4 抽出結果
 
@@ -322,6 +358,15 @@ CREATE TABLE schema_migrations (
 );
 ```
 
+利用者ごとの記録（0010、[画面設計](ui.md) S11）:
+
+| 表 | 内容 |
+|---|---|
+| `favorites(user_id, target_type, target_id, created_at)` | お気に入り（`document` / `folder`）。対象への外部キーは持たず、読むときに今の権限とゴミ箱を確かめ、消えた対象の行は消す |
+| `recent_documents(user_id, document_id, opened_at)` | 最近開いたファイル。開き直すと消して入れ直す（rowid の順＝開いた順）。利用者ごとに 50 件 |
+| `search_history(id, user_id, params, searched_at)` | 検索の履歴。`params` は条件の JSON（キーの順をそろえる）で、同じ条件は 1 件。利用者ごとに 30 件 |
+| `saved_searches(id, user_id, name, params, created_at)` | 保存した検索。利用者ごとに 100 件まで |
+
 ## 4. 削除とゴミ箱
 
 | 操作 | 処理 |
@@ -329,9 +374,12 @@ CREATE TABLE schema_migrations (
 | 文書を削除 | `documents.deleted_at` を設定。検索・一覧から除外される |
 | フォルダを削除 | フォルダと配下のフォルダ・文書すべてに同じ `deleted_at` を設定（一括で復元できるように同じ値にする） |
 | 復元 | `deleted_at` を NULL に戻す。元のフォルダに同名がある場合は別名にする。元のフォルダも削除済みならルートに戻す |
-| 完全削除（ゴミ箱を空にする / 保持期間 30 日経過） | `documents` 行を削除 → どの文書からも参照されなくなった blob を削除（`pages`/`chunks`/ベクトルはカスケード、ファイル実体も削除） |
+| 完全削除（ゴミ箱を空にする / 保持期間（持ち主ごと。既定 30 日）経過） | `documents` 行を削除 → どの文書からも参照されなくなった blob を削除（`pages`/`chunks`/ベクトルはカスケード、ファイル実体も削除） |
 
 完全削除は `purge_trash` ジョブが 1 日 1 回実行する。
+
+- **保持期間は持ち主ごと**（実装で追加）: 利用者が設定で 7・14・30・60・90・180・365 日から選ぶ（`user_prefs` の `trash_retention_days`）。選んでいなければ `DOCSEED_TRASH_RETENTION_DAYS`。フォルダ・文書の持ち主（フォルダの `owner_id`）の日数で判断する（`limits.retention_cutoffs` → `purge_expired`）。
+- **容量の上限**（実装で追加、0011）: `users.quota_bytes`（NULL = 全体の既定 `settings.quota.default_bytes`、0 = 上限なし）。数えるのは持ち主のフォルダにある文書（ゴミ箱の中を含む）と、その過去の版の大きさ（同じ中身の重複も文書ごとに数える）。アップロード・新しい版・コピーで、置く先のフォルダの持ち主の上限を超えるなら 507 `quota_exceeded`（既に上限なら受信の前に断る）。共有されたフォルダ・受け取り用のリンクへの追加は、フォルダの持ち主の分になる。
 
 ## 5. 容量の見積もり（目安）
 

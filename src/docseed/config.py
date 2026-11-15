@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 @dataclass(frozen=True)
@@ -17,10 +19,35 @@ class OidcProvider:
     label: str
 
 
+def normalize_base_path(v: str | None) -> str:
+    """URL の接頭辞を「/docseed」の形にそろえる（空や「/」なら ""）。使える文字は英数字と - _ . / だけ。"""
+    v = (v or "").strip().strip("/")
+    if not v:
+        return ""
+    if not re.fullmatch(r"[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*", v) or any(x in (".", "..") for x in v.split("/")):
+        raise ValueError(f"DOCSEED_BASE_PATH の形が正しくありません: {v!r}（例 /docseed）")
+    return "/" + v
+
+
+def _origin(url: str) -> str:
+    u = urlsplit(url.strip())
+    return f"{u.scheme}://{u.netloc}" if u.scheme and u.netloc else url.strip().rstrip("/")
+
+
+def _url_path(url: str) -> str:
+    """DOCSEED_PUBLIC_URL に https://example.com/docseed のようにパスまで書いた場合、それを接頭辞として使う。"""
+    return urlsplit(url).path if url else ""
+
+
 def _bool(v: str | None, default: bool) -> bool:
     if v is None:
         return default
     return v.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _list(v: str | None) -> tuple[str, ...]:
+    """カンマ・空白・改行区切りの一覧。"""
+    return tuple(x for x in (v or "").replace(",", " ").split() if x)
 
 
 @dataclass(frozen=True)
@@ -29,6 +56,7 @@ class Settings:
     secret_key: str = ""
     max_upload_mb: int = 1024
     trash_retention_days: int = 30
+    versions_keep: int = 10          # DOCSEED_VERSIONS_KEEP（1 文書あたりの過去の版の数。0 なら残さない）
     cookie_secure: bool = True
     session_days: int = 14
     session_hours_short: int = 12
@@ -39,6 +67,7 @@ class Settings:
     ocr_det_side: int = 1600
     ocr_threads: int = 3
     ocr_min_score: float = 0.5
+    ocr_pdf_images: bool = True       # DOCSEED_OCR_PDF_IMAGES（テキスト層のある PDF に貼られた画像も OCR する）
     embed_model: str = "cl-nagoya/ruri-v3-70m"
     embed_threads: int = 3
     query_threads: int = 1
@@ -52,6 +81,7 @@ class Settings:
     https_port: int = 443
     rp_id_override: str = ""          # DOCSEED_RP_ID
     public_url_override: str = ""     # DOCSEED_PUBLIC_URL（通常は空。DOCSEED_HOST とポートから作る）
+    base_path: str = ""               # DOCSEED_BASE_PATH（例 /docseed。https://example.com/docseed/ で開く場合）
     oidc_providers: tuple[OidcProvider, ...] = ()
     # 証明書（Phase 6、docs/design/extensions.md 2 章）
     tls_mode: str = "internal"        # DOCSEED_TLS_MODE
@@ -60,13 +90,21 @@ class Settings:
     webclip_enabled: bool = False     # DOCSEED_WEBCLIP_ENABLED
     webclip_max_mb: int = 5           # HTML の大きさの上限
     webclip_proxy: str = ""           # DOCSEED_WEBCLIP_PROXY
+    webclip_render_url: str = ""      # DOCSEED_WEBCLIP_RENDER_URL（描画サービス。空なら描画しない）
     # 整理の補助（Phase 9、docs/design/extensions.md 7 章）
     suggest_enabled: bool = True      # DOCSEED_SUGGEST_ENABLED（フォルダ・タグの候補）
     llm_enabled: bool = False         # DOCSEED_LLM_ENABLED（要約と新しいタグの提案）
     llm_url: str = "http://llm:8080"  # DOCSEED_LLM_URL（llama-server）
-    llm_model: str = "sarashina2.2-1b-instruct-v0.1-Q4_K_M.gguf"   # DOCSEED_LLM_MODEL（models/llm/ の GGUF）
+    llm_model: str = "LFM2.5-1.2B-JP-Q4_K_M.gguf"   # DOCSEED_LLM_MODEL（models/llm/ の GGUF）
     llm_timeout_s: int = 180          # DOCSEED_LLM_TIMEOUT_S
     llm_max_input_chars: int = 3000   # DOCSEED_LLM_MAX_INPUT_CHARS
+    asr_enabled: bool = False         # DOCSEED_ASR_ENABLED（音声・動画の文字起こし。既定は保存のみ）
+    asr_bin: str = "whisper-cli"      # DOCSEED_ASR_BIN（whisper.cpp の実行ファイル）
+    asr_model: str = "ggml-small.bin"  # DOCSEED_ASR_MODEL（models/asr/ の ggml ファイル）
+    asr_language: str = "ja"          # DOCSEED_ASR_LANGUAGE
+    asr_threads: int = 3              # DOCSEED_ASR_THREADS
+    asr_timeout_s: int = 1800         # DOCSEED_ASR_TIMEOUT_S（10 分の区切り 1 つの上限）
+    video_proxy: bool = True          # DOCSEED_VIDEO_PROXY（映像の保存時に作る、軽いプレビュー用の動画。既定は作る）
     # 受け取り用の共有リンク（ログインなしでアップロードできる。docs/design/security.md 4.3）
     share_upload_link_gb: float = 10.0    # DOCSEED_SHARE_UPLOAD_LINK_GB（1 リンクの合計）
     share_upload_daily_gb: float = 20.0   # DOCSEED_SHARE_UPLOAD_DAILY_GB（すべてのリンクの 24 時間の合計）
@@ -77,7 +115,24 @@ class Settings:
     trusted_nets: str = "private_ranges 100.64.0.0/10"   # DOCSEED_TRUSTED_NETS（Caddy と同じ。内側の接続元）
     rate_limit_enabled: bool = True       # DOCSEED_RATE_LIMIT（ログイン以外の流量制限。security.md 9 章）
     share_upload_min_free_pct: float = 10.0   # DOCSEED_SHARE_UPLOAD_MIN_FREE_PCT（空きがこれを下回ったら受け取らない）
+    # 監視のしきい値（docs/design/deployment.md 6 章）
+    thermal_warn_c: float = 75.0          # DOCSEED_THERMAL_WARN_C（これ以上で「温度が高め」の警告）
+    memory_warn_pct: float = 10.0         # DOCSEED_MEMORY_WARN_PCT（使えるメモリがこれを下回ったら警告）
+    # 通知（docs/design/deployment.md 6.1）。宛先が無ければ通知しない
+    notify_urls: tuple[str, ...] = ()     # DOCSEED_NOTIFY_URLS（Webhook。ntfy / Discord / Slack / JSON）
+    notify_email: tuple[str, ...] = ()    # DOCSEED_NOTIFY_EMAIL（メールの宛先）
+    notify_events: frozenset[str] = frozenset({"alert", "share_upload", "inbox"})   # DOCSEED_NOTIFY_EVENTS
+    smtp_host: str = ""                   # DOCSEED_SMTP_HOST
+    smtp_port: int = 587                  # DOCSEED_SMTP_PORT
+    smtp_security: str = "starttls"       # DOCSEED_SMTP_SECURITY（starttls / ssl / none）
+    smtp_user: str = ""                   # DOCSEED_SMTP_USER
+    smtp_password: str = ""               # DOCSEED_SMTP_PASSWORD
+    smtp_from: str = ""                   # DOCSEED_SMTP_FROM（省略時は DOCSEED_SMTP_USER）
     extra: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def notify_enabled(self) -> bool:
+        return bool(self.notify_urls or (self.smtp_host and self.notify_email))
 
     @property
     def rp_id(self) -> str:
@@ -87,13 +142,22 @@ class Settings:
 
     @property
     def public_url(self) -> str:
-        """外から開くときの URL（https://<名前>[:ポート]）。OIDC のリダイレクト URI とパスキーの origin に使う。"""
+        """外から開くときのオリジン（https://<名前>[:ポート]。パスは含まない）。パスキーの origin に使う。
+
+        DOCSEED_BASE_PATH の分を含めた URL は public_base。"""
         if self.public_url_override:
-            return self.public_url_override.rstrip("/")
+            return _origin(self.public_url_override)
         host = self.rp_id or _first_host(self.host)
         if not host:
             return ""
         return f"https://{host}" + ("" if self.https_port == 443 else f":{self.https_port}")
+
+    @property
+    def public_base(self) -> str:
+        """外から開くときのアプリの起点（https://<名前>[:ポート][/<接頭辞>]）。
+
+        OIDC のリダイレクト URI・通知のリンク・ブックマークレットに使う。"""
+        return self.public_url + self.base_path if self.public_url else ""
 
     def oidc_provider(self, name: str) -> OidcProvider | None:
         return next((p for p in self.oidc_providers if p.name == name), None)
@@ -113,6 +177,10 @@ class Settings:
     @property
     def models_dir(self) -> Path:
         return self.data_dir / "models"
+
+    @property
+    def asr_model_path(self) -> Path:
+        return self.models_dir / "asr" / self.asr_model
 
     @property
     def inbox_dir(self) -> Path:
@@ -139,6 +207,7 @@ class Settings:
             secret_key=e.get("DOCSEED_SECRET_KEY", ""),
             max_upload_mb=int(e.get("DOCSEED_MAX_UPLOAD_MB", "1024")),
             trash_retention_days=int(e.get("DOCSEED_TRASH_RETENTION_DAYS", "30")),
+            versions_keep=max(0, int(e.get("DOCSEED_VERSIONS_KEEP", "10"))),
             cookie_secure=_bool(e.get("DOCSEED_COOKIE_SECURE"), True),
             log_level=e.get("DOCSEED_LOG_LEVEL", "INFO"),
             ocr_engine=e.get("DOCSEED_OCR_ENGINE", "ppocrv6_small"),
@@ -146,6 +215,7 @@ class Settings:
             ocr_det_side=int(e.get("DOCSEED_OCR_DET_SIDE", "1600")),
             ocr_threads=int(e.get("DOCSEED_OCR_THREADS", "3")),
             ocr_min_score=float(e.get("DOCSEED_OCR_MIN_SCORE", "0.5")),
+            ocr_pdf_images=_bool(e.get("DOCSEED_OCR_PDF_IMAGES"), True),
             embed_model=e.get("DOCSEED_EMBED_MODEL", "cl-nagoya/ruri-v3-70m"),
             embed_threads=int(e.get("DOCSEED_EMBED_THREADS", "3")),
             query_threads=int(e.get("DOCSEED_QUERY_THREADS", "1")),
@@ -153,22 +223,43 @@ class Settings:
             inbox_enabled=_bool(e.get("DOCSEED_INBOX_ENABLED"), False),
             inbox_keep=_bool(e.get("DOCSEED_INBOX_KEEP"), False),
             thermal_pause_c=float(e.get("DOCSEED_THERMAL_PAUSE_C", "80")),
+            thermal_warn_c=float(e.get("DOCSEED_THERMAL_WARN_C") or "75"),
+            memory_warn_pct=float(e.get("DOCSEED_MEMORY_WARN_PCT") or "10"),
+            notify_urls=_list(e.get("DOCSEED_NOTIFY_URLS")),
+            notify_email=_list(e.get("DOCSEED_NOTIFY_EMAIL")),
+            notify_events=frozenset(_list(e.get("DOCSEED_NOTIFY_EVENTS")) or ("alert", "share_upload", "inbox")),
+            smtp_host=e.get("DOCSEED_SMTP_HOST", "").strip(),
+            smtp_port=int(e.get("DOCSEED_SMTP_PORT") or "587"),
+            smtp_security=(e.get("DOCSEED_SMTP_SECURITY") or "starttls").strip().lower(),
+            smtp_user=e.get("DOCSEED_SMTP_USER", "").strip(),
+            smtp_password=e.get("DOCSEED_SMTP_PASSWORD", ""),
+            smtp_from=e.get("DOCSEED_SMTP_FROM", "").strip(),
             host=e.get("DOCSEED_HOST", ""),
             https_port=int(e.get("DOCSEED_HTTPS_PORT") or "443"),
             rp_id_override=e.get("DOCSEED_RP_ID", "").strip(),
             public_url_override=e.get("DOCSEED_PUBLIC_URL", "").strip(),
+            base_path=normalize_base_path(e.get("DOCSEED_BASE_PATH")
+                                          or _url_path(e.get("DOCSEED_PUBLIC_URL", "").strip())),
             oidc_providers=_oidc_from_env(e),
             tls_mode=e.get("DOCSEED_TLS_MODE", "internal").strip() or "internal",
             tls_check_addr=e.get("DOCSEED_TLS_CHECK_ADDR", "").strip(),
             webclip_enabled=_bool(e.get("DOCSEED_WEBCLIP_ENABLED"), False),
             webclip_max_mb=int(e.get("DOCSEED_WEBCLIP_MAX_MB") or "5"),
             webclip_proxy=e.get("DOCSEED_WEBCLIP_PROXY", "").strip(),
+            webclip_render_url=e.get("DOCSEED_WEBCLIP_RENDER_URL", "").strip(),
             suggest_enabled=_bool(e.get("DOCSEED_SUGGEST_ENABLED"), True),
             llm_enabled=_bool(e.get("DOCSEED_LLM_ENABLED"), False),
             llm_url=(e.get("DOCSEED_LLM_URL") or "http://llm:8080").rstrip("/"),
-            llm_model=e.get("DOCSEED_LLM_MODEL") or "sarashina2.2-1b-instruct-v0.1-Q4_K_M.gguf",
+            llm_model=e.get("DOCSEED_LLM_MODEL") or "LFM2.5-1.2B-JP-Q4_K_M.gguf",
             llm_timeout_s=int(e.get("DOCSEED_LLM_TIMEOUT_S") or "180"),
             llm_max_input_chars=int(e.get("DOCSEED_LLM_MAX_INPUT_CHARS") or "3000"),
+            asr_enabled=_bool(e.get("DOCSEED_ASR_ENABLED"), False),
+            asr_bin=e.get("DOCSEED_ASR_BIN") or "whisper-cli",
+            asr_model=e.get("DOCSEED_ASR_MODEL") or "ggml-small.bin",
+            asr_language=e.get("DOCSEED_ASR_LANGUAGE") or "ja",
+            asr_threads=int(e.get("DOCSEED_ASR_THREADS") or "3"),
+            asr_timeout_s=int(e.get("DOCSEED_ASR_TIMEOUT_S") or "1800"),
+            video_proxy=_bool(e.get("DOCSEED_VIDEO_PROXY"), True),
             share_upload_link_gb=float(e.get("DOCSEED_SHARE_UPLOAD_LINK_GB") or "10"),
             share_upload_daily_gb=float(e.get("DOCSEED_SHARE_UPLOAD_DAILY_GB") or "20"),
             rate_limit_enabled=_bool(e.get("DOCSEED_RATE_LIMIT"), True),

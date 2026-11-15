@@ -12,6 +12,8 @@ from zoneinfo import ZoneInfo
 
 from markupsafe import Markup, escape
 
+from ..urls import base
+
 TZ = ZoneInfo(os.environ.get("DOCSEED_TIMEZONE", "Asia/Tokyo"))
 
 STATUS_LABEL = {
@@ -66,6 +68,19 @@ def filesize(n: int | None) -> str:
     return f"{size:.1f} TB"
 
 
+def duration(seconds: float | None) -> str:
+    """「3 日 4 時間」「5 時間 12 分」「8 分」。"""
+    if seconds is None:
+        return "—"
+    m = int(seconds) // 60
+    d, h, m = m // 1440, m // 60 % 24, m % 60
+    if d:
+        return f"{d} 日 {h} 時間"
+    if h:
+        return f"{h} 時間 {m} 分"
+    return f"{m} 分"
+
+
 def taken_at(iso: str | None) -> str:
     """EXIF の撮影日時（時差つきなら画面のタイムゾーンに直す。無ければそのまま）。"""
     if not iso:
@@ -102,6 +117,7 @@ WARNING_TEXT = {
     "ocr_timeout": "{page} ページ目の文字の読み取りが時間切れになりました",
     "sheet_truncated": "シート「{sheet}」はセルが多いため、先頭 {cells} セルだけを検索の対象にしました",
     "webclip_text_short": "本文を取り出せませんでした（JavaScript で描くページなど）。タイトルと説明だけで検索できます",
+    "no_speech": "音声から文字を取り出せませんでした（無音・音楽だけなど）",
     "summary_timeout": "要約が {seconds} 秒以内に終わらなかったため、要約なしにしました",
     "thumbnail_failed": "サムネイル・プレビューを作れませんでした（文字の読み取りと検索には影響しません）",
 }
@@ -160,4 +176,4 @@ def icon(name: str, label: str | None = None, cls: str = "") -> Markup:
                          " scripts/build_icons.py を実行）")
     a11y = f' role="img" aria-label="{escape(label)}"' if label else ' aria-hidden="true" focusable="false"'
     extra = f" {escape(cls)}" if cls else ""
-    return Markup(f'<svg class="icon{extra}"{a11y}><use href="{ICONS_URL}#i-{name}"/></svg>')
+    return Markup(f'<svg class="icon{extra}"{a11y}><use href="{base()}{ICONS_URL}#i-{name}"/></svg>')

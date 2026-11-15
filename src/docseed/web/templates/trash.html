@@ -2,14 +2,14 @@
 {% block title %}ゴミ箱{% endblock %}
 {% block main %}
 <div class="page-head">
-  <h1 class="page-title">ゴミ箱</h1>
+  <h1 class="page-title">{{ icon("delete") }} ゴミ箱</h1>
   {% if items %}
   <div class="actions">
-    <button type="button" class="btn btn-danger" hx-post="/trash/empty" hx-target="#trash" hx-swap="outerHTML"
-            hx-confirm="ゴミ箱の {{ items | length }} 件をすべて完全に削除します。元に戻せません。よろしいですか？">ゴミ箱を空にする</button>
+    <button type="button" class="btn btn-danger" hx-post="{{ base }}/trash/empty" hx-target="#trash" hx-swap="outerHTML"
+            hx-confirm="ゴミ箱の {{ items | length }} 件をすべて完全に削除します。元に戻せません。よろしいですか？">{{ icon("delete_sweep") }}ゴミ箱を空にする</button>
   </div>
   {% endif %}
 </div>
-<p class="note">削除した日から {{ retention }} 日たつと自動的に完全に削除されます。</p>
+<p class="note">{{ icon("schedule") }} 削除した日から {{ retention }} 日たつと自動的に完全に削除されます。</p>
 {% include "_trash_list.html" %}
 {% endblock %}

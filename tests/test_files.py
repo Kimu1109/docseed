@@ -193,7 +193,7 @@ def test_audit_log(login, conn):
 def test_healthz(app):
     from fastapi.testclient import TestClient
     r = TestClient(app).get("/healthz")
-    assert r.status_code == 200 and r.json()["schema_version"] == 5
+    assert r.status_code == 200 and r.json()["schema_version"] == 13
 
 
 def test_batch_move_and_delete_from_listing(login, conn):
@@ -248,3 +248,50 @@ def test_listing_marks_rows_for_drag_and_drop(login):
     assert f'data-item="folder:{f["id"]}"' in html and f'data-drop="{f["id"]}"' in html
     assert f'data-item="document:{d["id"]}"' in html and 'draggable="true"' in html
     assert 'id="batch-form"' in html and 'id="selbar"' in html
+
+
+def test_trash_preview(login, conn):
+    """ゴミ箱の中のファイルも、消してよいかを確かめるためにプレビューできる（持ち主だけ）。"""
+    alice, bob = login("alice"), login("bob")
+    f = alice.post("/api/v1/folders", json={"parent_id": alice.root, "name": "古い"}).json()
+    sub = alice.post("/api/v1/folders", json={"parent_id": f["id"], "name": "2025"}).json()
+    inner = alice.upload(sub["id"], {"中.txt": "フォルダの中身".encode()}).json()["results"][0]["document"]
+    loose = alice.upload(alice.root, {"loose.txt": "消す前に読みたい".encode()}).json()["results"][0]["document"]
+    alive = alice.upload(alice.root, {"alive.txt": b"alive"}).json()["results"][0]["document"]
+    alice.delete(f"/api/v1/folders/{f['id']}")
+    alice.delete(f"/api/v1/documents/{loose['id']}")
+
+    # 一覧から名前を押してプレビューを開ける
+    r = alice.get("/trash")
+    assert f'/trash/document/{loose["id"]}"' in r.text and f'/trash/folder/{f["id"]}"' in r.text
+
+    # 文書のプレビュー（テキストは画面に、原本は API から）
+    r = alice.get(f"/trash/document/{loose['id']}")
+    assert r.status_code == 200 and "消す前に読みたい" in r.text and "ゴミ箱の中にあります" in r.text
+    assert f"/api/v1/trash/document/{loose['id']}/content" in r.text
+    r = alice.get(f"/api/v1/trash/document/{loose['id']}/content?inline=1")
+    assert r.status_code == 200 and r.content == "消す前に読みたい".encode()
+    assert alice.get(f"/api/v1/trash/document/{loose['id']}/thumbnail").status_code == 404  # サムネイルはまだ無い
+
+    # フォルダの中身の一覧と、その中のファイルのプレビュー
+    r = alice.get(f"/trash/folder/{f['id']}")
+    assert r.status_code == 200 and "中.txt" in r.text and "2025" in r.text
+    j = alice.get(f"/api/v1/trash/folder/{f['id']}").json()
+    assert j["folders"] == 1 and [(d["filename"], d["path"]) for d in j["documents"]] == [("中.txt", "2025")]
+    r = alice.get(f"/trash/document/{inner['id']}")
+    assert r.status_code == 200 and "フォルダの中身" in r.text and f'/trash/folder/{f["id"]}"' in r.text
+
+    # ゴミ箱に無いもの・ほかの人のものは見られない
+    assert alice.get(f"/trash/document/{alive['id']}").status_code == 404
+    assert alice.get(f"/api/v1/trash/document/{alive['id']}/content").status_code == 404
+    assert bob.get(f"/trash/document/{loose['id']}").status_code == 404
+    assert bob.get(f"/api/v1/trash/document/{loose['id']}/content").status_code == 404
+    assert bob.get(f"/trash/folder/{f['id']}").status_code == 404
+
+    # プレビューの画面から（htmx でない送信で）戻す・完全に削除する
+    r = alice.post(f"/trash/document/{loose['id']}/restore", data={"csrf_token": alice.csrf}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].endswith(f"/d/{loose['id']}?done=restored")
+    assert alice.get(f"/api/v1/documents/{loose['id']}").status_code == 200
+    r = alice.post(f"/trash/folder/{f['id']}/purge", data={"csrf_token": alice.csrf}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].endswith("/trash?done=purged")
+    assert alice.get("/api/v1/trash").json()["items"] == []
