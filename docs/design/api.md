@@ -252,7 +252,7 @@ GET /api/v1/search?q=振込先 請求書&mode=hybrid&type=pdf&tag=経理&folder=
 - `text` は HTML エスケープ済みで、`<mark>` タグだけを含む。
 - `q` 内の `type:` `tag:` `folder:` `after:` `before:` `taken:` もパラメータと同じ意味で解釈する（[検索設計](search.md) 2 章）。
 - `taken`: 写真の撮影日（`2026` / `2026-05` / `2026-05-03` / `2026-05-01..2026-05-10` / `..2025`）。結果の `document.taken_at` に撮影日時（無ければ null）。
-- 検索語が無く `type` `tag` `after` `before` `taken` のどれかがあれば、条件に合う文書を並べる（`mode: "filter"`、`snippets` は空）。
+- 検索語が無く `type` `tag` `folder` `after` `before` `taken` のどれかがあれば、条件に合う文書を並べる（`mode: "filter"`、`snippets` は空）。
 - `sem_min`（0〜1、省略可）: 意味検索の類似度の下限を一時的に変える。評価スクリプト用で、省略時は設定値（既定 0.80）。
 
 #### 3.5.1 質問に答える（RAG。実装で追加）

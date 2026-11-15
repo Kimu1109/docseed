@@ -27,7 +27,7 @@ SNIPPETS_PER_DOC = 3
 MAX_OFFSET = 500
 MODES = ("hybrid", "semantic", "keyword")
 FILTER_KEYS = ("type", "tag", "folder", "after", "before", "taken")
-LIST_FILTERS = ("type", "tag", "after", "before", "taken")   # 検索語が無くても、これがあれば一覧を出す
+LIST_FILTERS = ("type", "tag", "folder", "after", "before", "taken")   # 検索語が無くても、これがあれば一覧を出す
 _TOKEN = re.compile(r'-?"[^"]*"|\S+')
 
 
@@ -380,6 +380,7 @@ def _filter_only(conn: sqlite3.Connection, user: User, q: str, pq: ParsedQuery, 
             fid = int(pq.filters["folder"])
             allowed &= _subtree(conn, fid) if fid in allowed else set()
         except ValueError:
+            notices.append("folder: にはフォルダの番号を指定してください")
             allowed = set()
     after = _date(pq.filters["after"]) if "after" in pq.filters else None
     before = _date(pq.filters["before"]) if "before" in pq.filters else None

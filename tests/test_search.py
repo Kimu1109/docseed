@@ -158,6 +158,17 @@ def test_folder_filter_page(indexed, login, conn, users):
     assert f'href="/search?folder={f["id"]}"' in alice.get(f"/f/{f['id']}").text
     page = alice.get("/search", params={"folder": f["id"]}).text
     assert f'<option value="{f["id"]}" selected>マイファイル / 経理</option>' in page
+    # フォルダだけでも一覧を出す（中のフォルダの文書も含む）
+    sub = alice.post("/api/v1/folders", json={"parent_id": f["id"], "name": "2026"}).json()
+    alice.patch(f"/api/v1/documents/{ids['契約書.txt']}", json={"folder_id": sub["id"]})
+    page = alice.get("/search", params={"folder": f["id"]}).text
+    assert "請求書_A社.txt" in page and "契約書.txt" in page and "会議メモ.txt" not in page
+    r = alice.get("/api/v1/search", params={"folder": f["id"]}).json()
+    assert r["mode"] == "filter" and sorted(x["document"]["filename"] for x in r["results"]) == \
+        ["契約書.txt", "請求書_A社.txt"]
+    r = alice.get("/api/v1/search", params={"folder": "abc"}).json()
+    assert r["total"] == 0 and "folder:" in r["notices"][0]
+    alice.patch(f"/api/v1/documents/{ids['契約書.txt']}", json={"folder_id": alice.root})
     assert f'<option value="{alice.root}" >マイファイル</option>' in page
     page = alice.get("/search", params={"q": "振込先", "folder": f["id"]}).text
     assert "請求書_A社.txt" in page
