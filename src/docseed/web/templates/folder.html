@@ -5,6 +5,7 @@
   {% set link_last = False %}{% include "_crumbs.html" %}
   <div class="actions m-ic">
     {% set fav, fav_type, fav_id, small = folder.id in favs.folder, "folder", folder.id, False %}{% include "_fav.html" %}
+    <a class="btn" href="{{ base }}/search?folder={{ folder.id }}" title="このフォルダの中を検索">{{ icon("search") }}<span class="lbl">検索</span></a>
     <a class="btn" href="{{ base }}/api/v1/folders/{{ folder.id }}/archive" title="このフォルダをまとめてダウンロード">{{ icon("folder_zip") }}<span class="lbl">ZIP</span></a>
     <button type="button" class="btn" data-open-dialog="dlg-share" hx-get="{{ base }}/x/share?type=folder&id={{ folder.id }}"
             hx-target="#share-body" hx-swap="outerHTML">{{ icon("share") }}<span class="lbl">共有</span></button>

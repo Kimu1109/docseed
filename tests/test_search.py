@@ -139,6 +139,40 @@ def test_folder_filter(indexed):
     assert names(alice.get("/api/v1/search", params={"q": "有効期間", "folder": f["id"]})) == []
 
 
+def test_media_type_filter(login):
+    """種類の「音声・動画」（type=media）。文字が無くても、絞り込みだけで一覧に出る。"""
+    alice = login("alice")
+    mp3 = b"ID3\x03\x00\x00\x00\x00\x00\x00" + b"\x00" * 256
+    alice.upload(alice.root, {"song.mp3": mp3, "memo.txt": b"hello"})
+    assert names(alice.get("/api/v1/search", params={"type": "media"})) == ["song.mp3"]
+    page = alice.get("/search", params={"type": "media"}).text
+    assert '<option value="media" selected>音声・動画</option>' in page
+    assert "song.mp3" in page and "memo.txt" not in page
+
+
+def test_folder_filter_page(indexed, login, conn, users):
+    """検索画面の「フォルダ」の選択欄と、フォルダの画面の「検索」ボタン。"""
+    alice, ids = indexed
+    f = alice.post("/api/v1/folders", json={"parent_id": alice.root, "name": "経理"}).json()
+    alice.patch(f"/api/v1/documents/{ids['請求書_A社.txt']}", json={"folder_id": f["id"]})
+    assert f'href="/search?folder={f["id"]}"' in alice.get(f"/f/{f['id']}").text
+    page = alice.get("/search", params={"folder": f["id"]}).text
+    assert f'<option value="{f["id"]}" selected>マイファイル / 経理</option>' in page
+    assert f'<option value="{alice.root}" >マイファイル</option>' in page
+    page = alice.get("/search", params={"q": "振込先", "folder": f["id"]}).text
+    assert "請求書_A社.txt" in page
+    assert "契約書.txt" not in alice.get("/search", params={"q": "有効期間", "folder": f["id"]}).text
+    # 候補は見られるフォルダだけ。共有されたフォルダは持ち主の名前を付けて後ろに並ぶ
+    bob = login("bob")
+    assert "/ 経理</option>" not in bob.get("/search").text
+    with Tx(conn):
+        conn.execute("INSERT INTO folder_members VALUES (?, ?, 'viewer', ?, ?)",
+                     (f["id"], users["bob"].id, users["alice"].id, now()))
+    page = bob.get("/search").text
+    mine, shared = page.index(">マイファイル</option>"), page.index(" さんのファイル / 経理</option>")
+    assert mine < shared
+
+
 def test_access_control(indexed, login, conn, users):
     alice, ids = indexed
     bob = login("bob")

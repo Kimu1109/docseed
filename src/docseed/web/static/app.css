@@ -482,7 +482,7 @@ mark { background: var(--mark); color: inherit; padding: 0 1px; }
 .search-filters { display: flex; flex-wrap: wrap; gap: var(--s3); margin-top: var(--s3); align-items: end; }
 .search-filters label { display: grid; gap: 2px; font-size: 13px; color: var(--muted); }
 .search-filters select, .search-filters input[type=date] { height: 34px; min-width: 140px; }
-.search-filters .folder-filter { display: flex; align-items: center; gap: 6px; color: var(--ink); height: 34px; }
+.search-filters .folder-filter select { max-width: 320px; }
 .result-count { margin: 0 0 var(--s3); }
 .results { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); background: var(--surface); }
 .result { display: grid; grid-template-columns: 6px auto minmax(0, 1fr); border-bottom: 1px solid var(--line); }
@@ -897,6 +897,7 @@ kbd:not(.kbd) { display: inline-block; min-width: 1.6em; padding: 0 5px; font: 1
   .search-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2) var(--s3); }
   .search-filters select, .search-filters input[type=date] { min-width: 0; }
   .search-filters .folder-filter { grid-column: 1 / -1; }
+  .search-filters .folder-filter select { max-width: none; }
   .search-save { flex-wrap: wrap; width: 100%; }
   .result-bar .search-save input[name=name] { flex: 1; width: auto; max-width: none; min-width: 0; height: 34px; font-size: 16px; }
   .results { margin: 0 calc(-1 * var(--s4)); border-left: 0; border-right: 0; }

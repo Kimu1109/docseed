@@ -25,9 +25,15 @@
     <label>更新日（まで）<input type="date" name="before" value="{{ before }}"></label>
     <label>撮影日（から）<input type="date" name="taken_from" value="{{ taken_from }}"></label>
     <label>撮影日（まで）<input type="date" name="taken_to" value="{{ taken_to }}"></label>
-    {% if folder %}
-    <label class="check folder-filter"><input type="checkbox" name="folder" value="{{ folder }}" checked> {{ folder_name or "指定したフォルダ" }} の中だけ</label>
-    {% endif %}
+    <label class="folder-filter">フォルダ
+      <select name="folder"><option value="">すべて</option>
+        {%- set ns = namespace(found=False) %}
+        {%- for fid, label in folder_options %}{% if fid | string == folder %}{% set ns.found = True %}{% endif %}
+        <option value="{{ fid }}" {% if fid | string == folder %}selected{% endif %}>{{ label }}</option>
+        {%- endfor %}
+        {%- if folder and not ns.found %}<option value="{{ folder }}" selected>{{ folder_name or "指定したフォルダ" }}</option>{% endif %}
+      </select>
+    </label>
   </div>
 </form>
 
