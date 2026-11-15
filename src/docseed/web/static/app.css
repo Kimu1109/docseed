@@ -203,7 +203,7 @@ code { font-family: var(--mono); font-size: 13px; }
 .side > a[aria-current="page"] { border-left-color: var(--accent); background: var(--surface); font-weight: 700; }
 .side-foot { margin-top: auto; padding: var(--s4); border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
 .side-foot b { color: var(--ink); font-variant-numeric: tabular-nums; }
-.main { padding: var(--s5) var(--s6) 64px; min-width: 0; }
+.main { padding: var(--s5) var(--s6) 64px; min-width: 0; max-width: 1240px; }
 
 .page-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s4);
              flex-wrap: wrap; min-height: 40px; margin-bottom: var(--s4); }
@@ -357,7 +357,7 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .textview { margin: 0; padding: var(--s4); font: 13px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
             max-height: calc(100vh - 210px); overflow: auto; }
 .nopreview { padding: var(--s6); text-align: center; }
-.doc-side { display: grid; gap: var(--s4); }
+.doc-side { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s4); min-width: 0; }
 .facts { margin: 0; background: var(--surface); border: 1px solid var(--line); display: grid;
          grid-template-columns: 96px minmax(0, 1fr); }
 .facts dt, .facts dd { margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
@@ -659,6 +659,7 @@ body.has-selection .main { padding-bottom: 96px; }
 
 /* ---- 関連する文書 ------------------------------------------------------- */
 .related { list-style: none; margin: 0 0 var(--s2); padding: 0; display: grid; gap: var(--s2); }
+.related li { min-width: 0; }
 .related a { display: flex; gap: 6px; align-items: center; min-width: 0; }
 .related .related-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .related .icon { flex: none; width: 1.1em; height: 1.1em; }
