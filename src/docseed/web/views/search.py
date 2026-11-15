@@ -53,7 +53,7 @@ def search_page(request: Request, q: str = "", mode: str = "hybrid", type: str =
     taken = f"{taken_from}..{taken_to}" if taken_from or taken_to else ""
     filters = {k: v for k, v in {"type": type, "tag": tag, "after": after, "before": before,
                                  "folder": folder, "taken": taken}.items() if v}
-    # 検索語が無くても、種類・タグ・日付・撮影日で絞り込めば一覧を出す（フォルダだけでは出さない）
+    # 検索語が無くても、種類・タグ・日付・撮影日で絞り込めば一覧を出す（フォルダだけでも出す）
     listing = any(k in filters for k in LIST_FILTERS)
     result = run_search(request, conn, auth, q, mode, PER_PAGE, (page - 1) * PER_PAGE, filters) \
         if q.strip() or listing else None

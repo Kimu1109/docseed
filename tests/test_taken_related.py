@@ -69,7 +69,7 @@ def test_taken_filter_respects_access(photos, login):
 
 def test_filter_only_listing_for_other_filters(photos):
     alice = photos
-    # 種類だけでも一覧にできる（フォルダだけでは出さない: 画面）
+    # 種類だけでも一覧にできる
     assert len(names(alice.get("/api/v1/search", params={"type": "image"}))) == 4
     assert names(alice.get("/api/v1/search", params={"type": "pdf"})) == []
 
