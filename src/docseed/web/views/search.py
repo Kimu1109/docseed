@@ -26,7 +26,21 @@ PER_PAGE = 20
 MODE_LABEL = {"hybrid": "すべて", "semantic": "意味が近い", "keyword": "キーワード"}
 
 
-TYPE_OPTIONS = ["pdf", "image", "text", "doc", "sheet", "slide", "webclip"]
+TYPE_OPTIONS = ["pdf", "image", "text", "doc", "sheet", "slide", "media", "webclip"]
+
+
+def folder_options(conn: sqlite3.Connection, auth: Auth) -> list[tuple[int, str]]:
+    """絞り込みの「フォルダ」の候補。見られるフォルダを (id, 「マイファイル / 経理」のような表記) で返す。
+
+    表記は検索結果の場所と同じ。自分のフォルダを先に、共有されたフォルダを後に、それぞれ表記の順に並べる。
+    """
+    from ...search import accessible_folders
+    labels: dict[int, str] = {}
+    mine = {r[0] for r in conn.execute("SELECT id FROM folders WHERE owner_id = ? AND deleted_at IS NULL",
+                                       (auth.user.id,))}
+    items = [(fid not in mine, display_location(conn, auth, fid, labels), fid)
+             for fid in accessible_folders(conn, auth.user)]
+    return [(fid, label) for _, label, fid in sorted(items)]
 
 
 @router.get("/search", response_class=HTMLResponse)
@@ -73,6 +87,7 @@ def search_page(request: Request, q: str = "", mode: str = "hybrid", type: str =
         request, conn, auth, nav="search", q=q, mode=mode if mode in MODE_LABEL else "hybrid", result=result,
         paths=paths, page=page, per_page=PER_PAGE, mode_label=MODE_LABEL, type_options=TYPE_OPTIONS,
         type=type, tag=tag, after=after, before=before, folder=folder, folder_name=folder_name, tags=tags,
+        folder_options=folder_options(conn, auth),
         summaries=summaries, taken_from=taken_from, taken_to=taken_to,
         ask_enabled=settings.llm_enabled and bool(q.strip()), ask_filters=filters,
         saved=ps.list_saved(conn, auth.user), history=ps.list_history(conn, auth.user) if result is None else [],
