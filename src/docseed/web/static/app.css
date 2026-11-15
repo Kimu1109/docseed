@@ -203,7 +203,7 @@ code { font-family: var(--mono); font-size: 13px; }
 .side > a[aria-current="page"] { border-left-color: var(--accent); background: var(--surface); font-weight: 700; }
 .side-foot { margin-top: auto; padding: var(--s4); border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
 .side-foot b { color: var(--ink); font-variant-numeric: tabular-nums; }
-.main { padding: var(--s5) var(--s6) 64px; min-width: 0; max-width: 1240px; }
+.main { padding: var(--s5) var(--s6) 64px; min-width: 0; }
 
 .page-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s4);
              flex-wrap: wrap; min-height: 40px; margin-bottom: var(--s4); }
