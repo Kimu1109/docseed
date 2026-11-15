@@ -2,21 +2,6 @@
 
 Raspberry Pi 5 で動くローカルのドキュメントサーバーです。ファイルの保存・共有、OCR（PP-OCRv6）、日本語埋め込み（ruri-v3-70m）によるハイブリッド検索を、すべて手元の機械で行います。
 
-| 段階 | 内容 | 状態 |
-|---|---|---|
-| Phase 0 | 実機での計測（OCR・埋め込み・検索） | 完了 |
-| Phase 1 | ログイン、フォルダ、アップロード / ダウンロード、ゴミ箱、ユーザー管理、画面 | 完了 |
-| Phase 2 | OCR・埋め込みの処理（worker） | 完了 |
-| Phase 3 | 検索 | 完了 |
-| Phase 4 | 共有（フォルダのメンバー、共有リンク、受け取り箱） | 完了 |
-| Phase 5 | 運用（バックアップ、監視、Office 文書） | 実装済み（Pi での復旧の練習は導入時に） |
-| Phase 6 | HTTPS 証明書の方式の切り替え（internal / file / tailscale / acme_dns）と監視、アイコン、HEIC / AVIF、サムネイル・プレビュー | 実装済み |
-| Phase 7 | ログイン（パスキー・確認コード・復旧コード・Google などの OIDC・再認証） | 実装済み |
-| Phase 8 | URL の取り込み（Web クリップ。SSRF 対策つきの取得、OGP・本文の取り出しと検索、ブックマークレット） | 実装済み |
-| Phase 9 | 整理の補助（フォルダ・タグの候補、小型 LLM による要約） | 実装済み（LLM のモデルは Pi 5 での計測で決める） |
-| Phase 10 | 音声・動画の文字起こし（任意。バッチ処理・既定はオフ） | 実装済み |
-
-
 ## できること
 
 - **保存と共有**: フォルダ、ドラッグ＆ドロップでのアップロード（切れても続きから）、過去の版、ゴミ箱、ユーザー間のフォルダの共有、外の人への共有リンク（受け取り用も）
@@ -38,7 +23,7 @@ Raspberry Pi 5 で動くローカルのドキュメントサーバーです。�
 
 ## すぐに試す（Raspberry Pi・Docker）
 
-詳しい手順と前提は [導入](docs/admin/install.md)。
+詳しい手順と前提は [導入](https://github.com/Kimu1109/docseed/wiki/admin-install)。
 
 ```bash
 git clone https://github.com/kimu1109/docseed.git && cd docseed
@@ -64,7 +49,7 @@ docker compose up -d --build
 docker compose exec api docseed create-admin --username <名前>
 ```
 
-`https://<DOCSEED_HOST>/` を開いてログインします。次に [HTTPS の証明書](docs/admin/https.md) と [バックアップ](docs/admin/backup.md) を設定してください。
+`https://<DOCSEED_HOST>/` を開いてログインします。次に [HTTPS の証明書](https://github.com/Kimu1109/docseed/wiki/admin-https) と [バックアップ](https://github.com/Kimu1109/docseed/wiki/admin-backup) を設定してください。
 
 ## 開発
 
