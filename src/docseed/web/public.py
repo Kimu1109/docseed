@@ -17,11 +17,21 @@ from ..db import Tx
 from ..deps import client_ip, get_conn, get_settings, get_store
 from ..errors import AppError, NotFound
 from ..files import can_preview, derived_response, file_response
+from ..mdview import is_markdown
 from ..storage import BlobStore
 from .routes import templates
 
 router = APIRouter(prefix="/s", include_in_schema=False)
 pass_limiter = security.LoginLimiter(max_failures=10, window_s=900)
+
+
+def _markdown(store: BlobStore, d: sqlite3.Row) -> dict:
+    """Markdown の文書なら、整えた表示に要るもの（md_html・text_preview・truncated）。ほかは md_html=None。"""
+    from .views.documents import markdown_preview_of, text_preview_of
+    if not is_markdown(d["mime_type"], d["filename"]):
+        return {"md_html": None}
+    text, truncated = text_preview_of(store, d)
+    return {"md_html": markdown_preview_of(d, text), "text_preview": text, "truncated": truncated}
 
 
 def _invalid(request: Request, status: int = 404) -> HTMLResponse:
@@ -77,7 +87,7 @@ def _guard(fn):
 
 @router.get("/{token}", response_class=HTMLResponse)
 def share_page(token: str, request: Request, folder: int | None = None, conn: sqlite3.Connection = Depends(get_conn),
-               settings: Settings = Depends(get_settings)):
+               settings: Settings = Depends(get_settings), store: BlobStore = Depends(get_store)):
     try:
         acc = _access(conn, settings, request, token)
     except _NeedPassword:
@@ -86,10 +96,11 @@ def share_page(token: str, request: Request, folder: int | None = None, conn: sq
     except NotFound:
         return _invalid(request)
     ctx = {"request": request, "user": None, "token": token, "share": acc.share, "creator": acc.creator,
-           "can_preview": can_preview}
+           "can_preview": can_preview, "is_markdown": is_markdown}
     if acc.document is not None:
         _log(conn, acc, request, "view")
-        return templates.TemplateResponse(request, "share_page.html", ctx | {"doc": acc.document})
+        return templates.TemplateResponse(request, "share_page.html",
+                                          ctx | {"doc": acc.document} | _markdown(store, acc.document))
     if acc.share["permission"] == "upload":
         root = fo.get_folder_row(conn, acc.folder_id)
         return templates.TemplateResponse(request, "share_page.html", ctx | {"upload_to": root, "results": None})
@@ -166,6 +177,23 @@ def share_preview(token: str, doc_id: int, request: Request, conn: sqlite3.Conne
     return file_response(store.path(d["storage_path"]), d, inline=True)
 
 
+@router.get("/{token}/md/{doc_id}", response_class=HTMLResponse)
+@_guard
+def share_markdown(token: str, doc_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
+                   settings: Settings = Depends(get_settings), store: BlobStore = Depends(get_store)):
+    """フォルダの共有の中の Markdown の文書を、整えて表示する（ui.md S10）。"""
+    acc = _access(conn, settings, request, token)
+    d = _doc_for(conn, acc, doc_id)
+    if acc.document is not None:            # 文書の共有は共有ページそのものに出す
+        return RedirectResponse(f"/s/{token}", status_code=303)
+    if not is_markdown(d["mime_type"], d["filename"]):
+        raise NotFound("見つかりません")
+    _log(conn, acc, request, "view", document=d["id"])
+    return templates.TemplateResponse(request, "share_page.html", {
+        "request": request, "user": None, "token": token, "share": acc.share, "creator": acc.creator,
+        "can_preview": can_preview, "doc": d, "in_folder": True} | _markdown(store, d))
+
+
 @router.get("/{token}/thumb/{doc_id}")
 @_guard
 def share_thumb(token: str, doc_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
@@ -233,4 +261,4 @@ def share_upload(token: str, request: Request, files: list[UploadFile] = File(..
                   [r["saved_as"] for r in results if r["ok"]])
     return templates.TemplateResponse(request, "share_page.html", {
         "request": request, "user": None, "token": token, "share": acc.share, "creator": acc.creator,
-        "upload_to": root, "results": results, "can_preview": can_preview})
+        "upload_to": root, "results": results, "can_preview": can_preview, "is_markdown": is_markdown})
