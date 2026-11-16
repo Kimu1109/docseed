@@ -24,7 +24,7 @@ from ..common import (
     templates,
     toast,
 )
-from .documents import PAGES_SHOWN, clip_for, text_preview_of
+from .documents import PAGES_SHOWN, clip_for, markdown_preview_of, text_preview_of
 
 
 def render_trash(request: Request, conn: sqlite3.Connection, auth: Auth, message: str | None = None,
@@ -61,6 +61,7 @@ def trash_document_page(doc_id: int, request: Request, conn: sqlite3.Connection 
         folder = _trashed_top(conn, d["folder_id"], d["deleted_at"])
     return templates.TemplateResponse(request, "trash_document.html", base_context(
         request, conn, auth, nav="trash", doc=d, text_preview=text_preview, truncated=truncated, pages=pages,
+        md_html=markdown_preview_of(d, text_preview),
         pages_shown=PAGES_SHOWN, clip=clip_for(conn, d), location=dm.location_of(conn, d["folder_id"]), folder=folder,
         retention=trash_retention(conn, auth.user.id, settings.trash_retention_days)))
 

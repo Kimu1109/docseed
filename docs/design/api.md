@@ -296,6 +296,7 @@ POST /api/v1/ask
 | GET | `/s/{token}/items` | フォルダ共有の一覧（`?folder_id=` で配下へ移動） |
 | GET | `/s/{token}/download/{document_id}` | ダウンロード（文書共有は document_id 省略可） |
 | GET | `/s/{token}/preview/{document_id}` | プレビュー（許可形式のみ） |
+| GET | `/s/{token}/md/{document_id}` | フォルダの共有の中の Markdown を整えて表示する画面（実装で追加。ui.md S10） |
 | GET | `/s/{token}/archive` | フォルダ共有の ZIP ダウンロード |
 | POST | `/s/{token}/upload` | `upload` 権限のリンクへのアップロード |
 

@@ -11,10 +11,13 @@
 
 {% if doc %}
   {% set k = kind_of(doc.mime_type, doc.filename, doc.kind) %}
+  {% if in_folder %}
+  <p class="small"><a href="{{ base }}/s/{{ token }}?folder={{ doc.folder_id }}">{{ icon("chevron_left") }}フォルダに戻る</a></p>
+  {% endif %}
   <div class="doc-title">
     <span class="kind kind-{{ k }} kind-lg" title="{{ kind_label[k] }}"></span>
     <h1>{{ doc.filename }}</h1>
-    <a class="btn btn-primary" href="{{ base }}/s/{{ token }}/download">{{ icon("download") }}ダウンロード（{{ doc.size_bytes | filesize }}）</a>
+    <a class="btn btn-primary" href="{{ base }}/s/{{ token }}/download{% if in_folder %}/{{ doc.id }}{% endif %}">{{ icon("download") }}ダウンロード（{{ doc.size_bytes | filesize }}）</a>
   </div>
   <section class="preview{% if media_kind(doc.mime_type) == 'audio' %} preview-audio{% endif %}" aria-label="プレビュー">
     {% if doc.mime_type == "application/pdf" %}
@@ -24,6 +27,8 @@
     {% elif media_kind(doc.mime_type) %}
       {% set media_kind_now, media_src, media_name = media_kind(doc.mime_type), base ~ "/s/" ~ token ~ "/view/" ~ doc.id, doc.filename %}
       {% include "_media.html" %}
+    {% elif md_html %}
+      {% include "_markdown.html" %}
     {% elif can_preview(doc.mime_type) %}
       <iframe class="textframe" src="{{ base }}/s/{{ token }}/preview/{{ doc.id }}" title="{{ doc.filename }} のプレビュー"></iframe>
     {% else %}
@@ -74,7 +79,7 @@
       {% set k = kind_of(d.mime_type, d.filename, d.kind) %}
       <tr>
         <td class="col-kind"><span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span></td>
-        <td class="col-name"><div class="cell-name">{% if d.thumb_path %}<img class="thumb" src="{{ base }}/s/{{ token }}/thumb/{{ d.id }}" alt="" loading="lazy">{% else %}<span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span>{% endif %}{% if d.view_path %}<a class="name" href="{{ base }}/s/{{ token }}/view/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% elif can_preview(d.mime_type) %}<a class="name" href="{{ base }}/s/{{ token }}/preview/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% else %}<span class="name">{{ d.filename }}</span>{% endif %}</div></td>
+        <td class="col-name"><div class="cell-name">{% if d.thumb_path %}<img class="thumb" src="{{ base }}/s/{{ token }}/thumb/{{ d.id }}" alt="" loading="lazy">{% else %}<span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span>{% endif %}{% if d.view_path %}<a class="name" href="{{ base }}/s/{{ token }}/view/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% elif is_markdown(d.mime_type, d.filename) %}<a class="name" href="{{ base }}/s/{{ token }}/md/{{ d.id }}">{{ d.filename }}</a>{% elif can_preview(d.mime_type) %}<a class="name" href="{{ base }}/s/{{ token }}/preview/{{ d.id }}" target="_blank" rel="noopener">{{ d.filename }}</a>{% else %}<span class="name">{{ d.filename }}</span>{% endif %}</div></td>
         <td class="col-date">{{ d.updated_at | shortdate }}</td>
         <td class="col-size">{{ d.size_bytes | filesize }}</td>
         <td class="col-actions"><a class="btn btn-sm" href="{{ base }}/s/{{ token }}/download/{{ d.id }}">{{ icon("download") }}ダウンロード</a></td>
