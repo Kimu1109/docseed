@@ -186,3 +186,16 @@ def test_limiter_memory_is_bounded():
     for i in range(1000):
         lim.failed(f"u:random-{i}")
     assert len(lim._fail) <= 100
+
+
+def test_cookie_values_keeps_duplicates_in_order():
+    """同じ名前の Cookie を、届いた順にすべて返す（request.cookies は後のほうで上書きする）。"""
+    from starlette.requests import Request
+
+    from docseed.security import cookie_values
+    req = Request({"type": "http", "headers": [
+        (b"cookie", b'a=1; b=2; a="x y"'), (b"cookie", b"a=3; ab=9; =z; c")]})
+    assert cookie_values(req, "a") == ["1", "x y", "3"]
+    assert cookie_values(req, "b") == ["2"]
+    assert cookie_values(req, "none") == []
+    assert req.cookies["a"] == "3"     # これがあるので request.cookies では読まない

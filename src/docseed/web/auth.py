@@ -135,7 +135,10 @@ def oidc_callback(provider: str, request: Request, state: str | None = None, cod
     ip = client_ip(request)
     purpose = "login"
     try:
-        data, claims = oidc.callback(settings, p, request.cookies.get(oidc.COOKIE), state, code, error)
+        # 同じ名前の Cookie が複数届いたら、署名の合うものを先から（security.cookie_values）
+        cookie = next((v for v in security.cookie_values(request, oidc.COOKIE)
+                       if security.unsign_value(settings.secret_key, "oidc", v) is not None), None)
+        data, claims = oidc.callback(settings, p, cookie, state, code, error)
         purpose = data.get("purpose", "login")
         if purpose == "link":
             # 開始したときと同じユーザーがログインしたままで、再認証が有効なこと

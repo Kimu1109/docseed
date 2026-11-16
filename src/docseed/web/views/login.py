@@ -54,9 +54,8 @@ def login_submit(request: Request, username: str = Form(""), password: str = For
 
 @router.post("/logout")
 def logout(request: Request, conn: sqlite3.Connection = Depends(get_conn), auth: Auth = Depends(require_session)):
-    raw = request.cookies.get(security.SESSION_COOKIE)
-    if raw:
-        security.delete_session(conn, raw)
+    if auth.session is not None:   # 使っていたセッション（同じ名前の古い Cookie があっても、こちらを消す）
+        security.delete_session_by_id(conn, auth.session.id_hash)
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie(security.SESSION_COOKIE, path="/")
     return resp

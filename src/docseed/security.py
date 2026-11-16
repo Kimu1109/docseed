@@ -26,6 +26,24 @@ SESSION_COOKIE = "docseed_session"
 TOKEN_PREFIX = "dsk_"
 
 
+def cookie_values(request, name: str) -> list[str]:
+    """Cookie ヘッダーにある name の値を、届いた順にすべて返す（docs/design/security.md 2.2）。
+
+    同じ名前の Cookie は Path ごとに別に持たれ、ブラウザはパスの長い（より合う）ものを先に送る。
+    DOCSEED_BASE_PATH で動かすと、前に Path=/ で付けた古い Cookie（接頭辞なしで使っていたとき・
+    同じホスト名の別のポートの docseed）も一緒に届く。request.cookies は同じ名前を後のほうで上書きするため
+    古いほうを読んでしまい、ログインできたのにログイン画面へ戻される。読む側は先のものから順に試す。
+    """
+    from http.cookies import _unquote  # type: ignore[attr-defined]  # Starlette の cookie_parser と同じ戻し方
+    out = []
+    for header in request.headers.getlist("cookie"):
+        for chunk in header.split(";"):
+            key, sep, val = chunk.partition("=")
+            if sep and key.strip() == name:
+                out.append(_unquote(val.strip()))
+    return out
+
+
 def hash_password(password: str) -> str:
     validate_password(password)
     return _ph.hash(password)
@@ -130,8 +148,12 @@ def load_session(conn: sqlite3.Connection, raw: str, *, remember_days: int) -> S
 
 
 def delete_session(conn: sqlite3.Connection, raw: str) -> None:
+    delete_session_by_id(conn, sha256(raw))
+
+
+def delete_session_by_id(conn: sqlite3.Connection, id_hash: str) -> None:
     with Tx(conn):
-        conn.execute("DELETE FROM sessions WHERE id = ?", (sha256(raw),))
+        conn.execute("DELETE FROM sessions WHERE id = ?", (id_hash,))
 
 
 def delete_other_sessions(conn: sqlite3.Connection, user_id: int, keep_id_hash: str | None) -> None:

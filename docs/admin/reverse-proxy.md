@@ -192,6 +192,7 @@ sudo nginx -t && sudo systemctl reload nginx
 | `DOCSEED_HTTPS_PORT=443` にしたら Caddy が起動しない | 443 を Web サーバーが使っている。docseed の Caddy は別のポートのままにし、Web サーバーから転送する（この文書のやり方） |
 | `/docseed/` を開くと Web サーバーの 404 が出る | 転送の設定が効いていない。Apache なら `Include` がその名前の `<VirtualHost *:443>` の中にあるか（`sudo apachectl -S`）、`a2enmod proxy proxy_http ssl headers` をしたか、再読み込みしたかを確かめる。80 番（HTTP）の `VirtualHost` にだけ書いていないかも見る |
 | 502 / 503（Proxy Error） | Web サーバーから Caddy につながらない。上の `curl -skI --resolve …` で Caddy が返すか確かめる。Apache なら `SSLProxyEngine on` があるか、`/var/log/apache2/error.log` に何が出ているか |
+| 正しいユーザー名とパスワードでも、エラーが出ずにログイン画面に戻る | 前に接頭辞なしで使っていたとき（または同じホスト名の別のポートの docseed）の古い Cookie が残っている。今の版では起きないように直しています。古い版では、ブラウザでそのホストの Cookie（`docseed_session`・`docseed_device`）を消すと直る |
 | `/docseed/docseed/…` になる・ログイン後に `/` に飛ぶ | 接頭辞の付け方が二重・不足。Apache は `ProxyPass /docseed/ https://127.0.0.1:6443/docseed/`、nginx は `proxy_pass https://127.0.0.1:6443;`（末尾の / なし）の形にする。docseed の側の `DOCSEED_BASE_PATH` も確かめる |
 | 開くと Caddy の画面が出ない・証明書のエラー・「接続できない」がすぐ出る | `DOCSEED_HOST` が、ブラウザで開く名前と違う。Caddy はその名前でだけ応答する。`ProxyPreserveHost On`（nginx は `proxy_set_header Host $host;`）も必要 |
 | パスキーで「パスキーは … で開いたときに使えます」と出る | `DOCSEED_HOST` の先頭の名前（パスキーの RP ID）が、ブラウザで開いている名前と違う。先頭をその名前にする |
