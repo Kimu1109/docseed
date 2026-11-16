@@ -129,6 +129,35 @@ def test_static_and_api_docs(bapp):
     assert spec["servers"] == [{"url": B}]
 
 
+def _session_from(r) -> str:
+    return next(c.split(";")[0].split("=", 1)[1] for c in r.headers.get_list("set-cookie")
+                if c.startswith("docseed_session="))
+
+
+def test_stale_root_cookie_does_not_block_login(bapp):
+    """前に Path=/ で付いた古い docseed_session が残っていても、ログインできる（security.md 2.2）。
+
+    ブラウザは同じ名前の Cookie を、パスの長いもの（Path=/docseed の新しいもの）を先に、Path=/ の古いものを
+    後に送る。後のほうで読むと、ログインに成功したのにログイン画面へ戻されていた。
+    """
+    r = TestClient(bapp).post(B + "/login", data={"username": "admin", "password": PASSWORD},
+                              headers={"Cookie": "docseed_session=stale-from-root"}, follow_redirects=False)
+    assert r.status_code == 303
+    good = _session_from(r)
+    http = TestClient(bapp)
+    for cookie in (f"docseed_session={good}; docseed_device=x; docseed_session=stale-from-root",
+                   f"docseed_session=stale-from-root; docseed_session={good}"):
+        page = http.get(B + "/trash", headers={"Cookie": cookie}, follow_redirects=False)
+        assert page.status_code == 200, cookie
+    # ログアウトは使っていたセッションを消す
+    r = TestClient(bapp).post(B + "/api/v1/auth/login", json={"username": "admin", "password": PASSWORD})
+    raw, csrf = _session_from(r), r.json()["csrf_token"]
+    cookie = f"docseed_session={raw}; docseed_session=stale-from-root"
+    assert http.post(B + "/api/v1/auth/logout", headers={"Cookie": cookie, "X-CSRF-Token": csrf}).status_code == 204
+    assert http.get(B + "/trash", headers={"Cookie": f"docseed_session={raw}"},
+                    follow_redirects=False).status_code == 303
+
+
 def test_outer_proxy_that_strips_the_prefix(bapp):
     """nginx の proxy_pass http://pi/; のように、外側で接頭辞を外して送ってきても動く。"""
     http = TestClient(bapp)

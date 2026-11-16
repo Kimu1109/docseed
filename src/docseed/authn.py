@@ -246,10 +246,11 @@ def _norm(username: str) -> str:
 
 def trusted_device(settings: Settings, request: Request, username: str) -> str | None:
     """この端末がそのユーザー名でログインに成功したことがあれば、端末の ID を返す。"""
-    d = security.unsign_value(settings.secret_key, "device", request.cookies.get(DEVICE_COOKIE))
-    if not isinstance(d, dict) or d.get("u") != _norm(username) or not isinstance(d.get("n"), str):
-        return None
-    return d["n"]
+    for value in security.cookie_values(request, DEVICE_COOKIE):   # 同じ名前が複数あれば、合うものを先から
+        d = security.unsign_value(settings.secret_key, "device", value)
+        if isinstance(d, dict) and d.get("u") == _norm(username) and isinstance(d.get("n"), str):
+            return d["n"]
+    return None
 
 
 def set_device_cookie(settings: Settings, request: Request, response: Response, username: str) -> None:
@@ -356,7 +357,8 @@ def password_login(conn: sqlite3.Connection, settings: Settings, request: Reques
 
 
 def pending_second_factor(conn: sqlite3.Connection, request: Request) -> sqlite3.Row | None:
-    return challenge_get(conn, request.cookies.get(SECOND_FACTOR_COOKIE), "second_factor")
+    return next((row for cid in security.cookie_values(request, SECOND_FACTOR_COOKIE)
+                 if (row := challenge_get(conn, cid, "second_factor")) is not None), None)
 
 
 def finish_second_factor(conn: sqlite3.Connection, settings: Settings, request: Request, response: Response,

@@ -53,8 +53,9 @@ def _resolve(conn: sqlite3.Connection, request: Request, token: str) -> sh.Share
 
 def _access(conn: sqlite3.Connection, settings: Settings, request: Request, token: str) -> sh.ShareAccess:
     acc = _resolve(conn, request, token)
-    if acc.share["password_hash"] and not sh.check_pass_cookie(
-            settings.secret_key, token, request.cookies.get(sh.cookie_name(token))):
+    if acc.share["password_hash"] and not any(
+            sh.check_pass_cookie(settings.secret_key, token, v)
+            for v in security.cookie_values(request, sh.cookie_name(token))):
         raise _NeedPassword()
     return acc
 

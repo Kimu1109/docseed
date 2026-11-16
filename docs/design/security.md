@@ -33,6 +33,7 @@
 | ログイン時 | 新しいセッション ID を発行（セッション固定攻撃の対策） |
 | パスワード変更時 | そのユーザーの他のセッションをすべて削除 |
 | CSRF | セッションごとの CSRF トークンを HTML の meta に埋め込み、POST/PUT/PATCH/DELETE では `X-CSRF-Token` ヘッダ（フォームは hidden 項目）で送らせて照合 |
+| 同じ名前の Cookie（実装で追加） | 同じ名前の Cookie は Path ごとに別に持たれ、ブラウザはパスの長いものから順にすべて送る（`DOCSEED_BASE_PATH` で動かすと、前に接頭辞なしで付けた `Path=/` の古いものも届く）。Starlette の `request.cookies` は後のほうで上書きするので使わず、`security.cookie_values` で届いた順にすべて読み、有効なものを先から使う（セッション・`docseed_device`・2 段階目・OIDC・共有リンクのパスワード）。ログアウトは使っていたセッションを消す |
 
 ### 2.3 API トークン（CLI・スクリプト用）
 

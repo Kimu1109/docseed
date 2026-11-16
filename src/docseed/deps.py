@@ -60,10 +60,9 @@ async def optional_auth(request: Request, conn: sqlite3.Connection = Depends(get
             raise Forbidden(f"この API トークンには {need} の権限がありません")
         return auth
 
-    raw = request.cookies.get(security.SESSION_COOKIE)
-    if not raw:
-        return None
-    sess = security.load_session(conn, raw, remember_days=settings.session_days)
+    # 同じ名前の Cookie が複数届くことがある（古い Path=/ のものなど）。先のものから順に、有効なものを使う
+    sess = next((s for raw in security.cookie_values(request, security.SESSION_COOKIE)
+                 if (s := security.load_session(conn, raw, remember_days=settings.session_days)) is not None), None)
     if sess is None:
         return None
     auth = Auth(get_user(conn, sess.user_id), "session", session=sess)

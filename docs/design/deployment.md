@@ -164,6 +164,7 @@ FROM python:3.12-slim-bookworm（arm64）
 - `scope["root_path"]` は使わない。Starlette は `path` が `root_path` で始まる前提で `Mount`（`/static`）を扱うため、外した `path` と組み合わせられない。接頭辞はリクエストごとの `ContextVar` に入れ、URL を作る側が読む
   - テンプレート: `{{ base }}/d/{{ id }}`。JS: `<meta name="docseed-base">` を読んだ `BASE`。Python: `urls.href()`・`urls.public_root()`
   - リダイレクト（`Location`・`HX-Redirect` など）と `Set-Cookie` の `Path` は、ミドルウェアが応答のヘッダにまとめて接頭辞を付ける（アプリは今まで通り `/d/1` や `Path=/` を書く）
+  - そのため、前に接頭辞なしで使っていた（または同じホスト名の別のポートの docseed が付けた）`Path=/` の Cookie は、アプリからは消せない。同じ名前の Cookie が 2 つ届いても、届いた順に有効なものを使う（security.md 2.2）
 - 外から開く URL: `public_url` はオリジンだけ（パスキーの origin）、`public_base` は接頭辞まで（OIDC のリダイレクト URI・通知のリンク・ブックマークレット）
 - 接頭辞の最初の部分がアプリのパス（`/s`・`/api` など）と重なる値は、起動時に止める（外して送られたときに区別できないため）
 - Caddy の「外側からは 404」（security.md 8 章）は、接頭辞の中身を問わず末尾で合わせる `path_regexp` でも行う（`.env` の書き方に左右されないように）
