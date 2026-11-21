@@ -1,16 +1,16 @@
 <div id="trash">
 {% if not items %}
-  <div class="empty">{{ icon("delete") }}<p>ゴミ箱は空です。</p></div>
+  <div class="empty">{{ icon("delete") }}<p>{{ _("ゴミ箱は空です。") }}</p></div>
 {% else %}
 <table class="files">
   <thead>
     <tr>
-      <th class="col-kind"><span class="sr">種類</span></th>
-      <th class="col-name">名前</th>
-      <th class="col-loc">元の場所</th>
-      <th class="col-date">削除日</th>
-      <th class="col-size">サイズ</th>
-      <th class="col-actions"><span class="sr">操作</span></th>
+      <th class="col-kind"><span class="sr">{{ _("種類") }}</span></th>
+      <th class="col-name">{{ _("名前") }}</th>
+      <th class="col-loc">{{ _("元の場所") }}</th>
+      <th class="col-date">{{ _("削除日") }}</th>
+      <th class="col-size">{{ _("サイズ") }}</th>
+      <th class="col-actions"><span class="sr">{{ _("操作") }}</span></th>
     </tr>
   </thead>
   <tbody>
@@ -18,15 +18,15 @@
     {% set k = "folder" if it.type == "folder" else kind_of(it.mime_type, it.name) %}
     <tr>
       <td class="col-kind"><span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span></td>
-      <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span><a class="name" href="{{ base }}/trash/{{ it.type }}/{{ it.id }}" title="中身を確かめる">{{ it.name }}</a>{% if it.type == "folder" %} <span class="muted small">{{ it.files }} ファイル</span>{% endif %}</div>
-        <div class="m-meta">{{ it.location }} ・ {{ it.deleted_at | shortdate }} に削除</div></td>
+      <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span><a class="name" href="{{ base }}/trash/{{ it.type }}/{{ it.id }}" title="{{ _("中身を確かめる") }}">{{ it.name }}</a>{% if it.type == "folder" %} <span class="muted small">{{ _("{files} ファイル", files=it.files) }}</span>{% endif %}</div>
+        <div class="m-meta">{{ _("{location} ・ {deleted_at} に削除", location=it.location, deleted_at=(it.deleted_at | shortdate)) }}</div></td>
       <td class="muted col-loc">{{ it.location }}</td>
       <td class="col-date">{{ it.deleted_at | shortdate }}</td>
       <td class="col-size">{{ it.size | filesize if it.size is not none else "" }}</td>
       <td class="col-actions m-ic">
-        <button type="button" class="btn btn-sm" hx-post="{{ base }}/trash/{{ it.type }}/{{ it.id }}/restore" hx-target="#trash" hx-swap="outerHTML">{{ icon("restore_from_trash") }}<span class="lbl">元に戻す</span></button>
+        <button type="button" class="btn btn-sm" hx-post="{{ base }}/trash/{{ it.type }}/{{ it.id }}/restore" hx-target="#trash" hx-swap="outerHTML">{{ icon("restore_from_trash") }}<span class="lbl">{{ _("元に戻す") }}</span></button>
         <button type="button" class="btn btn-sm btn-danger" hx-post="{{ base }}/trash/{{ it.type }}/{{ it.id }}/purge" hx-target="#trash" hx-swap="outerHTML"
-                hx-confirm="「{{ it.name }}」を完全に削除します。元に戻せません。よろしいですか？">{{ icon("delete_forever") }}<span class="lbl">完全に削除</span></button>
+                hx-confirm="{{ _("「{name}」を完全に削除します。元に戻せません。よろしいですか？", name=it.name) }}">{{ icon("delete_forever") }}<span class="lbl">{{ _("完全に削除") }}</span></button>
       </td>
     </tr>
   {% endfor %}

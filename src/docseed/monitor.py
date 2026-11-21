@@ -7,11 +7,12 @@ import os
 import platform
 import shutil
 import sqlite3
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from .backup import latest_snapshot, restic_status, restore_drill_status
 from .config import Settings
+from .i18n import N_
 
 WORKER_STALE_SECS = 120          # worker の応答がこれ以上無ければ警告
 DISK_WARN_RATIO = 0.10           # 空きが 10% を切ったら警告（5% でアップロードを拒否: storage.MIN_FREE_RATIO）
@@ -23,9 +24,16 @@ THERMAL_PATHS = [Path("/host/thermal/thermal_zone0/temp"), Path("/sys/class/ther
 
 @dataclass
 class Alert:
+    """確認が必要な項目。template は訳のキー（日本語の文の型）、message は値を差し込んだ日本語の文（通知・CLI 用）。"""
+
     level: str      # error / warning / info
     code: str
-    message: str
+    template: str
+    params: dict = field(default_factory=dict)
+    message: str = ""
+
+    def __post_init__(self):
+        self.message = self.template.format(**self.params) if self.params else self.template
 
 
 def cpu_temp() -> float | None:
@@ -92,65 +100,73 @@ def status(conn: sqlite3.Connection, settings: Settings, *, now: dt.datetime | N
     worker_age = _age(worker_seen, now)
     worker_alive = worker_age is not None and worker_age < WORKER_STALE_SECS
     if worker_seen is None:
-        alerts.append(Alert("warning", "worker_never", "文字の読み取り（worker）がまだ一度も動いていません"))
+        alerts.append(Alert("warning", "worker_never", N_("文字の読み取り（worker）がまだ一度も動いていません")))
     elif not worker_alive:
-        alerts.append(Alert("error", "worker_stale", "文字の読み取り（worker）から 2 分以上応答がありません"))
+        alerts.append(Alert("error", "worker_stale", N_("文字の読み取り（worker）から 2 分以上応答がありません")))
 
     jobs = dict(conn.execute("SELECT status, count(*) FROM jobs GROUP BY status").fetchall())
     if jobs.get("failed"):
-        alerts.append(Alert("warning", "jobs_failed", f"失敗したジョブが {jobs['failed']} 件あります"))
+        alerts.append(Alert("warning", "jobs_failed", N_("失敗したジョブが {n} 件あります"), {"n": jobs["failed"]}))
 
     disk = shutil.disk_usage(settings.data_dir)
     ratio = disk.free / disk.total if disk.total else 1.0
     if ratio < DISK_ERROR_RATIO:
-        alerts.append(Alert("error", "disk_full", "SSD の空きが 5% を下回っています。アップロードを受け付けていません"))
+        alerts.append(Alert("error", "disk_full",
+                            N_("SSD の空きが 5% を下回っています。アップロードを受け付けていません")))
     elif ratio < DISK_WARN_RATIO:
-        alerts.append(Alert("warning", "disk_low", "SSD の空きが 10% を下回っています"))
+        alerts.append(Alert("warning", "disk_low", N_("SSD の空きが 10% を下回っています")))
 
     backup_dir = settings.data_dir / "backup"
     snap = latest_snapshot(backup_dir)
     snap_time = dt.datetime.fromtimestamp(snap.stat().st_mtime, dt.UTC) if snap else None
     snap_age = _age(snap_time, now)
     if snap is None:
-        alerts.append(Alert("warning", "db_backup_none", "データベースのスナップショットがまだありません"))
+        alerts.append(Alert("warning", "db_backup_none", N_("データベースのスナップショットがまだありません")))
     elif snap_age is not None and snap_age > BACKUP_STALE_HOURS * 3600:
         alerts.append(Alert("warning", "db_backup_stale",
-                            "データベースのスナップショットが 36 時間以上作られていません"))
+                            N_("データベースのスナップショットが 36 時間以上作られていません")))
 
     restic = restic_status(backup_dir)
     restic_time = _parse(restic.get("time")) if restic else None
     restic_age = _age(restic_time, now)
     if restic is None:
-        alerts.append(Alert("info", "restic_none", "別の機器へのバックアップ（restic）の記録がありません"))
+        alerts.append(Alert("info", "restic_none", N_("別の機器へのバックアップ（restic）の記録がありません")))
     elif not restic.get("ok"):
-        alerts.append(Alert("error", "restic_failed", "前回のバックアップ（restic）が失敗しました: "
-                            + str(restic.get("message") or "詳細はホストの journalctl -u docseed-backup")))
+        alerts.append(Alert("error", "restic_failed", N_("前回のバックアップ（restic）が失敗しました: {detail}"),
+                            {"detail": restic["message"]}) if restic.get("message") else
+                      Alert("error", "restic_failed", N_("前回のバックアップ（restic）が失敗しました: "
+                                                         "詳細はホストの journalctl -u docseed-backup")))
     elif restic_age is not None and restic_age > BACKUP_STALE_HOURS * 3600:
         alerts.append(Alert("warning", "restic_stale",
-                            "別の機器へのバックアップ（restic）が 36 時間以上成功していません"))
+                            N_("別の機器へのバックアップ（restic）が 36 時間以上成功していません")))
 
     drill = restore_drill_status(backup_dir)
     drill_ok_at = _parse(drill.get("last_success")) if drill else None
     drill_age = _age(drill_ok_at, now)
     if drill is None:
-        alerts.append(Alert("info", "drill_none", "復旧の練習の記録がありません（sudo scripts/ops/install-backup.sh で"
-                            "毎月の練習を入れるか、sudo scripts/ops/restore-drill.sh を手で実行してください）"))
+        alerts.append(Alert("info", "drill_none",
+                            N_("復旧の練習の記録がありません（sudo scripts/ops/install-backup.sh で"
+                               "毎月の練習を入れるか、sudo scripts/ops/restore-drill.sh を手で実行してください）")))
     elif drill.get("result") == "failed":
-        alerts.append(Alert("error", "drill_failed", "前回の復旧の練習が失敗しました: "
-                            + str(drill.get("message") or "詳細はホストの journalctl -u docseed-restore-drill")))
+        alerts.append(Alert("error", "drill_failed", N_("前回の復旧の練習が失敗しました: {detail}"),
+                            {"detail": drill["message"]}) if drill.get("message") else
+                      Alert("error", "drill_failed", N_("前回の復旧の練習が失敗しました: "
+                                                        "詳細はホストの journalctl -u docseed-restore-drill")))
     elif drill.get("result") == "skipped":
-        alerts.append(Alert("warning", "drill_skipped", "空き容量が足りず、復旧の練習を飛ばしました: "
-                            + str(drill.get("message") or "")))
+        alerts.append(Alert("warning", "drill_skipped", N_("空き容量が足りず、復旧の練習を飛ばしました: {detail}"),
+                            {"detail": str(drill.get("message") or "")}))
     elif drill_age is not None and drill_age > DRILL_STALE_DAYS * 86400:
-        alerts.append(Alert("warning", "drill_stale", f"復旧の練習が {DRILL_STALE_DAYS} 日以上成功していません"))
+        alerts.append(Alert("warning", "drill_stale", N_("復旧の練習が {days} 日以上成功していません"),
+                            {"days": DRILL_STALE_DAYS}))
 
     rp_saved = conn.execute("SELECT value FROM settings WHERE key = 'auth.rp_id'").fetchone()
     if rp_saved and rp_saved[0] != settings.rp_id \
             and conn.execute("SELECT 1 FROM webauthn_credentials LIMIT 1").fetchone():
         alerts.append(Alert("warning", "rp_id_changed",
-                            f"パスキーの RP ID が {rp_saved[0]} から {settings.rp_id or '（なし）'} に変わったため、"
-                            "登録済みのパスキーは使えません。DOCSEED_HOST / DOCSEED_RP_ID を戻すか、各ユーザーが"
-                            "パスキーを登録し直してください"))
+                            N_("パスキーの RP ID が {old} から {new} に変わったため、"
+                               "登録済みのパスキーは使えません。DOCSEED_HOST / DOCSEED_RP_ID を戻すか、各ユーザーが"
+                               "パスキーを登録し直してください"),
+                            {"old": rp_saved[0], "new": settings.rp_id or "-"}))
 
     if settings.webclip_enabled:
         fb = conn.execute("SELECT value FROM settings WHERE key = 'fetcher.heartbeat'").fetchone()
@@ -159,8 +175,9 @@ def status(conn: sqlite3.Connection, settings: Settings, *, now: dt.datetime | N
                                ).fetchone()[0]
         waiting_age = _age(_parse(waiting), now)
         if waiting_age is not None and waiting_age > 600 and (fetcher_age is None or fetcher_age > WORKER_STALE_SECS):
-            alerts.append(Alert("warning", "fetcher_stale", "URL の取り込み（fetcher）が動いていません。.env の"
-                                " COMPOSE_PROFILES=webclip を確認し、docker compose up -d してください"))
+            alerts.append(Alert("warning", "fetcher_stale", N_("URL の取り込み（fetcher）が動いていません。.env の"
+                                                               " COMPOSE_PROFILES=webclip を確認し、docker compose"
+                                                               " up -d してください")))
 
     from .tlscheck import alerts as tls_alerts
     from .tlscheck import stored_status as tls_status
@@ -169,17 +186,20 @@ def status(conn: sqlite3.Connection, settings: Settings, *, now: dt.datetime | N
 
     temp = cpu_temp()
     if temp is not None and temp >= settings.thermal_pause_c:
-        alerts.append(Alert("warning", "thermal", f"CPU の温度が {temp:.0f}℃ です。文字の読み取りを一時停止しています"))
+        alerts.append(Alert("warning", "thermal", N_("CPU の温度が {temp}℃ です。文字の読み取りを一時停止しています"),
+                            {"temp": f"{temp:.0f}"}))
     elif temp is not None and temp >= settings.thermal_warn_c:
         alerts.append(Alert("warning", "thermal_high",
-                            f"CPU の温度が {temp:.0f}℃ と高めです（{settings.thermal_pause_c:.0f}℃ で文字の読み取りを"
-                            "一時停止します）。冷却ファンと設置場所を確認してください"))
+                            N_("CPU の温度が {temp}℃ と高めです（{pause}℃ で文字の読み取りを"
+                               "一時停止します）。冷却ファンと設置場所を確認してください"),
+                            {"temp": f"{temp:.0f}", "pause": f"{settings.thermal_pause_c:.0f}"}))
 
     mem = memory()
     if mem and mem["total"] and mem["available"] / mem["total"] * 100 < settings.memory_warn_pct:
-        alerts.append(Alert("warning", "memory_low", f"使えるメモリが {mem['available'] / mem['total'] * 100:.0f}%"
-                            f"（{mem['available'] // (1024 * 1024)} MB）しかありません。処理が遅くなったり、"
-                            "止まったりすることがあります"))
+        alerts.append(Alert("warning", "memory_low", N_("使えるメモリが {pct}%（{mb} MB）しかありません。"
+                                                       "処理が遅くなったり、止まったりすることがあります"),
+                            {"pct": f"{mem['available'] / mem['total'] * 100:.0f}",
+                             "mb": mem["available"] // (1024 * 1024)}))
 
     def iso(t: dt.datetime | None) -> str | None:
         return t.strftime("%Y-%m-%dT%H:%M:%SZ") if t else None

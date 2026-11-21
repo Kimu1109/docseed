@@ -127,6 +127,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(SecurityHeaders)
     # 流量の制限（docs/design/security.md 9 章）。SecurityHeaders より外側に置き、429 にもヘッダを付けない
     app.add_middleware(RateLimitMiddleware, enabled=settings.rate_limit_enabled)
+    # 画面の言語（docs/design/ui.md 1.2）。リクエストごとに Cookie と Accept-Language から決める
+    from .i18n import LanguageMiddleware
+    app.add_middleware(LanguageMiddleware)
     # URL の起点（DOCSEED_BASE_PATH）。一番外側に置き、リダイレクト・Cookie の Path にもまとめて接頭辞を付ける
     app.add_middleware(BasePathMiddleware, base_path=settings.base_path)
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "web" / "static"), name="static")
@@ -144,11 +147,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(web_router)
     _check_base_path(app, settings.base_path)
 
+    from .i18n import _
+
     @app.exception_handler(AppError)
     async def app_error(request: Request, exc: AppError):
         if _wants_json(request):
-            body = {"type": f"https://docseed.local/errors/{exc.code}", "title": exc.title, "status": exc.status,
-                    "code": exc.code, "detail": exc.detail, "instance": request.url.path}
+            # 文言は画面の言語（Cookie・Accept-Language。docs/design/ui.md 1.2）。訳が無ければ日本語のまま
+            body = {"type": f"https://docseed.local/errors/{exc.code}", "title": _(exc.title), "status": exc.status,
+                    "code": exc.code, "detail": _(exc.detail), "instance": request.url.path}
             if exc.errors:
                 body["errors"] = exc.errors
             headers = {"Retry-After": str(exc.retry_after)} if hasattr(exc, "retry_after") else None
@@ -170,8 +176,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         errors = [{"field": ".".join(str(x) for x in e["loc"][1:]), "message": e["msg"]} for e in exc.errors()]
         if _wants_json(request):
             return JSONResponse({"type": "https://docseed.local/errors/validation_error",
-                                 "title": "入力内容を確認してください", "status": 422, "code": "validation_error",
-                                 "detail": "入力内容を確認してください", "errors": errors,
+                                 "title": _("入力内容を確認してください"), "status": 422, "code": "validation_error",
+                                 "detail": _("入力内容を確認してください"), "errors": errors,
                                  "instance": request.url.path},
                                 status_code=422, media_type="application/problem+json")
         return render_error(request, 422, "入力内容を確認してください")

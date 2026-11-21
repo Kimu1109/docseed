@@ -1,15 +1,15 @@
 {% if items %}
-<section class="form-panel related-panel" aria-label="関連する文書">
-  <h2>{{ icon("description") }} 関連する文書</h2>
+<section class="form-panel related-panel" aria-label="{{ _("関連する文書") }}">
+  <h2>{{ icon("description") }} {{ _("関連する文書") }}</h2>
   <ul class="related">
   {% for r in items %}
     {% set k = kind_of(r.mime_type, r.filename, r.kind) %}
     <li>
       <a href="{{ base }}/d/{{ r.id }}">{{ icon(kind_icon[k]) }}<span class="related-name">{{ r.filename }}</span></a>
-      <div class="muted small">{{ paths[r.folder_id] }} ・ {{ r.updated_at | shortdate }}</div>
+      <div class="muted small">{{ _("{paths} ・ {updated_at}", paths=paths[r.folder_id], updated_at=(r.updated_at | shortdate)) }}</div>
     </li>
   {% endfor %}
   </ul>
-  <p class="muted small">内容が似ている文書です（見られるものだけ）。</p>
+  <p class="muted small">{{ _("内容が似ている文書です（見られるものだけ）。") }}</p>
 </section>
 {% endif %}

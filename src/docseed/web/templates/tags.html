@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% block title %}タグ{% endblock %}
+{% block title %}{{ _("タグ") }}{% endblock %}
 {% block main %}
 <div class="page-head">
-  <h1 class="page-title">{{ icon("label") }} タグ</h1>
+  <h1 class="page-title">{{ icon("label") }} {{ _("タグ") }}</h1>
 </div>
-<p class="note">名前を変えると、自分のファイルのそのタグがすべて変わります（既にある名前にすると 1 つにまとめます）。ほかの人のファイルのタグは変わりません。</p>
+<p class="note">{{ _("名前を変えると、自分のファイルのそのタグがすべて変わります（既にある名前にすると 1 つにまとめます）。ほかの人のファイルのタグは変わりません。") }}</p>
 
 {% if current %}
-<section class="panel panel-wide" aria-label="「{{ current }}」が付いたファイル">
-  <h2>{{ icon("label") }} 「{{ current }}」が付いたファイル（{{ docs | length }} 件{% if docs | length >= 200 %}、新しい 200 件{% endif %}）</h2>
+<section class="panel panel-wide" aria-label="{{ _("「{current}」が付いたファイル", current=current) }}">
+  <h2>{{ icon("label") }} {% if docs | length >= 200 %}{{ _("「{current}」が付いたファイル（{docs} 件、新しい 200 件）", current=current, docs=(docs | length)) }}{% else %}{{ _("「{current}」が付いたファイル（{docs} 件）", current=current, docs=(docs | length)) }}{% endif %}</h2>
   {% if docs %}
   <ul class="tag-docs">
     {% for d in docs %}
@@ -16,14 +16,14 @@
     <li><a href="{{ base }}/d/{{ d.id }}">{{ icon(kind_icon[k], kind_label[k]) }}{{ d.filename }}</a> <span class="muted small">{{ d.updated_at | localtime }}</span></li>
     {% endfor %}
   </ul>
-  {% else %}<p class="muted">このタグが付いたファイルはありません。</p>{% endif %}
-  <p><a href="{{ base }}/tags">{{ icon("arrow_back") }} すべてのタグに戻る</a></p>
+  {% else %}<p class="muted">{{ _("このタグが付いたファイルはありません。") }}</p>{% endif %}
+  <p><a href="{{ base }}/tags">{{ icon("arrow_back") }} {{ _("すべてのタグに戻る") }}</a></p>
 </section>
 {% endif %}
 
 {% if tags %}
 <table class="plain tag-table">
-  <thead><tr><th>タグ</th><th class="num">ファイル</th><th>名前の変更・まとめる</th><th><span class="sr-hidden">削除</span></th></tr></thead>
+  <thead><tr><th>{{ _("タグ") }}</th><th class="num">{{ _("ファイル") }}</th><th>{{ _("名前の変更・まとめる") }}</th><th><span class="sr-hidden">{{ _("削除") }}</span></th></tr></thead>
   <tbody>
   {% for t in tags %}
   <tr>
@@ -33,15 +33,15 @@
       <form method="post" action="{{ base }}/tags/rename" class="tag-rename">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="old" value="{{ t.name }}">
-        <input name="new" value="{{ t.name }}" list="tag-names" maxlength="50" required aria-label="「{{ t.name }}」の新しい名前">
-        <button class="btn btn-sm">{{ icon("check") }}変更</button>
+        <input name="new" value="{{ t.name }}" list="tag-names" maxlength="50" required aria-label="{{ _("「{name}」の新しい名前", name=t.name) }}">
+        <button class="btn btn-sm">{{ icon("check") }}{{ _("変更") }}</button>
       </form>
     </td>
     <td>
-      <form method="post" action="{{ base }}/tags/delete" data-confirm="自分のファイル {{ t.count }} 件から「{{ t.name }}」を外します（ファイルは消えません）。よろしいですか？">
+      <form method="post" action="{{ base }}/tags/delete" data-confirm="{{ _("自分のファイル {count} 件から「{name}」を外します（ファイルは消えません）。よろしいですか？", count=t.count, name=t.name) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="name" value="{{ t.name }}">
-        <button class="btn btn-sm btn-danger-ghost" aria-label="「{{ t.name }}」を外す">{{ icon("delete") }}外す</button>
+        <button class="btn btn-sm btn-danger-ghost" aria-label="{{ _("「{name}」を外す", name=t.name) }}">{{ icon("delete") }}{{ _("外す") }}</button>
       </form>
     </td>
   </tr>
@@ -50,6 +50,6 @@
 </table>
 <datalist id="tag-names">{% for t in tags %}<option value="{{ t.name }}">{% endfor %}</datalist>
 {% else %}
-<p class="muted">まだタグはありません。文書の画面の「編集」や、一覧で複数選んだときの「タグ」で付けられます。</p>
+<p class="muted">{{ _("まだタグはありません。文書の画面の「編集」や、一覧で複数選んだときの「タグ」で付けられます。") }}</p>
 {% endif %}
 {% endblock %}

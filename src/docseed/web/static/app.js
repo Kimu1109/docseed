@@ -9,6 +9,15 @@
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+  // 画面の言語の訳（base.html の <script type="application/json" id="i18n">。日本語なら無い）。docs/design/ui.md 1.2
+  // T("{n} 件", {n: 3}) のように使う。文言（日本語）が訳のキーになる
+  const I18N = (() => { try { return JSON.parse($("#i18n")?.textContent || "{}"); } catch { return {}; } })();
+  function T(s, vars) {
+    let t = I18N[s] ?? s;
+    if (vars) for (const [k, v] of Object.entries(vars)) t = t.replaceAll("{" + k + "}", String(v));
+    return t;
+  }
+
   function csrfToken() {
     try { return JSON.parse(document.body.getAttribute("hx-headers") || "{}")["X-CSRF-Token"] || ""; }
     catch { return ""; }
@@ -38,8 +47,8 @@
     }
   });
   document.addEventListener("htmx:oobAfterSwap", (e) => { if (e.detail.target?.id === "toast") showToast(); });
-  document.addEventListener("htmx:responseError", () => showToast("サーバーでエラーが起きました。時間をおいて再度お試しください", "error"));
-  document.addEventListener("htmx:sendError", () => showToast("サーバーに接続できません", "error"));
+  document.addEventListener("htmx:responseError", () => showToast(T("サーバーでエラーが起きました。時間をおいて再度お試しください"), "error"));
+  document.addEventListener("htmx:sendError", () => showToast(T("サーバーに接続できません"), "error"));
 
   // ---- メニュー・ダイアログ ---------------------------------------------
   document.addEventListener("click", (e) => {
@@ -67,15 +76,15 @@
     const mv = e.target.closest("[data-move]");
     if (mv) openItemDialog("dlg-move", mv.dataset.move, mv.dataset.name, (form) => {
       setItemInputs(form, []);
-      $("[data-move-name]", form).textContent = "「" + mv.dataset.name + "」を移動します";
+      $("[data-move-name]", form).textContent = T("「{name}」を移動します", {name: mv.dataset.name});
       htmx.trigger($("select[name=target]", form), "load-targets");
     });
 
     const copy = e.target.closest("[data-copy]");
     if (copy) {
       navigator.clipboard?.writeText(copy.dataset.copy).then(
-        () => showToast("リンクをコピーしました"),
-        () => showToast("コピーできませんでした。リンクを選んでコピーしてください", "error"));
+        () => showToast(T("リンクをコピーしました")),
+        () => showToast(T("コピーできませんでした。リンクを選んでコピーしてください"), "error"));
     }
 
     const toggle = e.target.closest("[data-nav-toggle]");
@@ -184,10 +193,10 @@
     out.hidden = false;
     answer.textContent = "";
     list.replaceChildren();
-    status.textContent = "関係する文書を探しています…";
+    status.textContent = T("関係する文書を探しています…");
     let sources = [], text = "", started = Date.now();
     const tick = setInterval(() => {
-      if (!text) status.textContent = `答えを作っています…（${Math.round((Date.now() - started) / 1000)} 秒）`;
+      if (!text) status.textContent = T("答えを作っています…（{s} 秒）", {s: Math.round((Date.now() - started) / 1000)});
     }, 1000);
     const showSources = (cited) => {
       list.replaceChildren();
@@ -199,7 +208,7 @@
         const a = document.createElement("a");
         const q = encodeURIComponent(box.dataset.question);
         a.href = BASE + `/d/${s.document_id}?q=${q}` + (s.page_no ? `#p${s.page_no}` : "");
-        a.textContent = s.filename + (s.page_no ? `（${s.page_no} ページ）` : "");
+        a.textContent = s.filename + (s.page_no ? T("（{n} ページ）", {n: s.page_no}) : "");
         const where = document.createElement("span");
         where.className = "muted small";
         where.textContent = " " + s.path;
@@ -236,7 +245,7 @@
                                stream: true }),
       });
       if (!res.ok) {
-        let msg = `答えを作れませんでした（HTTP ${res.status}）`;
+        let msg = T("答えを作れませんでした（HTTP {status}）", {status: res.status});
         try { msg = (await res.json()).detail || msg; } catch { /* JSON でない */ }
         throw new Error(msg);
       }
@@ -256,19 +265,19 @@
           if (ev.type === "sources") {
             sources = ev.sources;
             showSources(null);
-            status.textContent = sources.length ? "答えを作っています…" : "";
+            status.textContent = sources.length ? T("答えを作っています…") : "";
           } else if (ev.type === "text") {
             text += ev.text;
             answer.textContent = text;
           } else if (ev.type === "done") {
             if (ev.no_sources) {
-              answer.textContent = "質問に関係しそうな文書が見つかりませんでした。言い方を変えるか、絞り込みを外してみてください。";
+              answer.textContent = T("質問に関係しそうな文書が見つかりませんでした。言い方を変えるか、絞り込みを外してみてください。");
               status.textContent = "";
             } else {
               linkCitations();
               showSources(ev.cited);
-              status.textContent = `${(ev.took_ms / 1000).toFixed(1)} 秒` +
-                (ev.cited.length ? "" : "（答えに資料の番号がありません。内容を資料で確かめてください）");
+              status.textContent = T("{s} 秒", {s: (ev.took_ms / 1000).toFixed(1)}) +
+                (ev.cited.length ? "" : T("（答えに資料の番号がありません。内容を資料で確かめてください）"));
             }
           } else if (ev.type === "error") {
             throw new Error(ev.message);
@@ -276,7 +285,7 @@
         }
       }
     } catch (err) {
-      status.textContent = err.message || "答えを作れませんでした";
+      status.textContent = err.message || T("答えを作れませんでした");
       status.classList.add("err-text");
     } finally {
       clearInterval(tick);
@@ -351,7 +360,7 @@
     box.hidden = false;
     btn.setAttribute("aria-expanded", "true");
     if (box.dataset.loaded) return;
-    box.textContent = "読み込んでいます…";
+    box.textContent = T("読み込んでいます…");
     const base = BASE + `/api/v1/documents/${btn.dataset.doc}`;
     let data;
     try {
@@ -359,18 +368,18 @@
       if (!r.ok) throw new Error(String(r.status));
       data = await r.json();
     } catch {
-      box.textContent = "読み取った位置を読み込めませんでした";
+      box.textContent = T("読み取った位置を読み込めませんでした");
       return;
     }
     const stage = document.createElement("div");
     stage.className = "ocr-stage";
     const img = document.createElement("img");
-    img.alt = `${btn.dataset.page} ページの画像`;
+    img.alt = T("{page} ページの画像", {page: btn.dataset.page});
     img.src = `${base}/pages/${btn.dataset.page}/image`;
     stage.append(img);
     const caption = document.createElement("p");
     caption.className = "ocr-caption small muted";
-    caption.textContent = "枠を押すと、その行の読み取り結果を表示します。点線の枠は本文に使っていない行です。";
+    caption.textContent = T("枠を押すと、その行の読み取り結果を表示します。点線の枠は本文に使っていない行です。");
     const lowered = terms.map((t) => t.toLowerCase());
     let firstHit = null, hits = 0;
     const W = data.width || 1, H = data.height || 1;
@@ -392,20 +401,20 @@
       el.style.width = `${((x1 - x0) / W) * 100}%`;
       el.style.height = `${((y1 - y0) / H) * 100}%`;
       el.title = ln.text;
-      el.setAttribute("aria-label", `${ln.text}（信頼度 ${ln.confidence.toFixed(2)}）`);
+      el.setAttribute("aria-label", T("{text}（信頼度 {c}）", {text: ln.text, c: ln.confidence.toFixed(2)}));
       el.addEventListener("click", () => {
         $$(".ocr-box.active", stage).forEach((b) => b.classList.remove("active"));
         el.classList.add("active");
-        caption.textContent = `${ln.text}（信頼度 ${ln.confidence.toFixed(2)}）`;
+        caption.textContent = T("{text}（信頼度 {c}）", {text: ln.text, c: ln.confidence.toFixed(2)});
       });
       stage.append(el);
     }
     const note = document.createElement("p");
     note.className = "small muted";
-    note.textContent = `${data.lines.length} 行` + (lowered.length ? `・検索語を含む行 ${hits} 行（色の付いた枠）` : "");
+    note.textContent = T("{n} 行", {n: data.lines.length}) + (lowered.length ? T("・検索語を含む行 {hits} 行（色の付いた枠）", {hits}) : "");
     box.replaceChildren(note, stage, caption);
     box.dataset.loaded = "1";
-    img.addEventListener("error", () => { box.replaceChildren("ページの画像を読み込めませんでした"); delete box.dataset.loaded; });
+    img.addEventListener("error", () => { box.replaceChildren(T("ページの画像を読み込めませんでした")); delete box.dataset.loaded; });
     if (scrollToHit && firstHit) img.addEventListener("load", () => firstHit.scrollIntoView({ block: "center" }));
   }
   document.addEventListener("click", (e) => {
@@ -449,7 +458,7 @@
       if (st.key === live.dataset.liveKey) return;
       if (busyEditing || $("dialog[open]") || document.activeElement?.matches("input, textarea, select")) {
         live.dataset.liveKey = st.key;   // 読み直さず、次の変化を待つ
-        showToast("処理が終わりました。再読み込みすると反映されます");
+        showToast(T("処理が終わりました。再読み込みすると反映されます"));
         return;
       }
       location.reload();
@@ -539,7 +548,7 @@
     const list = $("#uploads-list");
     panel.hidden = false;
     $("[data-uploads-close]").hidden = true;
-    $("#uploads-title").textContent = "アップロード中";
+    $("#uploads-title").textContent = T("アップロード中");
     const queue = items.map((it) => ({ ...it, folderId, row: addRow(list, it, toName) }));
     let next = 0;
     const worker = async () => {
@@ -560,8 +569,8 @@
     const failed = rows.filter((li) => li.classList.contains("up-error")).length;
     const ok = rows.filter((li) => li.classList.contains("up-done")).length;
     $("#uploads-title").textContent = failed
-      ? `${ok} 件をアップロードしました（${failed} 件は失敗）`
-      : `${ok} 件をアップロードしました`;
+      ? T("{ok} 件をアップロードしました（{failed} 件は失敗）", {ok, failed})
+      : T("{ok} 件をアップロードしました", {ok});
     $("[data-uploads-close]").hidden = false;
   }
 
@@ -574,7 +583,7 @@
     bar.max = 100; bar.value = 0;
     const state = document.createElement("span");
     state.className = "up-state";
-    state.textContent = "待機中";
+    state.textContent = T("待機中");
     li.append(name, bar, state);
     list.append(li);
     return li;
@@ -590,7 +599,7 @@
     li.classList.remove("up-error");
     $$(".up-msg, [data-upload-retry]", li).forEach((el) => el.remove());
     $("[data-uploads-close]").hidden = true;
-    $("#uploads-title").textContent = "アップロード中";
+    $("#uploads-title").textContent = T("アップロード中");
     uploading++;
     uploadOne(job).then(() => {
       updateUploadsTitle();
@@ -656,7 +665,7 @@
 
   function failure(r) {
     const e = new UploadError(r.status, r.json?.code || "",
-      r.json?.detail || (r.status ? `エラー（${r.status}）` : "サーバーに接続できません"));
+      r.json?.detail || (r.status ? T("エラー（{status}）", {status: r.status}) : T("サーバーに接続できません")));
     e.retryAfter = parseInt(r.header("Retry-After") || "", 10) || 0;
     return e;
   }
@@ -669,8 +678,8 @@
       const onOnline = () => setTimeout(finish, 1000);
       // 状態の欄は狭いので短く出し、説明は title に入れる
       const show = () => (navigator.onLine === false
-        ? setState("オフライン", "回線が戻ったら、続きから自動で再開します")
-        : setState(`再開まで ${left}秒`, `接続が切れました。${left} 秒後に、届いたところの続きから再開します`));
+        ? setState(T("オフライン"), T("回線が戻ったら、続きから自動で再開します"))
+        : setState(T("再開まで {left}秒", {left}), T("接続が切れました。{left} 秒後に、届いたところの続きから再開します", {left})));
       const tick = setInterval(() => {
         if (navigator.onLine === false) { show(); return; }   // オフラインの間は数えない
         if (--left <= 0) finish(); else show();
@@ -716,7 +725,7 @@
             headers: { "Content-Type": "application/offset+octet-stream", "Upload-Offset": String(offset) },
             body: file.slice(offset, end),
             onProgress: (loaded) => onProgress(offset + loaded),
-            onSent: () => { if (end === file.size) setState("保存中"); },
+            onSent: () => { if (end === file.size) setState(T("保存中")); },
           });
           if (r.status === 200 && r.json?.result) { remember.del(key); return r.json.result; }
           if (r.status !== 204) throw failure(r);
@@ -765,11 +774,11 @@
     let ok = false;
     try {
       const r = await tusUpload(job, onProgress, setState);
-      if (r.status === "error") throw new UploadError(200, r.error?.code, r.error?.detail || "保存できませんでした");
+      if (r.status === "error") throw new UploadError(200, r.error?.code, r.error?.detail || T("保存できませんでした"));
       row.classList.remove("up-wait");
       row.classList.add("up-done");
       bar.value = 100;
-      state.textContent = r.deduplicated ? "完了（同じ内容あり）" : "完了";
+      state.textContent = r.deduplicated ? T("完了（同じ内容あり）") : T("完了");
       if (r.document && r.document.filename !== job.file.name && !job.path) {
         $(".up-name", row).textContent = job.file.name + " → " + r.document.filename;
       }
@@ -777,19 +786,19 @@
     } catch (err) {
       row.classList.remove("up-wait");
       row.classList.add("up-error");
-      state.textContent = "失敗";
+      state.textContent = T("失敗");
       const m = document.createElement("span");
       m.className = "up-msg";
       m.textContent = err.status === 401
-        ? "ログインの有効期限が切れました。再読み込みしてログインし、同じファイルを選ぶと続きから送ります"
-        : (err.message || "アップロードできませんでした");
+        ? T("ログインの有効期限が切れました。再読み込みしてログインし、同じファイルを選ぶと続きから送ります")
+        : (err.message || T("アップロードできませんでした"));
       row.append(m);
       if (err.status === 0 || err.status === 401 || RETRYABLE.has(err.status)) {
         const b = document.createElement("button");
         b.type = "button";
         b.className = "linkish up-retry";
         b.dataset.uploadRetry = "";
-        b.textContent = "再試行";
+        b.textContent = T("再試行");
         m.append(" ", b);
       }
     }
@@ -814,7 +823,9 @@
   const itemRows = () => $$("#listing tr[data-item]");
   const rowOf = (key) => itemRows().find((r) => r.dataset.item === key);
   const selectedRows = () => itemRows().filter((r) => selected.has(r.dataset.item));
-  const describe = (rows) => (rows.length === 1 ? "「" + rows[0].dataset.name + "」" : rows.length + " 件");
+  // 「〜を移動します」などの文は、1 件なら名前・複数なら件数で別の文言にする（語順が言語で変わるため）
+  const one = (rows) => rows.length === 1;
+  const nameOf = (rows) => rows[0].dataset.name;
 
   function renderSelection() {
     const rows = itemRows();
@@ -901,7 +912,8 @@
     const rows = selectedRows();
     if (!rows.length) return;
     const hasFolder = rows.some((r) => r.dataset.item.startsWith("folder:"));
-    if (!confirm(describe(rows) + "をゴミ箱に移動しますか？" + (hasFolder ? "（フォルダは中身ごと移動します）" : ""))) return;
+    if (!confirm((one(rows) ? T("「{name}」をゴミ箱に移動しますか？", {name: nameOf(rows)}) : T("{n} 件をゴミ箱に移動しますか？", {n: rows.length}))
+                 + (hasFolder ? T("（フォルダは中身ごと移動します）") : ""))) return;
     submitBatch(BASE + "/x/items/delete", rows.map((r) => r.dataset.item));
   }
 
@@ -916,21 +928,25 @@
       if (rows.length) openItemDialog("dlg-tags", BASE + "/x/items/tags", "", (form) => {
         form.reset();
         setItemInputs(form, rows.map((r) => r.dataset.item));
-        $("[data-tags-name]", form).textContent = describe(rows) + "のタグを変更します";
+        $("[data-tags-name]", form).textContent = one(rows) ? T("「{name}」のタグを変更します", {name: nameOf(rows)})
+          : T("{n} 件のタグを変更します", {n: rows.length});
         $("input[name=add]", form).focus();
       });
       return;
     }
     if (e.target.closest("[data-sel-reprocess]")) {
       const rows = docRows();
-      if (rows.length && confirm(describe(rows) + "の文字の読み取りをやり直しますか？")) {
+      if (rows.length && confirm(one(rows) ? T("「{name}」の文字の読み取りをやり直しますか？", {name: nameOf(rows)})
+                                  : T("{n} 件の文字の読み取りをやり直しますか？", {n: rows.length}))) {
         submitBatch(BASE + "/x/items/reprocess", rows.map((r) => r.dataset.item));
       }
       return;
     }
     if (e.target.closest("[data-sel-redo]")) {
       const rows = docRows();
-      if (rows.length && confirm(describe(rows) + "の要約とタグの候補を作り直しますか？（今の要約は上書きされます）")) {
+      if (rows.length && confirm((one(rows) ? T("「{name}」の要約とタグの候補を作り直しますか？", {name: nameOf(rows)})
+                                   : T("{n} 件の要約とタグの候補を作り直しますか？", {n: rows.length}))
+                                  + T("（今の要約は上書きされます）"))) {
         submitBatch(BASE + "/x/items/redo", rows.map((r) => r.dataset.item));
       }
       return;
@@ -939,7 +955,8 @@
       const rows = selectedRows();
       if (rows.length) openItemDialog("dlg-move", BASE + "/x/items/move", "", (form) => {
         setItemInputs(form, rows.map((r) => r.dataset.item));
-        $("[data-move-name]", form).textContent = describe(rows) + "を移動します";
+        $("[data-move-name]", form).textContent = one(rows) ? T("「{name}」を移動します", {name: nameOf(rows)})
+          : T("{n} 件を移動します", {n: rows.length});
         htmx.trigger($("select[name=target]", form), "load-targets");
       });
       return;
@@ -989,7 +1006,7 @@
       const first = selected.size === 0;
       selectItem(row.dataset.item, { toggle: true });
       navigator.vibrate?.(15);
-      if (first) showToast("ほかの行をタップすると選択に足せます");
+      if (first) showToast(T("ほかの行をタップすると選択に足せます"));
     }, 450);
   }, { passive: true });
   const cancelPress = () => { clearTimeout(pressTimer); pressTimer = null; };
@@ -1096,7 +1113,7 @@
       g.setAttribute("aria-hidden", "true");
       document.body.append(g);
     }
-    g.textContent = rows.length === 1 ? rows[0].dataset.name : rows.length + " 項目を移動";
+    g.textContent = rows.length === 1 ? rows[0].dataset.name : T("{n} 項目を移動", {n: rows.length});
     return g;
   }
 

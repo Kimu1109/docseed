@@ -1,21 +1,21 @@
 {% extends "base.html" %}
-{% block title %}URL を保存{% endblock %}
+{% block title %}{{ _("URL を保存") }}{% endblock %}
 {% block main %}
-<div class="page-head"><h1 class="page-title">{{ icon("link") }} URL を保存</h1></div>
+<div class="page-head"><h1 class="page-title">{{ icon("link") }} {{ _("URL を保存") }}</h1></div>
 {% if not enabled %}
-<p class="alert" role="alert">URL の取り込みは有効になっていません。管理者に連絡してください（.env の DOCSEED_WEBCLIP_ENABLED）。</p>
+<p class="alert" role="alert">{{ _("URL の取り込みは有効になっていません。管理者に連絡してください（.env の DOCSEED_WEBCLIP_ENABLED）。") }}</p>
 {% else %}
-{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{% if error %}<p class="alert" role="alert">{{ _(error) }}</p>{% endif %}
 <section class="panel">
   <form method="post" action="{{ base }}/clip" class="form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>URL <input name="url" type="url" value="{{ url }}" required maxlength="2048" inputmode="url"></label>
-    <label>保存先
+    <label>{{ _("保存先") }}
       <select name="folder_id">
         {% for fid, label in targets %}<option value="{{ fid }}" {% if loop.first %}selected{% endif %}>{{ label }}</option>{% endfor %}
       </select>
     </label>
-    <div><button type="submit" class="btn btn-primary">{{ icon("save") }}保存</button></div>
+    <div><button type="submit" class="btn btn-primary">{{ icon("save") }}{{ _("保存") }}</button></div>
   </form>
 </section>
 {% endif %}

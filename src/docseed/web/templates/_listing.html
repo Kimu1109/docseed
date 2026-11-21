@@ -12,63 +12,63 @@
      {% if docs | selectattr("status", "in", ["pending", "processing"]) | list or clips | selectattr("status", "in", ["pending", "fetching"]) | list %}data-has-pending{% endif %}>
 {% if auto_moves %}
 <div class="note small auto-moves">
-  <b>{{ icon("wand_stars") }} 自動で移動した文書</b>
+  <b>{{ icon("wand_stars") }} {{ _("自動で移動した文書") }}</b>
   <ul>
   {% for m in auto_moves %}
-    <li>{{ m.filename }} → <a href="{{ base }}/f/{{ m.to_folder }}">移動先</a>（{{ m.at | shortdate }}）
+    <li>{{ m.filename }} → <a href="{{ base }}/f/{{ m.to_folder }}">{{ _("移動先") }}</a>{{ _("（{at}）", at=(m.at | shortdate)) }}
       <button type="button" class="linkish" hx-post="{{ base }}/x/automove/{{ m.id }}/undo" hx-vals='{"current": {{ folder.id }}}'
-              hx-target="#listing" hx-swap="outerHTML">{{ icon("undo") }}元に戻す</button></li>
+              hx-target="#listing" hx-swap="outerHTML">{{ icon("undo") }}{{ _("元に戻す") }}</button></li>
   {% endfor %}
   </ul>
 </div>
 {% endif %}
 {% if reco %}
 <form id="reco-form" hx-post="{{ base }}/f/{{ folder.id }}/suggestions/apply" hx-target="#listing" hx-swap="outerHTML" class="reco-bar">
-  <span class="small">{{ icon("wand_stars") }} おすすめのフォルダがある文書が {{ reco | length }} 件あります。</span>
-  <button type="submit" class="btn btn-sm">{{ icon("drive_file_move") }}チェックした文書をおすすめのフォルダへまとめて移動</button>
+  <span class="small">{{ icon("wand_stars") }} {{ _("おすすめのフォルダがある文書が {reco} 件あります。", reco=(reco | length)) }}</span>
+  <button type="submit" class="btn btn-sm">{{ icon("drive_file_move") }}{{ _("チェックした文書をおすすめのフォルダへまとめて移動") }}</button>
 </form>
 {% endif %}
 {% if not folders and not docs and not clips %}
   <div class="empty">
     {{ icon("folder_open") }}
-    <p>このフォルダは空です。</p>
-    {% if can_edit %}<p class="muted">ファイルをこの画面にドラッグ＆ドロップするか、「アップロード」から追加できます。</p>{% endif %}
+    <p>{{ _("このフォルダは空です。") }}</p>
+    {% if can_edit %}<p class="muted">{{ _("ファイルをこの画面にドラッグ＆ドロップするか、「アップロード」から追加できます。") }}</p>{% endif %}
   </div>
 {% else %}
-<nav class="m-sort" aria-label="並べ替え">{{ icon("sort") }}{{ sort_link("name", "名前") }}{{ sort_link("updated_at", "更新日") }}{{ sort_link("size", "サイズ") }}</nav>
+<nav class="m-sort" aria-label="{{ _("並べ替え") }}">{{ icon("sort") }}{{ sort_link("name", _("名前")) }}{{ sort_link("updated_at", _("更新日")) }}{{ sort_link("size", _("サイズ")) }}</nav>
 <table class="files">
   <thead>
     <tr>
-      <th class="col-kind"><span class="sr">種類</span></th>
-      <th class="col-name">{{ sort_link("name", "名前") }}</th>
-      <th class="col-date">{{ sort_link("updated_at", "更新日") }}</th>
-      <th class="col-size">{{ sort_link("size", "サイズ") }}</th>
-      <th class="col-status">状態</th>
-      <th class="col-menu"><span class="sr">操作</span></th>
+      <th class="col-kind"><span class="sr">{{ _("種類") }}</span></th>
+      <th class="col-name">{{ sort_link("name", _("名前")) }}</th>
+      <th class="col-date">{{ sort_link("updated_at", _("更新日")) }}</th>
+      <th class="col-size">{{ sort_link("size", _("サイズ")) }}</th>
+      <th class="col-status">{{ _("状態") }}</th>
+      <th class="col-menu"><span class="sr">{{ _("操作") }}</span></th>
     </tr>
   </thead>
   <tbody>
   {% for f in folders %}
     <tr data-item="folder:{{ f.id }}" data-name="{{ f.name }}" {% if can_edit %}draggable="true" data-drop="{{ f.id }}"{% endif %}>
-      <td class="col-kind"><span class="kind kind-folder" title="フォルダ"></span></td>
-      <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon("folder_shared" if f.member_count else "folder") }}</span><a class="name" href="{{ base }}/f/{{ f.id }}">{{ f.name }}{% if f.id in favs.folder %}<span class="fav-mark" title="お気に入り">{{ icon("star") }}</span>{% endif %}{% if f.member_count %}<span class="flag">共有中</span>{% endif %}</a></div>
-        <div class="m-meta">{{ f.updated_at | shortdate }} ・ {{ f.item_count }} 項目</div></td>
+      <td class="col-kind"><span class="kind kind-folder" title="{{ _("フォルダ") }}"></span></td>
+      <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon("folder_shared" if f.member_count else "folder") }}</span><a class="name" href="{{ base }}/f/{{ f.id }}">{{ f.name }}{% if f.id in favs.folder %}<span class="fav-mark" title="{{ _("お気に入り") }}">{{ icon("star") }}</span>{% endif %}{% if f.member_count %}<span class="flag">{{ _("共有中") }}</span>{% endif %}</a></div>
+        <div class="m-meta">{{ _("{updated_at} ・ {item_count} 項目", updated_at=(f.updated_at | shortdate), item_count=f.item_count) }}</div></td>
       <td class="col-date">{{ f.updated_at | shortdate }}</td>
-      <td class="col-size muted">{{ f.item_count }} 項目</td>
+      <td class="col-size muted">{{ _("{item_count} 項目", item_count=f.item_count) }}</td>
       <td class="col-status"></td>
       <td class="col-menu">
         {% if can_edit %}
         <details class="rowmenu">
-          <summary aria-label="「{{ f.name }}」の操作">{{ icon("more_horiz") }}</summary>
+          <summary aria-label="{{ _("「{name}」の操作", name=f.name) }}">{{ icon("more_horiz") }}</summary>
           <div class="rowmenu-panel">
             <div class="sheet-title">{{ icon("folder") }}<span>{{ f.name }}</span></div>
-            <a class="m-only" href="{{ base }}/f/{{ f.id }}">{{ icon("folder_open") }}開く</a>
-            <button type="button" class="m-only" data-select-row>{{ icon("checklist") }}選択</button>
-            <button type="button" data-rename="{{ base }}/x/folders/{{ f.id }}/rename" data-name="{{ f.name }}">{{ icon("edit") }}名前を変更</button>
-            <button type="button" data-move="{{ base }}/x/folders/{{ f.id }}/move" data-name="{{ f.name }}">{{ icon("drive_file_move") }}移動</button>
+            <a class="m-only" href="{{ base }}/f/{{ f.id }}">{{ icon("folder_open") }}{{ _("開く") }}</a>
+            <button type="button" class="m-only" data-select-row>{{ icon("checklist") }}{{ _("選択") }}</button>
+            <button type="button" data-rename="{{ base }}/x/folders/{{ f.id }}/rename" data-name="{{ f.name }}">{{ icon("edit") }}{{ _("名前を変更") }}</button>
+            <button type="button" data-move="{{ base }}/x/folders/{{ f.id }}/move" data-name="{{ f.name }}">{{ icon("drive_file_move") }}{{ _("移動") }}</button>
             <button type="button" class="danger" hx-post="{{ base }}/x/folders/{{ f.id }}/delete" hx-vals='{"current": {{ folder.id }}}'
                     hx-target="#listing" hx-swap="outerHTML"
-                    hx-confirm="フォルダ「{{ f.name }}」と中身をゴミ箱に移動しますか？">{{ icon("delete") }}ゴミ箱に移動</button>
+                    hx-confirm="{{ _("フォルダ「{name}」と中身をゴミ箱に移動しますか？", name=f.name) }}">{{ icon("delete") }}{{ _("ゴミ箱に移動") }}</button>
           </div>
         </details>
         {% endif %}
@@ -77,25 +77,25 @@
   {% endfor %}
   {% for c in clips %}
     <tr class="clip-row">
-      <td class="col-kind"><span class="kind kind-webclip" title="Web クリップ"></span></td>
+      <td class="col-kind"><span class="kind kind-webclip" title="{{ _("Web クリップ") }}"></span></td>
       <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon("link") }}</span>
         <span class="name" title="{{ c.url }}">{{ c.url }}</span></div>
-        <div class="m-meta">{% if c.status == "failed" %}<span class="err-text">取得に失敗</span>{% else %}取得中…{% endif %}</div>
+        <div class="m-meta">{% if c.status == "failed" %}<span class="err-text">{{ _("取得に失敗") }}</span>{% else %}{{ _("取得中…") }}{% endif %}</div>
         {% if c.status == "failed" and c.error_message %}<div class="small err-text clip-error">{{ c.error_message }}</div>{% endif %}</td>
       <td class="col-date">{{ c.created_at | shortdate }}</td>
       <td class="col-size muted">—</td>
-      <td class="col-status">{% if c.status == "failed" %}<span class="status status-failed">{{ icon("error") }}取得に失敗</span>
-        {% else %}<span class="status status-processing">{{ icon("progress_activity") }}取得中</span>{% endif %}</td>
+      <td class="col-status">{% if c.status == "failed" %}<span class="status status-failed">{{ icon("error") }}{{ _("取得に失敗") }}</span>
+        {% else %}<span class="status status-processing">{{ icon("progress_activity") }}{{ _("取得中") }}</span>{% endif %}</td>
       <td class="col-menu">
         {% if can_edit %}
         <details class="rowmenu">
-          <summary aria-label="「{{ c.url }}」の操作">{{ icon("more_horiz") }}</summary>
+          <summary aria-label="{{ _("「{url}」の操作", url=c.url) }}">{{ icon("more_horiz") }}</summary>
           <div class="rowmenu-panel">
             <div class="sheet-title">{{ icon("link") }}<span>{{ c.url }}</span></div>
             {% if c.status == "failed" %}<button type="button" hx-post="{{ base }}/x/webclips/{{ c.id }}/retry" hx-vals='{"current": {{ folder.id }}}'
-                    hx-target="#listing" hx-swap="outerHTML">{{ icon("refresh") }}もう一度取得</button>{% endif %}
+                    hx-target="#listing" hx-swap="outerHTML">{{ icon("refresh") }}{{ _("もう一度取得") }}</button>{% endif %}
             <button type="button" class="danger" hx-post="{{ base }}/x/webclips/{{ c.id }}/delete" hx-vals='{"current": {{ folder.id }}}'
-                    hx-target="#listing" hx-swap="outerHTML">{{ icon("delete") }}取り消す</button>
+                    hx-target="#listing" hx-swap="outerHTML">{{ icon("delete") }}{{ _("取り消す") }}</button>
           </div>
         </details>
         {% endif %}
@@ -106,13 +106,13 @@
     {% set k = kind_of(d.mime_type, d.filename, d.kind) %}
     <tr data-item="document:{{ d.id }}" data-name="{{ d.filename }}" {% if can_edit %}draggable="true"{% endif %}>
       <td class="col-kind"><span class="kind kind-{{ k }}" title="{{ kind_label[k] }}"></span></td>
-      <td class="col-name"><div class="cell-name">{% if d.thumb_path %}<img class="thumb" draggable="false" src="{{ base }}/api/v1/documents/{{ d.id }}/thumbnail" alt="" loading="lazy">{% else %}<span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span>{% endif %}<a class="name" href="{{ base }}/d/{{ d.id }}">{{ d.filename }}{% if d.id in favs.document %}<span class="fav-mark" title="お気に入り">{{ icon("star") }}</span>{% endif %}{% if d.uploaded_via_share_id %}<span class="flag">リンクで受け取り</span>{% endif %}</a></div>
-        <div class="m-meta">{{ d.updated_at | shortdate }} ・ {{ d.size_bytes | filesize }}{% if d.status != "ready" %} ・ <span class="m-status status-{{ d.status }}">{{ status_label[d.status] }}{% if d.status == "processing" and d.progress_total %} {{ d.progress_done }}/{{ d.progress_total }}{% endif %}</span>{% endif %}</div>
+      <td class="col-name"><div class="cell-name">{% if d.thumb_path %}<img class="thumb" draggable="false" src="{{ base }}/api/v1/documents/{{ d.id }}/thumbnail" alt="" loading="lazy">{% else %}<span class="thumb thumb-icon">{{ icon(kind_icon[k]) }}</span>{% endif %}<a class="name" href="{{ base }}/d/{{ d.id }}">{{ d.filename }}{% if d.id in favs.document %}<span class="fav-mark" title="{{ _("お気に入り") }}">{{ icon("star") }}</span>{% endif %}{% if d.uploaded_via_share_id %}<span class="flag">{{ _("リンクで受け取り") }}</span>{% endif %}</a></div>
+        <div class="m-meta">{{ _("{updated_at} ・ {size_bytes}", updated_at=(d.updated_at | shortdate), size_bytes=(d.size_bytes | filesize)) }}{% if d.status != "ready" %} {{ _("・") }} <span class="m-status status-{{ d.status }}">{{ status_label[d.status] }}{% if d.status == "processing" and d.progress_total %} {{ d.progress_done }}/{{ d.progress_total }}{% endif %}</span>{% endif %}</div>
         {% if reco.get(d.id) %}{% set r = reco[d.id] %}
         <div class="reco small">
-          <label><input type="checkbox" name="doc" value="{{ d.id }}" form="reco-form" aria-label="「{{ d.filename }}」をまとめて移動する"> おすすめ: {{ r.path }}</label>
+          <label><input type="checkbox" name="doc" value="{{ d.id }}" form="reco-form" aria-label="{{ _("「{filename}」をまとめて移動する", filename=d.filename) }}"> {{ _("おすすめ: {path}", path=r.path) }}</label>
           <button type="button" class="btn btn-sm" hx-post="{{ base }}/x/suggestions/{{ d.id }}/{{ r.id }}/accept" hx-vals='{"current": {{ folder.id }}}'
-                  hx-target="#listing" hx-swap="outerHTML">{{ icon("drive_file_move") }}移動</button>
+                  hx-target="#listing" hx-swap="outerHTML">{{ icon("drive_file_move") }}{{ _("移動") }}</button>
         </div>
         {% endif %}</td>
       <td class="col-date">{{ d.updated_at | shortdate }}</td>
@@ -120,18 +120,18 @@
       <td class="col-status"><span class="status status-{{ d.status }}">{{ icon(status_icon[d.status]) }}{{ status_label[d.status] }}{% if d.status == "processing" and d.progress_total %} {{ d.progress_done }}/{{ d.progress_total }}{% endif %}</span></td>
       <td class="col-menu">
         <details class="rowmenu">
-          <summary aria-label="「{{ d.filename }}」の操作">{{ icon("more_horiz") }}</summary>
+          <summary aria-label="{{ _("「{filename}」の操作", filename=d.filename) }}">{{ icon("more_horiz") }}</summary>
           <div class="rowmenu-panel">
             <div class="sheet-title">{{ icon(kind_icon[k]) }}<span>{{ d.filename }}</span></div>
-            <a class="m-only" href="{{ base }}/d/{{ d.id }}">{{ icon("visibility") }}開く</a>
-            <a href="{{ base }}/api/v1/documents/{{ d.id }}/content">{{ icon("download") }}ダウンロード</a>
+            <a class="m-only" href="{{ base }}/d/{{ d.id }}">{{ icon("visibility") }}{{ _("開く") }}</a>
+            <a href="{{ base }}/api/v1/documents/{{ d.id }}/content">{{ icon("download") }}{{ _("ダウンロード") }}</a>
             {% if can_edit %}
-            <button type="button" class="m-only" data-select-row>{{ icon("checklist") }}選択</button>
-            <button type="button" data-rename="{{ base }}/x/documents/{{ d.id }}/rename" data-name="{{ d.filename }}">{{ icon("edit") }}名前を変更</button>
-            <button type="button" data-move="{{ base }}/x/documents/{{ d.id }}/move" data-name="{{ d.filename }}">{{ icon("drive_file_move") }}移動</button>
+            <button type="button" class="m-only" data-select-row>{{ icon("checklist") }}{{ _("選択") }}</button>
+            <button type="button" data-rename="{{ base }}/x/documents/{{ d.id }}/rename" data-name="{{ d.filename }}">{{ icon("edit") }}{{ _("名前を変更") }}</button>
+            <button type="button" data-move="{{ base }}/x/documents/{{ d.id }}/move" data-name="{{ d.filename }}">{{ icon("drive_file_move") }}{{ _("移動") }}</button>
             <button type="button" class="danger" hx-post="{{ base }}/x/documents/{{ d.id }}/delete" hx-vals='{"current": {{ folder.id }}}'
                     hx-target="#listing" hx-swap="outerHTML"
-                    hx-confirm="「{{ d.filename }}」をゴミ箱に移動しますか？">{{ icon("delete") }}ゴミ箱に移動</button>
+                    hx-confirm="{{ _("「{filename}」をゴミ箱に移動しますか？", filename=d.filename) }}">{{ icon("delete") }}{{ _("ゴミ箱に移動") }}</button>
             {% endif %}
           </div>
         </details>
@@ -141,12 +141,12 @@
   </tbody>
 </table>
 {% if pages > 1 %}
-<nav class="pager" aria-label="ページ送り">
+<nav class="pager" aria-label="{{ _("ページ送り") }}">
   {% if page > 1 %}<a class="btn" href="{{ page_url(page - 1) }}" hx-get="{{ page_url(page - 1) }}" hx-target="#listing"
-     hx-swap="outerHTML show:window:top" hx-push-url="true" rel="prev">{{ icon("chevron_left") }}前へ</a>{% endif %}
-  <span class="muted">{{ page }} / {{ pages }} ページ（{{ (page - 1) * page_size + 1 }}〜{{ [page * page_size, total] | min }} 件目 / 全 {{ total }} 件）</span>
+     hx-swap="outerHTML show:window:top" hx-push-url="true" rel="prev">{{ icon("chevron_left") }}{{ _("前へ") }}</a>{% endif %}
+  <span class="muted">{{ _("{page} / {pages} ページ（{v}〜{v2} 件目 / 全 {total} 件）", page=page, pages=pages, v=((page - 1) * page_size + 1), v2=([page * page_size, total] | min), total=total) }}</span>
   {% if page < pages %}<a class="btn" href="{{ page_url(page + 1) }}" hx-get="{{ page_url(page + 1) }}" hx-target="#listing"
-     hx-swap="outerHTML show:window:top" hx-push-url="true" rel="next">次へ{{ icon("chevron_right") }}</a>{% endif %}
+     hx-swap="outerHTML show:window:top" hx-push-url="true" rel="next">{{ _("次へ") }}{{ icon("chevron_right") }}</a>{% endif %}
 </nav>
 {% endif %}
 {% endif %}

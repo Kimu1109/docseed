@@ -13,6 +13,7 @@ from ...deps import (
     get_conn,
     require_auth,
 )
+from ...i18n import N_
 from ..common import (
     base_context,
     display_location,
@@ -23,7 +24,7 @@ from ..common import (
 PER_PAGE = 20
 
 
-MODE_LABEL = {"hybrid": "すべて", "semantic": "意味が近い", "keyword": "キーワード"}
+MODE_LABEL = {"hybrid": N_("すべて"), "semantic": N_("意味が近い"), "keyword": N_("キーワード")}
 
 
 TYPE_OPTIONS = ["pdf", "image", "text", "doc", "sheet", "slide", "media", "webclip"]

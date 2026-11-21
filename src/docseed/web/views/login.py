@@ -7,7 +7,7 @@ import sqlite3
 from fastapi import Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from ... import security
+from ... import i18n, security
 from ...api.routes import do_login
 from ...config import Settings
 from ...deps import (
@@ -24,6 +24,15 @@ from ..common import (
     router,
     templates,
 )
+
+
+@router.get("/lang/{lang}")
+def choose_lang(lang: str, next: str | None = None, settings: Settings = Depends(get_settings)):
+    """ログイン前の画面の言語の切り替え（この端末の Cookie に覚える。ログイン後は設定の言語が優先）。"""
+    from ..common import set_lang_cookie
+    resp = RedirectResponse(_safe_next(next), status_code=303)
+    set_lang_cookie(resp, settings, lang if lang in i18n.LANGS else "auto")
+    return resp
 
 
 @router.get("/login", response_class=HTMLResponse)

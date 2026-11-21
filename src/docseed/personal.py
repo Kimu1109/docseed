@@ -12,6 +12,7 @@ from urllib.parse import urlencode
 from . import folders as fo
 from .db import Tx, now
 from .errors import NotFound, ValidationFailed
+from .i18n import N_, _
 from .users import User
 
 RECENT_KEEP = 50
@@ -161,25 +162,25 @@ def search_url(params: dict) -> str:
     return "/search?" + urlencode(params)
 
 
-MODE_LABEL = {"semantic": "意味が近い", "keyword": "キーワード"}
+MODE_LABEL = {"semantic": N_("意味が近い"), "keyword": N_("キーワード")}
 
 
 def describe_search(p: dict) -> str:
     """「請求書 ・ 種類: pdf ・ 撮影日: 2026-05-01〜」のような説明。"""
-    parts = [f"「{p['q']}」"] if p.get("q") else []
+    parts = [_("「{q}」", q=p["q"])] if p.get("q") else []
     if p.get("mode") in MODE_LABEL:
-        parts.append(MODE_LABEL[p["mode"]])
+        parts.append(_(MODE_LABEL[p["mode"]]))
     if p.get("type"):
-        parts.append(f"種類: {p['type']}")
+        parts.append(_("種類: {v}", v=p["type"]))
     if p.get("tag"):
-        parts.append(f"タグ: {p['tag']}")
+        parts.append(_("タグ: {v}", v=p["tag"]))
     if p.get("after") or p.get("before"):
-        parts.append(f"更新日: {p.get('after', '')}〜{p.get('before', '')}")
+        parts.append(_("更新日: {a}〜{b}", a=p.get("after", ""), b=p.get("before", "")))
     if p.get("taken_from") or p.get("taken_to"):
-        parts.append(f"撮影日: {p.get('taken_from', '')}〜{p.get('taken_to', '')}")
+        parts.append(_("撮影日: {a}〜{b}", a=p.get("taken_from", ""), b=p.get("taken_to", "")))
     if p.get("folder"):
-        parts.append("フォルダの中")
-    return " ・ ".join(parts) or "（条件なし）"
+        parts.append(_("フォルダの中"))
+    return _(" ・ ").join(parts) or _("（条件なし）")
 
 
 def _row(r: sqlite3.Row, at_key: str) -> dict:
@@ -275,3 +276,26 @@ def set_theme(conn: sqlite3.Connection, user: User, theme: str) -> str:
         conn.execute("INSERT INTO user_prefs(user_id, key, value) VALUES (?, 'theme', ?)"
                      " ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value", (user.id, theme))
     return theme
+
+
+# ---------------------------------------------------------------------------
+# 画面の言語（自動 / 日本語 / 英語。docs/design/ui.md 1.2）
+# ---------------------------------------------------------------------------
+
+def get_lang(conn: sqlite3.Connection, user: User) -> str:
+    from .i18n import LANGS
+    r = conn.execute("SELECT value FROM user_prefs WHERE user_id = ? AND key = 'lang'", (user.id,)).fetchone()
+    return r[0] if r and r[0] in LANGS else "auto"
+
+
+def set_lang(conn: sqlite3.Connection, user: User, lang: str) -> str:
+    from .i18n import LANGS
+    if lang not in ("auto", *LANGS):
+        raise ValidationFailed("画面の言語は auto / " + " / ".join(LANGS) + " のいずれかです")
+    with Tx(conn):
+        if lang == "auto":
+            conn.execute("DELETE FROM user_prefs WHERE user_id = ? AND key = 'lang'", (user.id,))
+        else:
+            conn.execute("INSERT INTO user_prefs(user_id, key, value) VALUES (?, 'lang', ?)"
+                         " ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value", (user.id, lang))
+    return lang

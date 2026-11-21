@@ -16,7 +16,7 @@
 
 ### 1.1 エラー
 
-RFC 9457（`application/problem+json`）形式。
+RFC 9457（`application/problem+json`）形式。`title` と `detail` は画面と同じ言語（Cookie `docseed_lang` → `Accept-Language` → 日本語。[画面](ui.md) 1.2）。訳の無い文言は日本語のまま返す。機械で見分けるときは `code` を使う。
 
 ```json
 {

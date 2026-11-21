@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{{ page.title }}{% endblock %}
 {% block main %}
-<nav class="help-guides" aria-label="ガイド">
+<nav class="help-guides" aria-label="{{ _("ガイド") }}">
   {% for g, label, url in guides %}
-  <a href="{{ url }}" {% if page.guide == g %}aria-current="page"{% endif %}>{{ label }}</a>
+  <a href="{{ url }}" {% if page.guide == g %}aria-current="page"{% endif %}>{{ _(label) }}</a>
   {% endfor %}
-  {% if user.is_admin %}<a href="{{ map_url }}" {% if page.key == "" %}aria-current="page"{% endif %}>文書の地図</a>{% endif %}
+  {% if user.is_admin %}<a href="{{ map_url }}" {% if page.key == "" %}aria-current="page"{% endif %}>{{ _("文書の地図") }}</a>{% endif %}
 </nav>
 <article class="doc">
 {{ page.html | safe }}
 </article>
-<p class="muted small doc-src">この文書は docseed のリポジトリの <code>docs/{{ page.rel }}</code> です（docseed {{ version }}）。</p>
+<p class="muted small doc-src">{{ _("この文書は docseed のリポジトリの {path} です（docseed {version}）。", path=code("docs/" ~ page.rel), version=version) }}</p>
 {% endblock %}

@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}共有リンク{% endblock %}
+{% block title %}{{ _("共有リンク") }}{% endblock %}
 {% block bare %}
 <main class="login">
   <div class="login-box">
     <div class="brand brand-lg"><span class="brand-mark" aria-hidden="true"></span>docseed</div>
     {{ icon("link_off", cls="hero-icon") }}
-    <h1 class="error-title">リンクが無効か、期限が切れています</h1>
-    <p class="muted">共有した人に、新しいリンクを送ってもらってください。</p>
+    <h1 class="error-title">{{ _("リンクが無効か、期限が切れています") }}</h1>
+    <p class="muted">{{ _("共有した人に、新しいリンクを送ってもらってください。") }}</p>
   </div>
 </main>
 {% endblock %}

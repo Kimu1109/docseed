@@ -16,6 +16,7 @@ from ...deps import (
     require_session,
 )
 from ...errors import AppError
+from ...i18n import N_, Labels
 from ...urls import public_root
 from ..common import (
     router,
@@ -23,7 +24,7 @@ from ..common import (
     toast,
 )
 
-ROLE_LABEL = {"owner": "所有者", "editor": "編集できる", "viewer": "閲覧のみ"}
+ROLE_LABEL = Labels({"owner": N_("所有者"), "editor": N_("編集できる"), "viewer": N_("閲覧のみ")})
 
 
 def gps_photo_count(conn: sqlite3.Connection, target_type: str, target_id: int) -> int:

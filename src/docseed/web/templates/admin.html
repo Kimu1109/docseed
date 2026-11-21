@@ -1,118 +1,119 @@
 {% extends "base.html" %}
-{% block title %}管理{% endblock %}
+{% block title %}{{ _("管理") }}{% endblock %}
 {% block main %}
-<div class="page-head"><h1 class="page-title">{{ icon("admin_panel_settings") }} 管理</h1></div>
-{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+<div class="page-head"><h1 class="page-title">{{ icon("admin_panel_settings") }} {{ _("管理") }}</h1></div>
+{% if error %}<p class="alert" role="alert">{{ _(error) }}</p>{% endif %}
 
 {% if sys.alerts %}
-<section class="panel panel-wide" aria-label="確認が必要な項目">
-  <h2>{{ icon("warning") }} 確認が必要な項目</h2>
+<section class="panel panel-wide" aria-label="{{ _("確認が必要な項目") }}">
+  <h2>{{ icon("warning") }} {{ _("確認が必要な項目") }}</h2>
   <ul class="alert-list">
   {% for a in sys.alerts %}
-    <li class="alert-{{ a.level }}">{{ icon({"error": "error", "warning": "warning", "info": "info"}[a.level]) }}<span class="alert-level">{{ {"error": "異常", "warning": "注意", "info": "情報"}[a.level] }}</span> {{ a.message }}</li>
+    <li class="alert-{{ a.level }}">{{ icon({"error": "error", "warning": "warning", "info": "info"}[a.level]) }}<span class="alert-level">{{ {"error": _("異常"), "warning": _("注意"), "info": _("情報")}[a.level] }}</span> {{ _(a.template, **a.params) }}</li>
   {% endfor %}
   </ul>
 </section>
 {% endif %}
 
 <section class="panel panel-wide" id="system">
-  <h2>{{ icon("monitoring") }} システム</h2>
+  <h2>{{ icon("monitoring") }} {{ _("システム") }}</h2>
   {% set c = system.cpu %}{% set m = system.memory %}{% set d = system.disk %}
   <dl class="stats">
-    {% if c.temp_c is not none %}<div><dt>CPU 温度</dt><dd class="{{ 'err-text' if c.temp_c >= c.temp_pause_c else ('warn-text' if c.temp_c >= c.temp_warn_c else '') }}">{{ "%.1f" | format(c.temp_c) }}<span class="unit">℃（{{ c.temp_warn_c | int }}℃ で警告、{{ c.temp_pause_c | int }}℃ で処理を一時停止）</span></dd></div>{% endif %}
-    {% if c.load %}<div><dt>負荷（1・5・15 分）</dt><dd>{{ "%.2f" | format(c.load[0]) }}<span class="unit">{{ "%.2f" | format(c.load[1]) }} / {{ "%.2f" | format(c.load[2]) }}（{{ c.count }} コア）</span></dd></div>{% endif %}
-    {% if m %}<div><dt>メモリ</dt><dd>{{ m.available | filesize }}<span class="unit">空き / {{ m.total | filesize }}（{{ (m.available / m.total * 100) | round | int }}%）{% if m.swap_total %}・スワップ {{ (m.swap_total - m.swap_free) | filesize }} 使用{% endif %}</span></dd></div>{% endif %}
-    <div><dt>SSD の空き</dt><dd class="{{ 'err-text' if d.free_ratio is not none and d.free_ratio < 0.05 else ('warn-text' if d.free_ratio is not none and d.free_ratio < 0.10 else '') }}">{{ d.free | filesize }}<span class="unit">/ {{ d.total | filesize }}（{{ (d.free_ratio * 100) | round(1) if d.free_ratio is not none else "—" }}%）</span></dd></div>
-    <div><dt>データベース</dt><dd>{{ system.db_bytes | filesize }}</dd></div>
-    <div><dt>保存している実体</dt><dd>{{ system.counts.blobs }}<span class="unit">件</span> {{ system.storage.blob_bytes | filesize }}{% if system.storage.version_only_bytes %}<div class="muted small">うち過去の版だけのもの {{ system.storage.version_only_bytes | filesize }}</div>{% endif %}</dd></div>
-    <div><dt>ファイル</dt><dd>{{ system.counts.documents }}<span class="unit">件（ゴミ箱 {{ system.counts.documents_trash }}・過去の版 {{ system.counts.versions }}）</span></dd></div>
-    <div><dt>検索の索引</dt><dd>{{ system.counts.chunks }}<span class="unit">チャンク / {{ system.counts.pages }} ページ</span></dd></div>
-    <div><dt>処理待ちのジョブ</dt><dd>{{ stats.jobs_waiting }}<span class="unit">（失敗 {{ stats.jobs_failed }}）</span></dd></div>
-    <div><dt>モデル</dt><dd class="small">文字の読み取り: {{ system.models.ocr }}<div>埋め込み: {{ system.models.embedding }}</div>{% if system.models.llm %}<div>要約: {{ system.models.llm }}</div>{% endif %}</dd></div>
-    <div><dt>版</dt><dd class="small">docseed {{ system.version }}（スキーマ {{ system.schema_version }}）<div class="muted small">Python {{ system.python }} / {{ system.machine }}{% if system.uptime_s %}・起動から {{ system.uptime_s | duration }}{% endif %}</div></dd></div>
+    {% if c.temp_c is not none %}<div><dt>{{ _("CPU 温度") }}</dt><dd class="{{ 'err-text' if c.temp_c >= c.temp_pause_c else ('warn-text' if c.temp_c >= c.temp_warn_c else '') }}">{{ "%.1f" | format(c.temp_c) }}<span class="unit">{{ _("℃（{temp_warn_c}℃ で警告、{temp_pause_c}℃ で処理を一時停止）", temp_warn_c=(c.temp_warn_c | int), temp_pause_c=(c.temp_pause_c | int)) }}</span></dd></div>{% endif %}
+    {% if c.load %}<div><dt>{{ _("負荷（1・5・15 分）") }}</dt><dd>{{ "%.2f" | format(c.load[0]) }}<span class="unit">{{ _("{v} / {v2}（{count} コア）", v=("%.2f" | format(c.load[1])), v2=("%.2f" | format(c.load[2])), count=c.count) }}</span></dd></div>{% endif %}
+    {% if m %}<div><dt>{{ _("メモリ") }}</dt><dd>{{ m.available | filesize }}<span class="unit">{{ _("空き / {total}（{v}%）", total=(m.total | filesize), v=((m.available / m.total * 100) | round | int)) }}{% if m.swap_total %}{{ _("・スワップ {v} 使用", v=((m.swap_total - m.swap_free) | filesize)) }}{% endif %}</span></dd></div>{% endif %}
+    <div><dt>{{ _("SSD の空き") }}</dt><dd class="{{ 'err-text' if d.free_ratio is not none and d.free_ratio < 0.05 else ('warn-text' if d.free_ratio is not none and d.free_ratio < 0.10 else '') }}">{{ d.free | filesize }}<span class="unit">{{ _("/ {total}（{v}%）", total=(d.total | filesize), v=((d.free_ratio * 100) | round(1) if d.free_ratio is not none else "—")) }}</span></dd></div>
+    <div><dt>{{ _("データベース") }}</dt><dd>{{ system.db_bytes | filesize }}</dd></div>
+    <div><dt>{{ _("保存している実体") }}</dt><dd>{{ _("{n} 件", n=system.counts.blobs) }} {{ system.storage.blob_bytes | filesize }}{% if system.storage.version_only_bytes %}<div class="muted small">{{ _("うち過去の版だけのもの {version_only_bytes}", version_only_bytes=(system.storage.version_only_bytes | filesize)) }}</div>{% endif %}</dd></div>
+    <div><dt>{{ _("ファイル") }}</dt><dd>{{ system.counts.documents }}<span class="unit">{{ _("件（ゴミ箱 {documents_trash}・過去の版 {versions}）", documents_trash=system.counts.documents_trash, versions=system.counts.versions) }}</span></dd></div>
+    <div><dt>{{ _("検索の索引") }}</dt><dd>{{ system.counts.chunks }}<span class="unit">{{ _("チャンク / {pages} ページ", pages=system.counts.pages) }}</span></dd></div>
+    <div><dt>{{ _("処理待ちのジョブ") }}</dt><dd>{{ stats.jobs_waiting }}<span class="unit">{{ _("（失敗 {jobs_failed}）", jobs_failed=stats.jobs_failed) }}</span></dd></div>
+    <div><dt>{{ _("モデル") }}</dt><dd class="small">{{ _("文字の読み取り: {ocr}", ocr=system.models.ocr) }}<div>{{ _("埋め込み: {embedding}", embedding=system.models.embedding) }}</div>{% if system.models.llm %}<div>{{ _("要約: {llm}", llm=system.models.llm) }}</div>{% endif %}</dd></div>
+    <div><dt>{{ _("版") }}</dt><dd class="small">{{ _("docseed {version}（スキーマ {schema_version}）", version=system.version, schema_version=system.schema_version) }}<div class="muted small">Python {{ system.python }} / {{ system.machine }}{% if system.uptime_s %}{{ _("・起動から {uptime_s}", uptime_s=(system.uptime_s | duration)) }}{% endif %}</div></dd></div>
   </dl>
 </section>
 
 {% if sys.tls %}
 <section class="panel panel-wide">
-  <h2>{{ icon("lock") }} HTTPS の証明書</h2>
+  <h2>{{ icon("lock") }} {{ _("HTTPS の証明書") }}</h2>
   <dl class="stats">
-    <div><dt>状態</dt><dd class="small">{% if sys.tls.ok %}<span class="ok-text">{{ icon("check_circle") }}有効</span>{% else %}<span class="err-text">{{ icon("error") }}確認できません</span><div class="muted small">{{ sys.tls.error }}</div>{% endif %}</dd></div>
-    <div><dt>期限</dt><dd class="small">{% if sys.tls.not_after %}{{ sys.tls.not_after | localtime }}<div class="muted small">あと {{ sys.tls.days_left | round | int }} 日</div>{% else %}—{% endif %}</dd></div>
-    <div><dt>方式・発行者</dt><dd class="small">{{ sys.tls.mode }}<div class="muted small">{{ sys.tls.issuer or "—" }}（{{ sys.tls.server_name }}）</div></dd></div>
+    <div><dt>{{ _("状態") }}</dt><dd class="small">{% if sys.tls.ok %}<span class="ok-text">{{ icon("check_circle") }}{{ _("有効") }}</span>{% else %}<span class="err-text">{{ icon("error") }}{{ _("確認できません") }}</span><div class="muted small">{{ sys.tls.error }}</div>{% endif %}</dd></div>
+    <div><dt>{{ _("期限") }}</dt><dd class="small">{% if sys.tls.not_after %}{{ sys.tls.not_after | localtime }}<div class="muted small">{{ _("あと {days_left} 日", days_left=(sys.tls.days_left | round | int)) }}</div>{% else %}—{% endif %}</dd></div>
+    <div><dt>{{ _("方式・発行者") }}</dt><dd class="small">{{ sys.tls.mode }}<div class="muted small">{{ _("{issuer}（{server_name}）", issuer=(sys.tls.issuer or "—"), server_name=sys.tls.server_name) }}</div></dd></div>
   </dl>
-  <p class="muted small">最終確認 {{ sys.tls.checked_at | localtime }}</p>
+  <p class="muted small">{{ _("最終確認 {checked_at}", checked_at=(sys.tls.checked_at | localtime)) }}</p>
 </section>
 {% endif %}
 
 {% if llm %}
 <section class="panel panel-wide">
-  <h2>{{ icon("wand_stars") }} 要約（LLM）</h2>
+  <h2>{{ icon("wand_stars") }} {{ _("要約（LLM）") }}</h2>
   <dl class="stats">
-    <div><dt>モデル</dt><dd class="small">{{ llm.model }}</dd></div>
-    <div><dt>作った要約</dt><dd>{{ llm.summaries }}{% if llm.outdated or llm.old_model %}<span class="unit">（{% if llm.outdated %}古い方式 {{ llm.outdated }} 件{% endif %}{% if llm.outdated and llm.old_model %}・{% endif %}{% if llm.old_model %}旧モデル {{ llm.old_model }} 件{% endif %}）</span>{% endif %}</dd></div>
-    <div><dt>処理待ち・平均時間</dt><dd>{{ llm.waiting }}<span class="unit">件 / {{ (llm.avg_ms / 1000) | round(1) if llm.avg_ms else "—" }} 秒</span></dd></div>
+    <div><dt>{{ _("モデル") }}</dt><dd class="small">{{ llm.model }}</dd></div>
+    <div><dt>{{ _("作った要約") }}</dt><dd>{{ llm.summaries }}{% if llm.outdated or llm.old_model %}{%- set parts = [] %}{% if llm.outdated %}{% set _ok = parts.append(_("古い方式 {outdated} 件", outdated=llm.outdated)) %}{% endif %}{% if llm.old_model %}{% set _ok = parts.append(_("旧モデル {old_model} 件", old_model=llm.old_model)) %}{% endif -%}
+    <span class="unit">{{ _("（{v}）", v=parts | join(_("・"))) }}</span>{% endif %}</dd></div>
+    <div><dt>{{ _("処理待ち・平均時間") }}</dt><dd>{{ llm.waiting }}<span class="unit">{{ _("件 / {v} 秒", v=((llm.avg_ms / 1000) | round(1) if llm.avg_ms else "—")) }}</span></dd></div>
   </dl>
   {% if llm.other_models %}
-  <p class="muted small">旧モデルで作った要約: {% for m in llm.other_models %}{{ m.model }}（{{ m.count }} 件）{% if not loop.last %}、{% endif %}{% endfor %}</p>
+  <p class="muted small">{{ _("旧モデルで作った要約:") }} {% for m in llm.other_models %}{{ _("{model}（{count} 件）", model=m.model, count=m.count) }}{% if not loop.last %}{{ _("、") }}{% endif %}{% endfor %}</p>
   {% endif %}
   <form method="post" action="{{ base }}/admin/summaries/rebuild" class="row-actions-in">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button name="scope" value="version" class="btn btn-sm" {% if not llm.outdated %}disabled{% endif %}>{{ icon("refresh") }}古い要約を作り直す</button>
+    <button name="scope" value="version" class="btn btn-sm" {% if not llm.outdated %}disabled{% endif %}>{{ icon("refresh") }}{{ _("古い要約を作り直す") }}</button>
     <button name="scope" value="model" class="btn btn-sm" {% if not llm.old_model %}disabled{% endif %}
-            data-confirm="旧モデルで作った {{ llm.old_model }} 件の要約を、今のモデル（{{ llm.model }}）で上書きします。1 件あたり {{ (llm.avg_ms / 1000) | round | int if llm.avg_ms else "数十" }} 秒ほどかかります。よろしいですか？">{{ icon("refresh") }}旧モデルの要約を今のモデルで上書き</button>
+            data-confirm="{{ _("旧モデルで作った {n} 件の要約を、今のモデル（{model}）で上書きします。1 件あたり {sec} 秒ほどかかります。よろしいですか？", n=llm.old_model, model=llm.model, sec=((llm.avg_ms / 1000) | round | int if llm.avg_ms else _("数十"))) }}">{{ icon("refresh") }}{{ _("旧モデルの要約を今のモデルで上書き") }}</button>
   </form>
 </section>
 {% endif %}
 
 <section class="panel panel-wide">
-  <h2>{{ icon("backup") }} バックアップ</h2>
+  <h2>{{ icon("backup") }} {{ _("バックアップ") }}</h2>
   <dl class="stats">
-    <div><dt>データベースのスナップショット</dt><dd class="small">{% if sys.backup.db_snapshot %}{{ sys.backup.db_snapshot_at | localtime("%m/%d %H:%M") }}<div class="muted small">{{ sys.backup.db_snapshot }}</div>{% else %}まだありません{% endif %}</dd></div>
-    <div><dt>別の機器へのバックアップ（restic）</dt><dd class="small">
+    <div><dt>{{ _("データベースのスナップショット") }}</dt><dd class="small">{% if sys.backup.db_snapshot %}{{ sys.backup.db_snapshot_at | localtime("%m/%d %H:%M") }}<div class="muted small">{{ sys.backup.db_snapshot }}</div>{% else %}{{ _("まだありません") }}{% endif %}</dd></div>
+    <div><dt>{{ _("別の機器へのバックアップ（restic）") }}</dt><dd class="small">
       {% if sys.backup.restic %}
-        {{ sys.backup.restic_at | localtime("%m/%d %H:%M") }} {% if sys.backup.restic.ok %}<span class="ok-text">{{ icon("check_circle") }}成功</span>{% else %}<span class="err-text">{{ icon("error") }}失敗</span>{% endif %}
-        {% if sys.backup.restic.snapshot %}<div class="muted small">スナップショット {{ sys.backup.restic.snapshot }}</div>{% endif %}
-      {% else %}記録がありません{% endif %}
+        {{ sys.backup.restic_at | localtime("%m/%d %H:%M") }} {% if sys.backup.restic.ok %}<span class="ok-text">{{ icon("check_circle") }}{{ _("成功") }}</span>{% else %}<span class="err-text">{{ icon("error") }}{{ _("失敗") }}</span>{% endif %}
+        {% if sys.backup.restic.snapshot %}<div class="muted small">{{ _("スナップショット {snapshot}", snapshot=sys.backup.restic.snapshot) }}</div>{% endif %}
+      {% else %}{{ _("記録がありません") }}{% endif %}
     </dd></div>
-    <div><dt>復旧の練習</dt><dd class="small">
+    <div><dt>{{ _("復旧の練習") }}</dt><dd class="small">
       {% set dr = sys.backup.drill %}
       {% if dr %}
         {{ dr.time | localtime("%m/%d %H:%M") }}
-        {% if dr.result == "ok" %}<span class="ok-text">{{ icon("check_circle") }}成功</span>
-        {% elif dr.result == "skipped" %}<span class="warn-text">{{ icon("warning") }}空きが足りず飛ばした</span>
-        {% else %}<span class="err-text">{{ icon("error") }}失敗</span>{% endif %}
-        <div class="muted small">{% if dr.snapshot %}スナップショット {{ dr.snapshot }}{% if dr.restore_size %}（{{ dr.restore_size | filesize }}）{% endif %} ・ {% endif %}{{ "毎月の自動" if dr.auto else "手で実行" }}{% if dr.result != "ok" and sys.backup.drill_ok_at %} ・ 最後の成功 {{ sys.backup.drill_ok_at | localtime("%m/%d") }}{% endif %}</div>
-      {% else %}記録がありません{% endif %}
+        {% if dr.result == "ok" %}<span class="ok-text">{{ icon("check_circle") }}{{ _("成功") }}</span>
+        {% elif dr.result == "skipped" %}<span class="warn-text">{{ icon("warning") }}{{ _("空きが足りず飛ばした") }}</span>
+        {% else %}<span class="err-text">{{ icon("error") }}{{ _("失敗") }}</span>{% endif %}
+        <div class="muted small">{% if dr.snapshot %}{{ _("スナップショット {snapshot}", snapshot=dr.snapshot) }}{% if dr.restore_size %}{{ _("（{restore_size}）", restore_size=(dr.restore_size | filesize)) }}{% endif %} {{ _("・") }} {% endif %}{{ _("毎月の自動") if dr.auto else _("手で実行") }}{% if dr.result != "ok" and sys.backup.drill_ok_at %} {{ _("・ 最後の成功 {drill_ok_at}", drill_ok_at=(sys.backup.drill_ok_at | localtime("%m/%d"))) }}{% endif %}</div>
+      {% else %}{{ _("記録がありません") }}{% endif %}
     </dd></div>
   </dl>
-  <p class="muted small">復旧の練習は、最新のバックアップを一時ディレクトリに復元して、データベースと原本が一致するかを確かめます（毎月第 1 日曜。動いている docseed には触れません）。設定と復旧の手順は<a href="{{ base }}/help/admin/backup">ヘルプの「バックアップと復旧」</a>を見てください。</p>
+  <p class="muted small">{% set link %}<a href="{{ base }}/help/admin/backup">{{ _("ヘルプの「バックアップと復旧」") }}</a>{% endset %}{{ _("復旧の練習は、最新のバックアップを一時ディレクトリに復元して、データベースと原本が一致するかを確かめます（毎月第 1 日曜。動いている docseed には触れません）。設定と復旧の手順は{link}を見てください。", link=link) }}</p>
 </section>
 
 <section class="panel panel-wide" id="notify">
-  <h2>{{ icon("send") }} 通知</h2>
+  <h2>{{ icon("send") }} {{ _("通知") }}</h2>
   {% if notify.enabled %}
   <dl class="stats">
-    <div><dt>宛先</dt><dd class="small">{% for d in notify.destinations %}<div>{{ d }}</div>{% endfor %}</dd></div>
-    <div><dt>知らせること</dt><dd class="small">{% for e in notify.events %}<div>{{ e }}</div>{% endfor %}</dd></div>
+    <div><dt>{{ _("宛先") }}</dt><dd class="small">{% for d in notify.destinations %}<div>{{ d }}</div>{% endfor %}</dd></div>
+    <div><dt>{{ _("知らせること") }}</dt><dd class="small">{% for e in notify.events %}<div>{{ e }}</div>{% endfor %}</dd></div>
   </dl>
   <form method="post" action="{{ base }}/admin/notify/test" class="row-actions-in">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button class="btn btn-sm">{{ icon("send") }}テスト通知を送る</button>
+    <button class="btn btn-sm">{{ icon("send") }}{{ _("テスト通知を送る") }}</button>
   </form>
   {% if notify.recent %}
-  <h3 class="small">最近の通知</h3>
+  <h3 class="small">{{ _("最近の通知") }}</h3>
   <table class="plain small">
-    <thead><tr><th>日時</th><th>種類</th><th>内容</th><th>状態</th></tr></thead>
+    <thead><tr><th>{{ _("日時") }}</th><th>{{ _("種類") }}</th><th>{{ _("内容") }}</th><th>{{ _("状態") }}</th></tr></thead>
     <tbody>
     {% for n in notify.recent %}
       <tr>
         <td>{{ n.created_at | localtime("%m/%d %H:%M") }}</td>
-        <td>{{ notify.event_label.get(n.kind, n.kind) }}</td>
+        <td>{{ _(notify.event_label.get(n.kind, n.kind)) }}</td>
         <td>{{ n.title }}<div class="muted">{{ n.body | truncate(80) }}</div></td>
-        <td>{% if n.status == "sent" %}<span class="ok-text">{{ icon("check_circle") }}送信済み</span>
-            {% elif n.status == "failed" %}<span class="err-text">{{ icon("error") }}失敗</span>
-            {% else %}<span class="muted">{{ icon("schedule") }}送信待ち</span>{% endif %}
+        <td>{% if n.status == "sent" %}<span class="ok-text">{{ icon("check_circle") }}{{ _("送信済み") }}</span>
+            {% elif n.status == "failed" %}<span class="err-text">{{ icon("error") }}{{ _("失敗") }}</span>
+            {% else %}<span class="muted">{{ icon("schedule") }}{{ _("送信待ち") }}</span>{% endif %}
             {% if n.error %}<div class="err-text">{{ n.error | truncate(160) }}</div>{% endif %}</td>
       </tr>
     {% endfor %}
@@ -120,86 +121,86 @@
   </table>
   {% endif %}
   {% else %}
-  <p class="muted small">通知の宛先が設定されていません。<code>.env</code> の <code>DOCSEED_NOTIFY_URLS</code>（ntfy・Discord・Slack などの Webhook）か、<code>DOCSEED_SMTP_HOST</code> と <code>DOCSEED_NOTIFY_EMAIL</code>（メール）を設定すると、警告・共有リンクでの受け取り・受け取り箱の取り込みを知らせます（<a href="{{ base }}/help/admin/notifications">ヘルプの「通知」</a>）。</p>
+  <p class="muted small">{% set link %}<a href="{{ base }}/help/admin/notifications">{{ _("ヘルプの「通知」") }}</a>{% endset %}{{ _("通知の宛先が設定されていません。{env} の {urls}（ntfy・Discord・Slack などの Webhook）か、{smtp} と {email}（メール）を設定すると、警告・共有リンクでの受け取り・受け取り箱の取り込みを知らせます（{link}）。", env=code(".env"), urls=code("DOCSEED_NOTIFY_URLS"), smtp=code("DOCSEED_SMTP_HOST"), email=code("DOCSEED_NOTIFY_EMAIL"), link=link) }}</p>
   {% endif %}
 </section>
 
 <section class="panel panel-wide">
-  <h2>{{ icon("document_scanner") }} 文字の読み取りと検索の準備</h2>
+  <h2>{{ icon("document_scanner") }} {{ _("文字の読み取りと検索の準備") }}</h2>
   {% include "_admin_jobs.html" %}
   <form method="post" action="{{ base }}/admin/reprocess" class="row-actions-in">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button name="scope" value="failed" class="btn btn-sm">{{ icon("refresh") }}失敗したファイルをすべて再処理</button>
-    <button name="scope" value="outdated" class="btn btn-sm">{{ icon("refresh") }}古い版で処理したファイルを再処理</button>
-    <button name="scope" value="unsupported" class="btn btn-sm">{{ icon("refresh") }}形式が未対応だったファイルを再処理</button>
+    <button name="scope" value="failed" class="btn btn-sm">{{ icon("refresh") }}{{ _("失敗したファイルをすべて再処理") }}</button>
+    <button name="scope" value="outdated" class="btn btn-sm">{{ icon("refresh") }}{{ _("古い版で処理したファイルを再処理") }}</button>
+    <button name="scope" value="unsupported" class="btn btn-sm">{{ icon("refresh") }}{{ _("形式が未対応だったファイルを再処理") }}</button>
   </form>
 </section>
 
 <section class="panel panel-wide" id="login-settings">
-  <h2>{{ icon("login") }} ログイン</h2>
+  <h2>{{ icon("login") }} {{ _("ログイン") }}</h2>
   <form method="post" action="{{ base }}/admin/auth-settings" class="form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label class="check"><input type="checkbox" name="require_2fa" value="1" {% if auth_settings.require_2fa %}checked{% endif %}>
-      パスワードでログインする人に 2 段階認証（確認コード）を必須にする</label>
-    <p class="muted small">未設定のユーザーは、設定するまでほかの画面を使えません。パスキーや外部アカウントでログインした人は対象外です。</p>
+      {{ _("パスワードでログインする人に 2 段階認証（確認コード）を必須にする") }}</label>
+    <p class="muted small">{{ _("未設定のユーザーは、設定するまでほかの画面を使えません。パスキーや外部アカウントでログインした人は対象外です。") }}</p>
     {% if oidc_enabled %}
-    <label>外部アカウントで連携できるメールアドレスのドメイン <span class="muted small">（空なら制限しない。複数はスペースかカンマで区切る）</span>
-      <input name="oidc_allowed_domains" value="{{ auth_settings.oidc_allowed_domains | join(' ') }}" placeholder="例: example.com"></label>
+    <label>{{ _("外部アカウントで連携できるメールアドレスのドメイン") }} <span class="muted small">{{ _("（空なら制限しない。複数はスペースかカンマで区切る）") }}</span>
+      <input name="oidc_allowed_domains" value="{{ auth_settings.oidc_allowed_domains | join(' ') }}" placeholder="{{ _("例: example.com") }}"></label>
     {% else %}
     <input type="hidden" name="oidc_allowed_domains" value="{{ auth_settings.oidc_allowed_domains | join(' ') }}">
     {% endif %}
-    <div><button type="submit" class="btn btn-primary">{{ icon("save") }}保存</button></div>
+    <div><button type="submit" class="btn btn-primary">{{ icon("save") }}{{ _("保存") }}</button></div>
   </form>
 </section>
 
 <section class="panel panel-wide">
-  <h2>{{ icon("group") }} ユーザー</h2>
+  <h2>{{ icon("group") }} {{ _("ユーザー") }}</h2>
   {% if reset_done %}
   <div class="token-new">
-    <p><b>{{ reset_done.username }}</b> のログイン方法をリセットしました（パスキー・確認コード・外部アカウントの連携を削除し、すべての端末をログアウト）。次の仮のパスワードを本人に伝え、ログイン後に変更してもらってください。この画面を離れると二度と表示されません。</p>
+    <p>{% set who %}<b>{{ reset_done.username }}</b>{% endset %}{{ _("{user} のログイン方法をリセットしました（パスキー・確認コード・外部アカウントの連携を削除し、すべての端末をログアウト）。次の仮のパスワードを本人に伝え、ログイン後に変更してもらってください。この画面を離れると二度と表示されません。", user=who) }}</p>
     <code class="token-value" data-select-all>{{ reset_done.password }}</code>
   </div>
   {% endif %}
   <table class="plain">
-    <thead><tr><th>ユーザー名</th><th>表示名</th><th>ロール</th><th>状態</th><th>使用量・上限</th><th><span class="sr">操作</span></th></tr></thead>
+    <thead><tr><th>{{ _("ユーザー名") }}</th><th>{{ _("表示名") }}</th><th>{{ _("ロール") }}</th><th>{{ _("状態") }}</th><th>{{ _("使用量・上限") }}</th><th><span class="sr">{{ _("操作") }}</span></th></tr></thead>
     <tbody>
     {% for u in users %}
       <tr {% if not u.is_active %}class="inactive"{% endif %}>
         <td>{{ u.username }}</td><td>{{ u.display_name }}</td>
-        <td>{{ "管理者" if u.is_admin else "一般" }}</td>
-        <td>{{ "有効" if u.is_active else "無効" }}</td>
+        <td>{{ _("管理者") if u.is_admin else _("一般") }}</td>
+        <td>{{ _("有効") if u.is_active else _("無効") }}</td>
         {% set q = quotas[u.id] %}
         <td class="quota-cell">
-          <div class="small">{{ q.total | filesize }} / {% if q.quota %}{{ q.quota | filesize }}{% else %}上限なし{% endif %}{% if not q.custom %} <span class="muted">（既定）</span>{% endif %}</div>
+          <div class="small">{{ q.total | filesize }} / {% if q.quota %}{{ q.quota | filesize }}{% else %}{{ _("上限なし") }}{% endif %}{% if not q.custom %} <span class="muted">{{ _("（既定）") }}</span>{% endif %}</div>
           {% if q.quota %}<meter class="quota-meter" min="0" max="{{ q.quota }}" value="{{ [q.total, q.quota] | min }}" low="{{ (q.quota * 0.7) | int }}" high="{{ (q.quota * 0.9) | int }}" optimum="0">{{ (q.ratio * 100) | round | int }}%</meter>{% endif %}
           <form method="post" action="{{ base }}/admin/users/{{ u.id }}" class="quota-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="action" value="quota">
-            <input name="quota_gb" inputmode="decimal" placeholder="既定" value="{{ ('%g' | format(q.quota / 1073741824)) if q.custom else '' }}" aria-label="{{ u.username }} の容量の上限（GB）">
+            <input name="quota_gb" inputmode="decimal" placeholder="{{ _("既定") }}" value="{{ ('%g' | format(q.quota / 1073741824)) if q.custom else '' }}" aria-label="{{ _("{username} の容量の上限（GB）", username=u.username) }}">
             <span class="small muted">GB</span>
-            <button class="btn btn-sm">{{ icon("save") }}保存</button>
+            <button class="btn btn-sm">{{ icon("save") }}{{ _("保存") }}</button>
           </form>
         </td>
         <td class="row-actions"><div class="row-actions-in">
           {% if u.id != user.id %}
           <form method="post" action="{{ base }}/admin/users/{{ u.id }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            {% if u.is_active %}<button name="action" value="disable" class="btn btn-sm">{{ icon("person_off") }}無効にする</button>
-            {% else %}<button name="action" value="enable" class="btn btn-sm">{{ icon("person_check") }}有効にする</button>{% endif %}
-            {% if u.is_admin %}<button name="action" value="make_user" class="btn btn-sm">{{ icon("person") }}一般にする</button>
-            {% else %}<button name="action" value="make_admin" class="btn btn-sm">{{ icon("admin_panel_settings") }}管理者にする</button>{% endif %}
+            {% if u.is_active %}<button name="action" value="disable" class="btn btn-sm">{{ icon("person_off") }}{{ _("無効にする") }}</button>
+            {% else %}<button name="action" value="enable" class="btn btn-sm">{{ icon("person_check") }}{{ _("有効にする") }}</button>{% endif %}
+            {% if u.is_admin %}<button name="action" value="make_user" class="btn btn-sm">{{ icon("person") }}{{ _("一般にする") }}</button>
+            {% else %}<button name="action" value="make_admin" class="btn btn-sm">{{ icon("admin_panel_settings") }}{{ _("管理者にする") }}</button>{% endif %}
           </form>
           <form method="post" action="{{ base }}/admin/users/{{ u.id }}" class="inline-pw">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="action" value="password">
-            <input name="password" type="password" minlength="12" placeholder="新しいパスワード" autocomplete="new-password" required aria-label="{{ u.username }} の新しいパスワード">
-            <button class="btn btn-sm">{{ icon("password") }}再設定</button>
+            <input name="password" type="password" minlength="12" placeholder="{{ _("新しいパスワード") }}" autocomplete="new-password" required aria-label="{{ _("{username} の新しいパスワード", username=u.username) }}">
+            <button class="btn btn-sm">{{ icon("password") }}{{ _("再設定") }}</button>
           </form>
-          <form method="post" action="{{ base }}/admin/users/{{ u.id }}/reset-auth" data-confirm="{{ u.username }} のログイン方法（パスキー・確認コード・外部アカウントの連携）をすべて消し、仮のパスワードを発行しますか？">
+          <form method="post" action="{{ base }}/admin/users/{{ u.id }}/reset-auth" data-confirm="{{ _("{username} のログイン方法（パスキー・確認コード・外部アカウントの連携）をすべて消し、仮のパスワードを発行しますか？", username=u.username) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button class="btn btn-sm btn-danger">{{ icon("lock_reset") }}ログイン方法をリセット</button>
+            <button class="btn btn-sm btn-danger">{{ icon("lock_reset") }}{{ _("ログイン方法をリセット") }}</button>
           </form>
-          {% else %}<span class="muted small">あなた</span>{% endif %}
+          {% else %}<span class="muted small">{{ _("あなた") }}</span>{% endif %}
         </div></td>
       </tr>
     {% endfor %}
@@ -208,22 +209,22 @@
 
   <form method="post" action="{{ base }}/admin/quota" class="form form-row" id="quota">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label>容量の上限の全体の既定 <span class="muted small">（GB。空か 0 で上限なし）</span>
-      <input name="quota_gb" inputmode="decimal" value="{{ ('%g' | format(default_quota / 1073741824)) if default_quota else '' }}" placeholder="上限なし"></label>
-    <button class="btn">{{ icon("save") }}保存</button>
+    <label>{{ _("容量の上限の全体の既定") }} <span class="muted small">{{ _("（GB。空か 0 で上限なし）") }}</span>
+      <input name="quota_gb" inputmode="decimal" value="{{ ('%g' | format(default_quota / 1073741824)) if default_quota else '' }}" placeholder="{{ _("上限なし") }}"></label>
+    <button class="btn">{{ icon("save") }}{{ _("保存") }}</button>
   </form>
-  <p class="muted small">ユーザーごとの上限は上の表で決めます（空にすると全体の既定、0 で上限なし）。ゴミ箱の中と過去の版も数えます。共有されたフォルダや受け取り用のリンクに置かれたファイルは、フォルダの持ち主の分として数えます。</p>
+  <p class="muted small">{{ _("ユーザーごとの上限は上の表で決めます（空にすると全体の既定、0 で上限なし）。ゴミ箱の中と過去の版も数えます。共有されたフォルダや受け取り用のリンクに置かれたファイルは、フォルダの持ち主の分として数えます。") }}</p>
 
-  <h3>{{ icon("person_add") }} ユーザーを追加</h3>
+  <h3>{{ icon("person_add") }} {{ _("ユーザーを追加") }}</h3>
   <form method="post" action="{{ base }}/admin/users" class="form form-row">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label>ユーザー名 <input name="username" value="{{ form.username or '' }}" required pattern="[A-Za-z0-9][A-Za-z0-9._\-]{1,31}" autocapitalize="none"></label>
-    <label>表示名 <input name="display_name" value="{{ form.display_name or '' }}" maxlength="50"></label>
-    <label>初期パスワード <input name="password" type="password" minlength="12" required autocomplete="new-password"></label>
-    <label>ロール
-      <select name="role"><option value="user">一般</option><option value="admin" {% if form.role == 'admin' %}selected{% endif %}>管理者</option></select>
+    <label>{{ _("ユーザー名") }} <input name="username" value="{{ form.username or '' }}" required pattern="[A-Za-z0-9][A-Za-z0-9._\-]{1,31}" autocapitalize="none"></label>
+    <label>{{ _("表示名") }} <input name="display_name" value="{{ form.display_name or '' }}" maxlength="50"></label>
+    <label>{{ _("初期パスワード") }} <input name="password" type="password" minlength="12" required autocomplete="new-password"></label>
+    <label>{{ _("ロール") }}
+      <select name="role"><option value="user">{{ _("一般") }}</option><option value="admin" {% if form.role == 'admin' %}selected{% endif %}>{{ _("管理者") }}</option></select>
     </label>
-    <button type="submit" class="btn btn-primary">{{ icon("person_add") }}追加</button>
+    <button type="submit" class="btn btn-primary">{{ icon("person_add") }}{{ _("追加") }}</button>
   </form>
 </section>
 {% endblock %}

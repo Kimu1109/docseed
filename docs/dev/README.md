@@ -61,6 +61,7 @@ python scripts/build_icons.py --check
 | `src/docseed/shares.py`・`inbox.py` | 共有リンク・受け取り箱 | [認証・権限・共有](../design/security.md) 4 章 |
 | `src/docseed/webclip/` | URL の取り込み（安全な取得・描画） | [拡張機能](../design/extensions.md) 6 章 |
 | `src/docseed/suggest.py`・`llm.py`・`tags.py` | 整理の補助・要約 | [拡張機能](../design/extensions.md) 7 章 |
+| `src/docseed/i18n.py`・`src/docseed/locales/en.json` | 画面の言語（日本語・英語）と英語の訳 | [画面](../design/ui.md) 1.2 |
 | `src/docseed/helpdocs.py`・`web/views/help.py` | 画面のヘルプ（`docs/` の Markdown を画面で読む） | [画面](../design/ui.md) S12 |
 | `src/docseed/monitor.py`・`metrics.py`・`notify.py`・`tlscheck.py`・`backup.py` | 監視・指標・通知・証明書・バックアップ | [配置・運用](../design/deployment.md) 5〜6 章 |
 | `src/docseed/migrations/` | DB のマイグレーション（`NNNN_名前.sql`。番号順に適用） | [データモデル](../design/data-model.md) |
@@ -77,6 +78,7 @@ python scripts/build_icons.py --check
 - 設定を足すときは `config.py`・`.env.example`・[設定の一覧](../admin/configuration.md) の 3 か所
 - DB を変えるときは `migrations/` に新しい番号のファイルを足す（既存のファイルは書き換えない）
 - worker は外部と通信しない（外へ出るのは api・fetcher・webclip-browser だけ）
+- 画面の文言は日本語で書き、`_()`（テンプレート・Python）・`T()`（JavaScript）・`N_()`（モジュールの定数）を通す。足した・変えた文言の英語の訳を `src/docseed/locales/en.json` に書く（キーの順に並べる。古い訳は消す）。`pytest tests/test_i18n.py` が訳の漏れを確かめる（[画面](../design/ui.md) 1.2）
 
 ## 機能を足したら
 

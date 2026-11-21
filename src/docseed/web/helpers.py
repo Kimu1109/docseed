@@ -12,22 +12,23 @@ from zoneinfo import ZoneInfo
 
 from markupsafe import Markup, escape
 
+from ..i18n import N_, _
 from ..urls import base
 
 TZ = ZoneInfo(os.environ.get("DOCSEED_TIMEZONE", "Asia/Tokyo"))
 
 STATUS_LABEL = {
-    "pending": "処理待ち",
-    "processing": "処理中",
-    "ready": "検索できます",
-    "failed": "処理に失敗",
-    "unsupported": "保存のみ",
+    "pending": N_("処理待ち"),
+    "processing": N_("処理中"),
+    "ready": N_("検索できます"),
+    "failed": N_("処理に失敗"),
+    "unsupported": N_("保存のみ"),
 }
 
 KIND_LABEL = {
-    "folder": "フォルダ", "pdf": "PDF", "image": "画像", "text": "テキスト", "doc": "文書",
-    "sheet": "表計算", "slide": "スライド", "archive": "圧縮ファイル", "media": "音声・動画", "other": "ファイル",
-    "webclip": "Web クリップ",
+    "folder": N_("フォルダ"), "pdf": "PDF", "image": N_("画像"), "text": N_("テキスト"), "doc": N_("文書"),
+    "sheet": N_("表計算"), "slide": N_("スライド"), "archive": N_("圧縮ファイル"), "media": N_("音声・動画"),
+    "other": N_("ファイル"), "webclip": N_("Web クリップ"),
 }
 
 
@@ -75,10 +76,10 @@ def duration(seconds: float | None) -> str:
     m = int(seconds) // 60
     d, h, m = m // 1440, m // 60 % 24, m % 60
     if d:
-        return f"{d} 日 {h} 時間"
+        return _("{d} 日 {h} 時間", d=d, h=h)
     if h:
-        return f"{h} 時間 {m} 分"
-    return f"{m} 分"
+        return _("{h} 時間 {m} 分", h=h, m=m)
+    return _("{m} 分", m=m)
 
 
 def taken_at(iso: str | None) -> str:
@@ -112,14 +113,15 @@ def shortdate(iso: str | None) -> str:
 
 
 WARNING_TEXT = {
-    "too_many_pages": "ページ数が多いため、先頭 {processed} ページだけを処理しました（全 {pages} ページ）",
-    "ocr_slow": "{page} ページ目の文字の読み取りに {seconds} 秒かかりました",
-    "ocr_timeout": "{page} ページ目の文字の読み取りが時間切れになりました",
-    "sheet_truncated": "シート「{sheet}」はセルが多いため、先頭 {cells} セルだけを検索の対象にしました",
-    "webclip_text_short": "本文を取り出せませんでした（JavaScript で描くページなど）。タイトルと説明だけで検索できます",
-    "no_speech": "音声から文字を取り出せませんでした（無音・音楽だけなど）",
-    "summary_timeout": "要約が {seconds} 秒以内に終わらなかったため、要約なしにしました",
-    "thumbnail_failed": "サムネイル・プレビューを作れませんでした（文字の読み取りと検索には影響しません）",
+    "too_many_pages": N_("ページ数が多いため、先頭 {processed} ページだけを処理しました（全 {pages} ページ）"),
+    "ocr_slow": N_("{page} ページ目の文字の読み取りに {seconds} 秒かかりました"),
+    "ocr_timeout": N_("{page} ページ目の文字の読み取りが時間切れになりました"),
+    "sheet_truncated": N_("シート「{sheet}」はセルが多いため、先頭 {cells} セルだけを検索の対象にしました"),
+    "webclip_text_short": N_("本文を取り出せませんでした（JavaScript で描くページなど）。"
+                             "タイトルと説明だけで検索できます"),
+    "no_speech": N_("音声から文字を取り出せませんでした（無音・音楽だけなど）"),
+    "summary_timeout": N_("要約が {seconds} 秒以内に終わらなかったため、要約なしにしました"),
+    "thumbnail_failed": N_("サムネイル・プレビューを作れませんでした（文字の読み取りと検索には影響しません）"),
 }
 
 
@@ -144,9 +146,9 @@ def warning_messages(raw: str | None) -> list[str]:
     for w in items:
         tmpl = WARNING_TEXT.get(w.get("code"), w.get("code", ""))
         try:
-            out.append(tmpl.format(**w))
+            out.append(_(tmpl, **w))
         except (KeyError, IndexError):
-            out.append(tmpl)
+            out.append(_(tmpl))
     return out
 
 
