@@ -466,7 +466,7 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .sent li.ok span { color: var(--ok); }
 .sent li.ng span { color: var(--danger); }
 .upload-form { max-width: 560px; }
-input[type=file] { padding: 8px 0; font-size: 14px; }
+input[type=file] { padding: 8px 0; font-size: 14px; min-width: 0; max-width: 100%; }  /* 幅は UI の言語で変わるので、狭い枠からはみ出さない */
 input[type=file]::file-selector-button { font: inherit; height: 32px; padding: 0 12px; margin-right: 12px;
   border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; }
 .link-new .form { padding: var(--s2) 0 0; }
