@@ -1,20 +1,20 @@
 {% extends "base.html" %}
-{% block title %}確認コード{% endblock %}
+{% block title %}{{ _("確認コード") }}{% endblock %}
 {% block bare %}
 <main class="login">
   <div class="login-box">
     <div class="brand brand-lg"><span class="brand-mark" aria-hidden="true"></span>docseed</div>
-    <p class="login-lead">認証アプリに表示されている 6 桁の確認コードを入力してください。</p>
-    {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+    <p class="login-lead">{{ _("認証アプリに表示されている 6 桁の確認コードを入力してください。") }}</p>
+    {% if error %}<p class="alert" role="alert">{{ _(error) }}</p>{% endif %}
     <form method="post" action="{{ base }}/auth/second-factor" class="form">
-      <label>確認コード
+      <label>{{ _("確認コード") }}
         <input name="code" inputmode="numeric" autocomplete="one-time-code" autocapitalize="none" required autofocus
                maxlength="20" placeholder="123456">
       </label>
-      <button type="submit" class="btn btn-primary btn-block">{{ icon("pin") }}確認</button>
+      <button type="submit" class="btn btn-primary btn-block">{{ icon("pin") }}{{ _("確認") }}</button>
     </form>
-    <p class="muted small">確認コードの代わりに復旧コード（xxxx-xxxx-xxxx）も使えます。どちらも無いときは管理者に連絡してください。</p>
-    <p class="small"><a href="{{ base }}/login">{{ icon("arrow_back") }} 最初からやり直す</a></p>
+    <p class="muted small">{{ _("確認コードの代わりに復旧コード（xxxx-xxxx-xxxx）も使えます。どちらも無いときは管理者に連絡してください。") }}</p>
+    <p class="small"><a href="{{ base }}/login">{{ icon("arrow_back") }} {{ _("最初からやり直す") }}</a></p>
   </div>
 </main>
 {% endblock %}

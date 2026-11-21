@@ -14,6 +14,7 @@ from typing import Any
 
 import numpy as np
 
+from .i18n import N_, _
 from .users import User
 
 K_VEC = 200
@@ -212,7 +213,7 @@ def search(conn: sqlite3.Connection, user: User, q: str, *, mode: str = "hybrid"
     if "taken" in pq.filters:
         taken = taken_range(pq.filters["taken"])
         if taken is None:
-            notices.append("taken: は 2026、2026-05、2026-05-03 か、2026-05-01..2026-05-10 のように指定してください")
+            notices.append(_("taken: は 2026、2026-05、2026-05-03 か、2026-05-01..2026-05-10 のように指定してください"))
             pq.filters.pop("taken")
     if pq.empty:
         if any(k in pq.filters for k in LIST_FILTERS):
@@ -223,8 +224,8 @@ def search(conn: sqlite3.Connection, user: User, q: str, *, mode: str = "hybrid"
     use_kw = mode in ("hybrid", "keyword")
     if use_sem and embedder is None:
         use_sem = False
-        notices.append("意味検索は使えないため、キーワードだけで検索しました"
-                       + (f"（{embed_error}）" if embed_error else ""))
+        notices.append(_("意味検索は使えないため、キーワードだけで検索しました（{error}）", error=_(embed_error))
+                       if embed_error else _("意味検索は使えないため、キーワードだけで検索しました"))
         use_kw = True
 
     # ---- 絞り込みの準備 ----------------------------------------------------
@@ -234,7 +235,7 @@ def search(conn: sqlite3.Connection, user: User, q: str, *, mode: str = "hybrid"
             fid = int(pq.filters["folder"])
             allowed &= _subtree(conn, fid) if fid in allowed else set()
         except ValueError:
-            notices.append("folder: にはフォルダの番号を指定してください")
+            notices.append(_("folder: にはフォルダの番号を指定してください"))
     after = _date(pq.filters["after"]) if "after" in pq.filters else None
     before = _date(pq.filters["before"]) if "before" in pq.filters else None
     if before:
@@ -304,7 +305,7 @@ def search(conn: sqlite3.Connection, user: User, q: str, *, mode: str = "hybrid"
 
     # ---- RRF で統合し、文書単位にまとめる（search.md 6 章） ---------------
     if use_kw and short and not fq and qvec is not None:
-        notices.append("2 文字以下の語（" + "・".join(short) + "）は、意味の近い候補の中でだけ照合しました")
+        notices.append(_("2 文字以下の語（{words}）は、意味の近い候補の中でだけ照合しました", words="・".join(short)))
     w_kw = 1.5 if pq.phrases else 1.0
     chunk_score: dict[int, float] = {}
     for c in keep:
@@ -380,7 +381,7 @@ def _filter_only(conn: sqlite3.Connection, user: User, q: str, pq: ParsedQuery, 
             fid = int(pq.filters["folder"])
             allowed &= _subtree(conn, fid) if fid in allowed else set()
         except ValueError:
-            notices.append("folder: にはフォルダの番号を指定してください")
+            notices.append(_("folder: にはフォルダの番号を指定してください"))
             allowed = set()
     after = _date(pq.filters["after"]) if "after" in pq.filters else None
     before = _date(pq.filters["before"]) if "before" in pq.filters else None
@@ -508,7 +509,7 @@ class QueryEmbedder:
                     self._model = OnnxEmbedder(*self._args[:2], threads=self._args[2])
                     self._error = None
                 except Exception as e:  # noqa: BLE001 - モデルが無い等。キーワード検索だけで続ける
-                    self._error = "埋め込みモデルが読み込めません" if "fetch-models" in str(e) else str(e)[:200]
+                    self._error = N_("埋め込みモデルが読み込めません") if "fetch-models" in str(e) else str(e)[:200]
                     self._failed_at = time.monotonic()
             return (self if self._model is not None else None), self._error
 

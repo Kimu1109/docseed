@@ -82,6 +82,7 @@ help
 info
 tune
 visibility
+translate
 visibility_off
 location_on
 lock

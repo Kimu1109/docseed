@@ -1,37 +1,37 @@
 {% extends "base.html" %}
-{% block title %}{{ ("「" ~ q ~ "」の検索結果") if q else "検索" }}{% endblock %}
+{% block title %}{{ _("「{q}」の検索結果", q=q) if q else _("検索") }}{% endblock %}
 {% block main %}
 {% set n_filters = [type, tag, after, before, taken_from, taken_to, folder] | select | list | length %}
 <form class="search-form" method="get" action="{{ base }}/search" role="search" data-autosubmit>
   <div class="search-main m-ic">
-    <input type="search" name="q" value="{{ q }}" placeholder="ファイルの中身を検索（例: 振込先 請求書）" aria-label="検索語" autocomplete="off" enterkeyhint="search" {% if not q %}autofocus{% endif %}>
+    <input type="search" name="q" value="{{ q }}" placeholder="{{ _("ファイルの中身を検索（例: 振込先 請求書）") }}" aria-label="{{ _("検索語") }}" autocomplete="off" enterkeyhint="search" {% if not q %}autofocus{% endif %}>
     <button type="button" class="btn m-only filters-toggle{% if n_filters %} is-on{% endif %}" data-filters-toggle aria-controls="search-filters" aria-expanded="false"
-            title="絞り込み">{{ icon("tune") }}<span class="lbl">絞り込み</span>{% if n_filters %}<span class="count">{{ n_filters }}</span>{% endif %}</button>
-    <button type="submit" class="btn btn-primary">{{ icon("search") }}<span class="lbl">検索</span></button>
+            title="{{ _("絞り込み") }}">{{ icon("tune") }}<span class="lbl">{{ _("絞り込み") }}</span>{% if n_filters %}<span class="count">{{ n_filters }}</span>{% endif %}</button>
+    <button type="submit" class="btn btn-primary">{{ icon("search") }}<span class="lbl">{{ _("検索") }}</span></button>
   </div>
   <div class="search-filters" id="search-filters">
-    <label>検索方法
-      <select name="mode">{% for k, v in mode_label.items() %}<option value="{{ k }}" {% if k == mode %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+    <label>{{ _("検索方法") }}
+      <select name="mode">{% for k, v in mode_label.items() %}<option value="{{ k }}" {% if k == mode %}selected{% endif %}>{{ _(v) }}</option>{% endfor %}</select>
     </label>
-    <label>種類
-      <select name="type"><option value="">すべて</option>{% for t in type_options %}<option value="{{ t }}" {% if t == type %}selected{% endif %}>{{ kind_label[t] }}</option>{% endfor %}</select>
+    <label>{{ _("種類") }}
+      <select name="type"><option value="">{{ _("すべて") }}</option>{% for t in type_options %}<option value="{{ t }}" {% if t == type %}selected{% endif %}>{{ kind_label[t] }}</option>{% endfor %}</select>
     </label>
     {% if tags %}
-    <label>タグ
-      <select name="tag"><option value="">すべて</option>{% for t in tags %}<option value="{{ t }}" {% if t == tag %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+    <label>{{ _("タグ") }}
+      <select name="tag"><option value="">{{ _("すべて") }}</option>{% for t in tags %}<option value="{{ t }}" {% if t == tag %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
     </label>
     {% endif %}
-    <label>更新日（から）<input type="date" name="after" value="{{ after }}"></label>
-    <label>更新日（まで）<input type="date" name="before" value="{{ before }}"></label>
-    <label>撮影日（から）<input type="date" name="taken_from" value="{{ taken_from }}"></label>
-    <label>撮影日（まで）<input type="date" name="taken_to" value="{{ taken_to }}"></label>
-    <label class="folder-filter">フォルダ
-      <select name="folder"><option value="">すべて</option>
+    <label>{{ _("更新日（から）") }}<input type="date" name="after" value="{{ after }}"></label>
+    <label>{{ _("更新日（まで）") }}<input type="date" name="before" value="{{ before }}"></label>
+    <label>{{ _("撮影日（から）") }}<input type="date" name="taken_from" value="{{ taken_from }}"></label>
+    <label>{{ _("撮影日（まで）") }}<input type="date" name="taken_to" value="{{ taken_to }}"></label>
+    <label class="folder-filter">{{ _("フォルダ") }}
+      <select name="folder"><option value="">{{ _("すべて") }}</option>
         {%- set ns = namespace(found=False) %}
         {%- for fid, label in folder_options %}{% if fid | string == folder %}{% set ns.found = True %}{% endif %}
         <option value="{{ fid }}" {% if fid | string == folder %}selected{% endif %}>{{ label }}</option>
         {%- endfor %}
-        {%- if folder and not ns.found %}<option value="{{ folder }}" selected>{{ folder_name or "指定したフォルダ" }}</option>{% endif %}
+        {%- if folder and not ns.found %}<option value="{{ folder }}" selected>{{ folder_name or _("指定したフォルダ") }}</option>{% endif %}
       </select>
     </label>
   </div>
@@ -40,24 +40,24 @@
 {% if result %}
   {% for n in result.notices %}<p class="note">{{ n }}</p>{% endfor %}
   {% if ask_enabled %}
-  <section class="ask" id="ask" data-question="{{ q }}" data-filters='{{ ask_filters | tojson }}' aria-label="質問への答え">
-    <button type="button" class="btn" data-ask>{{ icon("wand_stars") }}この質問に、文書をもとに答える</button>
+  <section class="ask" id="ask" data-question="{{ q }}" data-filters='{{ ask_filters | tojson }}' aria-label="{{ _("質問への答え") }}">
+    <button type="button" class="btn" data-ask>{{ icon("wand_stars") }}{{ _("この質問に、文書をもとに答える") }}</button>
     <div class="ask-out" hidden>
-      <h2>{{ icon("wand_stars") }} 答え</h2>
+      <h2>{{ icon("wand_stars") }} {{ _("答え") }}</h2>
       <p class="ask-answer" aria-live="polite"></p>
       <p class="ask-status muted small" role="status"></p>
       <ol class="ask-sources"></ol>
-      <p class="muted small">見られる文書の中から小型の AI が作った答えです。誤りが含まれることがあるので、番号の資料で確かめてください。</p>
+      <p class="muted small">{{ _("見られる文書の中から小型の AI が作った答えです。誤りが含まれることがあるので、番号の資料で確かめてください。") }}</p>
     </div>
   </section>
   {% endif %}
   <div class="result-bar">
-    {% if result.total %}<p class="result-count"><b>{{ result.total }}</b> 件<span class="muted">（{{ result.took_ms }} ミリ秒）</span></p>{% else %}<span></span>{% endif %}
+    {% if result.total %}<p class="result-count">{% set n %}<b>{{ result.total }}</b>{% endset %}{{ _("{n} 件", n=n) }}<span class="muted">{{ _("（{took_ms} ミリ秒）", took_ms=result.took_ms) }}</span></p>{% else %}<span></span>{% endif %}
     <form class="search-save" method="post" action="{{ base }}/search/saved">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       {% for k, v in current.items() %}<input type="hidden" name="p_{{ k }}" value="{{ v }}">{% endfor %}
-      <input name="name" maxlength="100" placeholder="名前（省略時は{{ '検索語' if q else '「保存した検索」' }}）" aria-label="保存する名前" autocomplete="off">
-      <button class="btn btn-sm">{{ icon("bookmark") }}この検索を保存</button>
+      <input name="name" maxlength="100" placeholder="{{ _("名前（省略時は検索語）") if q else _("名前（省略時は「保存した検索」）") }}" aria-label="{{ _("保存する名前") }}" autocomplete="off">
+      <button class="btn btn-sm">{{ icon("bookmark") }}{{ _("この検索を保存") }}</button>
     </form>
   </div>
   {% if result.total %}
@@ -71,14 +71,14 @@
             <a class="result-name" href="{{ base }}/d/{{ d.id }}?q={{ q | urlencode }}">{{ d.filename }}</a>
             <span class="muted small">{{ icon("folder") }}{{ paths[d.folder_id] }}</span>
             <span class="muted small">{{ icon("schedule") }}{{ d.updated_at | shortdate }}</span>
-            {% if d.taken_at %}<span class="muted small" title="撮影日時">{{ icon("image") }}{{ d.taken_at | taken_at }}</span>{% endif %}
+            {% if d.taken_at %}<span class="muted small" title="{{ _("撮影日時") }}">{{ icon("image") }}{{ d.taken_at | taken_at }}</span>{% endif %}
           </div>
           {% if summaries.get(d.id) %}<p class="result-summary small">{{ icon("wand_stars") }} {{ summaries[d.id] }}</p>{% endif %}
           {% for s in h.snippets %}
           <a class="snippet" href="{{ base }}/d/{{ d.id }}?q={{ q | urlencode }}{% if s.page_no %}#p{{ s.page_no }}{% endif %}">
-            {% if s.summary %}<span class="snip-page">要約</span>{% elif s.page_no %}<span class="snip-page">{{ s.page_no }} ページ</span>{% endif %}
+            {% if s.summary %}<span class="snip-page">{{ _("要約") }}</span>{% elif s.page_no %}<span class="snip-page">{{ _("{page_no} ページ", page_no=s.page_no) }}</span>{% endif %}
             <span class="snip-text">{{ s.html | safe }}</span>
-            {% if "semantic" in s.match %}<span class="badge" title="同じ語は含まれていませんが、意味が近い部分です">意味が近い</span>{% endif %}
+            {% if "semantic" in s.match %}<span class="badge" title="{{ _("同じ語は含まれていませんが、意味が近い部分です") }}">{{ _("意味が近い") }}</span>{% endif %}
           </a>
           {% endfor %}
         </div>
@@ -87,17 +87,17 @@
     </ol>
     {% set pages = ((result.total - 1) // per_page) + 1 %}
     {% if pages > 1 %}
-    <nav class="pager" aria-label="ページ送り">
-      {% if page > 1 %}<a class="btn" href="{{ base }}/search?{{ dict(params, page=page - 1) | urlencode }}">{{ icon("chevron_left") }}前へ</a>{% endif %}
+    <nav class="pager" aria-label="{{ _("ページ送り") }}">
+      {% if page > 1 %}<a class="btn" href="{{ base }}/search?{{ dict(params, page=page - 1) | urlencode }}">{{ icon("chevron_left") }}{{ _("前へ") }}</a>{% endif %}
       <span class="muted">{{ page }} / {{ [pages, 26] | min }}</span>
-      {% if page < pages and page < 26 %}<a class="btn" href="{{ base }}/search?{{ dict(params, page=page + 1) | urlencode }}">次へ{{ icon("chevron_right") }}</a>{% endif %}
+      {% if page < pages and page < 26 %}<a class="btn" href="{{ base }}/search?{{ dict(params, page=page + 1) | urlencode }}">{{ _("次へ") }}{{ icon("chevron_right") }}</a>{% endif %}
     </nav>
     {% endif %}
   {% else %}
     <div class="empty">
       {{ icon("search_off") }}
-      <p>{% if q %}「{{ q }}」に一致するファイルは見つかりませんでした。{% else %}条件に合うファイルは見つかりませんでした。{% endif %}</p>
-      <p class="muted">別の言い方で検索するか、種類や期間の絞り込みを外してみてください。処理待ちのファイルはまだ検索できません。</p>
+      <p>{% if q %}{{ _("「{q}」に一致するファイルは見つかりませんでした。", q=q) }}{% else %}{{ _("条件に合うファイルは見つかりませんでした。") }}{% endif %}</p>
+      <p class="muted">{{ _("別の言い方で検索するか、種類や期間の絞り込みを外してみてください。処理待ちのファイルはまだ検索できません。") }}</p>
     </div>
   {% endif %}
 {% endif %}
@@ -105,24 +105,24 @@
 {% if not result and (saved or history) %}
 <div class="search-lists">
   {% if saved %}
-  <section class="panel" aria-label="保存した検索">
-    <h2>{{ icon("bookmark") }} 保存した検索</h2>
+  <section class="panel" aria-label="{{ _("保存した検索") }}">
+    <h2>{{ icon("bookmark") }} {{ _("保存した検索") }}</h2>
     <ul class="item-list">
     {% for x in saved %}
       <li>
         <a href="{{ base }}{{ x.url }}" title="{{ x.label }}"><span class="item-name">{{ x.name }}</span></a>
         <span class="muted small">{{ x.label }}</span>
         <details class="rowmenu">
-          <summary aria-label="「{{ x.name }}」の操作">{{ icon("more_horiz") }}</summary>
+          <summary aria-label="{{ _("「{name}」の操作", name=x.name) }}">{{ icon("more_horiz") }}</summary>
           <div class="rowmenu-panel">
             <form method="post" action="{{ base }}/search/saved/{{ x.id }}/rename" class="form">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <label>名前 <input name="name" value="{{ x.name }}" required maxlength="100"></label>
-              <button class="btn btn-sm">{{ icon("edit") }}名前を変更</button>
+              <label>{{ _("名前") }} <input name="name" value="{{ x.name }}" required maxlength="100"></label>
+              <button class="btn btn-sm">{{ icon("edit") }}{{ _("名前を変更") }}</button>
             </form>
             <form method="post" action="{{ base }}/search/saved/{{ x.id }}/delete">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button class="danger">{{ icon("delete") }}消す</button>
+              <button class="danger">{{ icon("delete") }}{{ _("消す") }}</button>
             </form>
           </div>
         </details>
@@ -132,8 +132,8 @@
   </section>
   {% endif %}
   {% if history %}
-  <section class="panel" aria-label="最近の検索">
-    <h2>{{ icon("history") }} 最近の検索</h2>
+  <section class="panel" aria-label="{{ _("最近の検索") }}">
+    <h2>{{ icon("history") }} {{ _("最近の検索") }}</h2>
     <ul class="item-list">
     {% for x in history %}
       <li>
@@ -141,14 +141,14 @@
         <span class="muted small">{{ x.searched_at | shortdate }}</span>
         <form method="post" action="{{ base }}/search/history/{{ x.id }}/delete">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button class="linkish small" aria-label="「{{ x.label }}」を履歴から消す" title="履歴から消す">{{ icon("close") }}</button>
+          <button class="linkish small" aria-label="{{ _("「{label}」を履歴から消す", label=x.label) }}" title="{{ _("履歴から消す") }}">{{ icon("close") }}</button>
         </form>
       </li>
     {% endfor %}
     </ul>
-    <form method="post" action="{{ base }}/search/history/clear" data-confirm="検索の履歴をすべて消しますか？">
+    <form method="post" action="{{ base }}/search/history/clear" data-confirm="{{ _("検索の履歴をすべて消しますか？") }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="btn btn-sm">{{ icon("delete_sweep") }}履歴をすべて消す</button>
+      <button class="btn btn-sm">{{ icon("delete_sweep") }}{{ _("履歴をすべて消す") }}</button>
     </form>
   </section>
   {% endif %}
@@ -156,14 +156,14 @@
 {% endif %}
 
 <details class="search-help">
-  <summary>{{ icon("help") }}検索のしかた</summary>
+  <summary>{{ icon("help") }}{{ _("検索のしかた") }}</summary>
   <dl>
-    <dt>請求書 振込先</dt><dd>空白で区切ると、両方を含む部分と、意味が近い部分を探します</dd>
-    <dt>"株式会社サンプル"</dt><dd>ダブルクォートで囲んだ語は必ず含むものだけにします</dd>
-    <dt>見積書 -下書き</dt><dd>先頭に - を付けた語を含むものを除きます</dd>
-    <dt>type:pdf tag:経理 after:2026-01-01</dt><dd>種類・タグ・更新日で絞り込みます（上の選択欄と同じ）</dd>
-    <dt>taken:2026-05　taken:2026-05-01..2026-05-10</dt><dd>写真の撮影日で絞り込みます（年・月・日、または「..」で期間）。検索語が無くても、絞り込みだけで一覧を出せます</dd>
+    <dt>{{ _("請求書 振込先") }}</dt><dd>{{ _("空白で区切ると、両方を含む部分と、意味が近い部分を探します") }}</dd>
+    <dt>{{ _("\"株式会社サンプル\"") }}</dt><dd>{{ _("ダブルクォートで囲んだ語は必ず含むものだけにします") }}</dd>
+    <dt>{{ _("見積書 -下書き") }}</dt><dd>{{ _("先頭に - を付けた語を含むものを除きます") }}</dd>
+    <dt>{{ _("type:pdf tag:経理 after:2026-01-01") }}</dt><dd>{{ _("種類・タグ・更新日で絞り込みます（上の選択欄と同じ）") }}</dd>
+    <dt>{{ _("taken:2026-05　taken:2026-05-01..2026-05-10") }}</dt><dd>{{ _("写真の撮影日で絞り込みます（年・月・日、または「..」で期間）。検索語が無くても、絞り込みだけで一覧を出せます") }}</dd>
   </dl>
-  <p class="muted small">「税」「契約」のような 2 文字以下の語は、意味が近い候補の中でだけ照合します。見つからないときは、もう少し長い語で検索してください。</p>
+  <p class="muted small">{{ _("「税」「契約」のような 2 文字以下の語は、意味が近い候補の中でだけ照合します。見つからないときは、もう少し長い語で検索してください。") }}</p>
 </details>
 {% endblock %}

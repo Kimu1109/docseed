@@ -1,33 +1,34 @@
 {% extends "base.html" %}
-{% block title %}ログイン{% endblock %}
+{% block title %}{{ _("ログイン") }}{% endblock %}
 {% block head %}<script src="{{ base }}/static/passkey.js?v={{ version }}" defer></script>{% endblock %}
 {% block bare %}
 <main class="login">
   <div class="login-box">
     <div class="brand brand-lg"><span class="brand-mark" aria-hidden="true"></span>docseed</div>
-    {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+    {% if error %}<p class="alert" role="alert">{{ _(error) }}</p>{% endif %}
     <p class="alert" role="alert" data-passkey-error hidden></p>
     <form method="post" action="{{ base }}/login" class="form" data-passkey-login data-next="{{ next or '' }}"
           data-passkey-available="{{ '0' if passkey_reason else '1' }}">
       {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
-      <label>ユーザー名
+      <label>{{ _("ユーザー名") }}
         <input name="username" value="{{ username }}" autocomplete="username webauthn" autocapitalize="none" required autofocus>
       </label>
-      <label>パスワード
+      <label>{{ _("パスワード") }}
         <input name="password" type="password" autocomplete="current-password" required>
       </label>
-      <label class="check"><input type="checkbox" name="remember" value="1"> ログインしたままにする（14 日間）</label>
-      <button type="submit" class="btn btn-primary btn-block">{{ icon("key") }}ログイン</button>
+      <label class="check"><input type="checkbox" name="remember" value="1"> {{ _("ログインしたままにする（14 日間）") }}</label>
+      <button type="submit" class="btn btn-primary btn-block">{{ icon("key") }}{{ _("ログイン") }}</button>
     </form>
     <div class="login-alt">
       {% if not passkey_reason %}
-      <button type="button" class="btn btn-block" data-passkey-button>{{ icon("passkey") }}パスキーでログイン</button>
+      <button type="button" class="btn btn-block" data-passkey-button>{{ icon("passkey") }}{{ _("パスキーでログイン") }}</button>
       {% endif %}
       {% for p in oidc_providers %}
-      <a class="btn btn-block" href="{{ base }}/auth/oidc/{{ p.name }}/start?purpose=login{% if next %}&amp;next={{ next | urlencode }}{% endif %}">{{ icon("login") }}{{ p.label }} でログイン</a>
+      <a class="btn btn-block" href="{{ base }}/auth/oidc/{{ p.name }}/start?purpose=login{% if next %}&amp;next={{ next | urlencode }}{% endif %}">{{ icon("login") }}{{ _("{label} でログイン", label=p.label) }}</a>
       {% endfor %}
-      {% if passkey_reason %}<p class="muted small">{{ passkey_reason }}</p>{% endif %}
+      {% if passkey_reason %}<p class="muted small">{{ _(passkey_reason) }}</p>{% endif %}
     </div>
+    <p class="login-lang small">{% for k, name in lang_names.items() %}{% if not loop.first %} · {% endif %}{% if k == lang() %}<b lang="{{ k }}">{{ name }}</b>{% else %}<a lang="{{ k }}" href="{{ base }}/lang/{{ k }}?next={{ (base ~ '/login' ~ ('?next=' ~ (next | urlencode) if next else '')) | urlencode }}">{{ name }}</a>{% endif %}{% endfor %}</p>
   </div>
 </main>
 {% endblock %}

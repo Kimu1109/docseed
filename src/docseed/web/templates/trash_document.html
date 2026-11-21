@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}{{ doc.filename }}（ゴミ箱）{% endblock %}
+{% block title %}{{ _("{filename}（ゴミ箱）", filename=doc.filename) }}{% endblock %}
 {% block main %}
 {% set k = kind_of(doc.mime_type, doc.filename, doc.kind) %}
 {% set file_base = base ~ "/api/v1/trash/document/" ~ doc.id %}
 <div class="page-head">
-  <nav class="crumbs crumbs-links" aria-label="現在の場所">
-    <a href="{{ base }}/trash">ゴミ箱</a>
+  <nav class="crumbs crumbs-links" aria-label="{{ _("現在の場所") }}">
+    <a href="{{ base }}/trash">{{ _("ゴミ箱") }}</a>
     {%- if folder %}<span class="sep" aria-hidden="true">/</span><a href="{{ base }}/trash/folder/{{ folder.id }}">{{ folder.name }}</a>{% endif %}
   </nav>
 </div>
@@ -14,34 +14,34 @@
   {{ icon(kind_icon[k], kind_label[k]) }}
   <h1>{{ doc.filename }}</h1>
   <div class="doc-actions m-ic">
-  {% if doc.mime_type == "application/pdf" %}<a class="btn m-only" href="{{ file_base }}/content?inline=1" target="_blank" rel="noopener">{{ icon("open_in_new") }}<span class="lbl">全画面で開く</span></a>{% endif %}
-  <a class="btn" href="{{ file_base }}/content">{{ icon("download") }}<span class="lbl">ダウンロード</span></a>
+  {% if doc.mime_type == "application/pdf" %}<a class="btn m-only" href="{{ file_base }}/content?inline=1" target="_blank" rel="noopener">{{ icon("open_in_new") }}<span class="lbl">{{ _("全画面で開く") }}</span></a>{% endif %}
+  <a class="btn" href="{{ file_base }}/content">{{ icon("download") }}<span class="lbl">{{ _("ダウンロード") }}</span></a>
   </div>
 </div>
-<p class="note">{{ icon("delete") }} このファイルはゴミ箱の中にあります。中身を確かめてから、元に戻すか完全に削除してください（削除した日から {{ retention }} 日たつと自動的に完全に削除されます）。</p>
+<p class="note">{{ icon("delete") }} {{ _("このファイルはゴミ箱の中にあります。中身を確かめてから、元に戻すか完全に削除してください（削除した日から {retention} 日たつと自動的に完全に削除されます）。", retention=retention) }}</p>
 
 <div class="doc-layout">
   {% include "_preview.html" %}
 
   <aside class="doc-side">
-    <section class="form-panel" aria-label="ゴミ箱の操作">
+    <section class="form-panel" aria-label="{{ _("ゴミ箱の操作") }}">
       <dl class="facts">
-        <dt>元の場所</dt><dd>{{ location }}</dd>
-        <dt>削除日</dt><dd>{{ doc.deleted_at | localtime }}{% if doc.deleted_by_name %}（{{ doc.deleted_by_name }} さん）{% endif %}</dd>
-        <dt>サイズ</dt><dd>{{ doc.size_bytes | filesize }}</dd>
-        <dt>種類</dt><dd>{{ kind_label[k] }}</dd>
-        <dt>更新日</dt><dd>{{ doc.updated_at | localtime }}</dd>
+        <dt>{{ _("元の場所") }}</dt><dd>{{ location }}</dd>
+        <dt>{{ _("削除日") }}</dt><dd>{{ doc.deleted_at | localtime }}{% if doc.deleted_by_name %}{{ _("（{deleted_by_name} さん）", deleted_by_name=doc.deleted_by_name) }}{% endif %}</dd>
+        <dt>{{ _("サイズ") }}</dt><dd>{{ doc.size_bytes | filesize }}</dd>
+        <dt>{{ _("種類") }}</dt><dd>{{ kind_label[k] }}</dd>
+        <dt>{{ _("更新日") }}</dt><dd>{{ doc.updated_at | localtime }}</dd>
       </dl>
-      {% if folder %}<p class="muted small">フォルダ「{{ folder.name }}」ごと削除したファイルです。このファイルだけを戻すと、マイファイルの直下に戻ります。</p>{% endif %}
+      {% if folder %}<p class="muted small">{{ _("フォルダ「{name}」ごと削除したファイルです。このファイルだけを戻すと、マイファイルの直下に戻ります。", name=folder.name) }}</p>{% endif %}
       <div class="actions">
         <form method="post" action="{{ base }}/trash/document/{{ doc.id }}/restore" class="form-inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button type="submit" class="btn btn-primary">{{ icon("restore_from_trash") }}元に戻す</button>
+          <button type="submit" class="btn btn-primary">{{ icon("restore_from_trash") }}{{ _("元に戻す") }}</button>
         </form>
         <form method="post" action="{{ base }}/trash/document/{{ doc.id }}/purge" class="form-inline"
-              data-confirm="「{{ doc.filename }}」を完全に削除します。元に戻せません。よろしいですか？">
+              data-confirm="{{ _("「{filename}」を完全に削除します。元に戻せません。よろしいですか？", filename=doc.filename) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button type="submit" class="btn btn-danger">{{ icon("delete_forever") }}完全に削除</button>
+          <button type="submit" class="btn btn-danger">{{ icon("delete_forever") }}{{ _("完全に削除") }}</button>
         </form>
       </div>
     </section>
@@ -49,13 +49,13 @@
 </div>
 
 {% if pages %}
-<section class="extracted" aria-label="取り出したテキスト">
-  <h2>{{ icon("text_snippet") }} 取り出したテキスト</h2>
-  {% if doc.page_count and doc.page_count > pages_shown %}<p class="muted small">全 {{ doc.page_count }} ページのうち先頭 {{ pages_shown }} ページを表示しています。</p>{% endif %}
+<section class="extracted" aria-label="{{ _("取り出したテキスト") }}">
+  <h2>{{ icon("text_snippet") }} {{ _("取り出したテキスト") }}</h2>
+  {% if doc.page_count and doc.page_count > pages_shown %}<p class="muted small">{{ _("全 {page_count} ページのうち先頭 {pages_shown} ページを表示しています。", page_count=doc.page_count, pages_shown=pages_shown) }}</p>{% endif %}
   {% for pg in pages %}
   <details class="pagetext" id="p{{ pg.page_no }}" {% if loop.first %}open{% endif %}>
-    <summary><span class="pg-no">{{ pg.page_no }} ページ</span></summary>
-    {% if pg.text %}<pre class="textview">{{ pg.text }}</pre>{% else %}<p class="muted small pad">文字は見つかりませんでした。</p>{% endif %}
+    <summary><span class="pg-no">{{ _("{page_no} ページ", page_no=pg.page_no) }}</span></summary>
+    {% if pg.text %}<pre class="textview">{{ pg.text }}</pre>{% else %}<p class="muted small pad">{{ _("文字は見つかりませんでした。") }}</p>{% endif %}
   </details>
   {% endfor %}
 </section>

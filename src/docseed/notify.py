@@ -23,14 +23,15 @@ import httpx
 
 from .config import Settings
 from .db import Tx, connect, now
+from .i18n import N_
 
 log = logging.getLogger(__name__)
 
 LEVELS = {"info": 0, "warning": 1, "error": 2}
 LEVEL_LABEL = {"info": "お知らせ", "warning": "注意", "error": "異常"}
 EVENTS = ("alert", "share_upload", "inbox")
-EVENT_LABEL = {"alert": "監視の警告", "share_upload": "共有リンクでの受け取り", "inbox": "受け取り箱の取り込み",
-               "test": "テスト"}
+EVENT_LABEL = {"alert": N_("監視の警告"), "share_upload": N_("共有リンクでの受け取り"),
+               "inbox": N_("受け取り箱の取り込み"), "test": N_("テスト")}
 SEND_EVERY_S = 60             # 送信待ちを送る間隔
 CHECK_EVERY_S = 300           # 監視の警告を確かめる間隔
 FIRST_DELAY_S = 90            # 起動直後（worker の再起動中など）は少し待ってから確かめる

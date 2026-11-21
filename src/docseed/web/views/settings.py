@@ -36,6 +36,18 @@ def settings_theme(theme: str = Form("auto"), conn: sqlite3.Connection = Depends
     return RedirectResponse("/settings?done=theme#theme", status_code=303)
 
 
+@router.post("/settings/lang")
+def settings_lang(request: Request, lang: str = Form("auto"), conn: sqlite3.Connection = Depends(get_conn),
+                  auth: Auth = Depends(require_session)):
+    from ...personal import set_lang
+    from ..common import set_lang_cookie
+    set_lang(conn, auth.user, lang)
+    resp = RedirectResponse("/settings?done=lang#lang", status_code=303)
+    # ログイン前の画面（ログイン・共有リンク）も同じ言語で出すよう、この端末に覚えておく
+    set_lang_cookie(resp, request.app.state.settings, lang)
+    return resp
+
+
 @router.post("/settings/prefs")
 async def settings_prefs(request: Request, conn: sqlite3.Connection = Depends(get_conn),
                          auth: Auth = Depends(require_session)):

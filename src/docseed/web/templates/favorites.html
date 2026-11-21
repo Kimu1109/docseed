@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}お気に入り{% endblock %}
+{% block title %}{{ _("お気に入り") }}{% endblock %}
 {% block main %}
-<div class="page-head"><h1 class="page-title">{{ icon("star") }} お気に入り</h1></div>
+<div class="page-head"><h1 class="page-title">{{ icon("star") }} {{ _("お気に入り") }}</h1></div>
 
-<section class="panel panel-wide" aria-label="お気に入り">
+<section class="panel panel-wide" aria-label="{{ _("お気に入り") }}">
   {% if favs %}
   <ul class="item-list">
   {% for x in favs %}
@@ -19,27 +19,27 @@
   {% endfor %}
   </ul>
   {% else %}
-  <p class="muted">まだありません。ファイルやフォルダの画面の「{{ icon("star") }}お気に入り」で入れられます。</p>
+  <p class="muted">{{ _("まだありません。ファイルやフォルダの画面の「お気に入り」で入れられます。") }}</p>
   {% endif %}
 </section>
 
-<section class="panel panel-wide" aria-label="最近開いたファイル">
-  <h2>{{ icon("history") }} 最近開いたファイル</h2>
+<section class="panel panel-wide" aria-label="{{ _("最近開いたファイル") }}">
+  <h2>{{ icon("history") }} {{ _("最近開いたファイル") }}</h2>
   {% if recent %}
   <ul class="item-list">
   {% for x in recent %}{% set k = kind_of(x.mime_type, x.filename, x.kind) %}
     <li>
       <a href="{{ base }}/d/{{ x.id }}">{{ icon(kind_icon[k], kind_label[k]) }}<span class="item-name">{{ x.filename }}</span></a>
-      <span class="muted small">{{ paths[x.folder_id] }} ・ {{ x.opened_at | shortdate }} に開いた</span>
+      <span class="muted small">{{ _("{paths} ・ {opened_at} に開いた", paths=paths[x.folder_id], opened_at=(x.opened_at | shortdate)) }}</span>
     </li>
   {% endfor %}
   </ul>
-  <form method="post" action="{{ base }}/favorites/recent/clear" data-confirm="最近開いたファイルの記録を消しますか？">
+  <form method="post" action="{{ base }}/favorites/recent/clear" data-confirm="{{ _("最近開いたファイルの記録を消しますか？") }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button class="btn btn-sm">{{ icon("delete_sweep") }}記録を消す</button>
+    <button class="btn btn-sm">{{ icon("delete_sweep") }}{{ _("記録を消す") }}</button>
   </form>
   {% else %}
-  <p class="muted">まだありません。</p>
+  <p class="muted">{{ _("まだありません。") }}</p>
   {% endif %}
 </section>
 {% endblock %}

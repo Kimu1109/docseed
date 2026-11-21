@@ -18,6 +18,7 @@ from .audit import audit
 from .config import Settings
 from .db import Tx, now
 from .errors import NotFound, ReauthRequired, Unauthenticated, ValidationFailed
+from .i18n import N_
 from .users import User, get_user
 
 CHALLENGE_TTL = 300                 # 5 分
@@ -32,10 +33,10 @@ LOCK_HINTS = {"u:": "以前このアカウントでログインした端末か�
 limiter = security.LoginLimiter()
 
 METHOD_LABEL = {
-    "password": "パスワード",
-    "password+totp": "パスワード＋確認コード",
-    "password+recovery": "パスワード＋復旧コード",
-    "passkey": "パスキー",
+    "password": N_("パスワード"),
+    "password+totp": N_("パスワード＋確認コード"),
+    "password+recovery": N_("パスワード＋復旧コード"),
+    "passkey": N_("パスキー"),
 }
 
 

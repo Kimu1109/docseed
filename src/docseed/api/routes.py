@@ -31,6 +31,7 @@ from ..deps import (
 )
 from ..errors import AppError, NotFound, ValidationFailed
 from ..files import derived_response, file_response
+from ..i18n import N_
 from ..storage import BlobStore
 from ..urls import href, public_root
 
@@ -982,13 +983,13 @@ def failed_jobs(conn: sqlite3.Connection, limit: int = 50) -> list[sqlite3.Row]:
 
 
 JOB_LABEL = {
-    "process_blob": "文字の読み取り・検索の準備",
-    "reembed_blob": "検索の索引の作り直し",
-    "derive_blob": "プレビューの作成",
-    "summarize_blob": "要約",
-    "suggest_document": "フォルダ・タグの候補",
-    "purge_trash": "ゴミ箱の掃除",
-    "fetch_url": "Web クリップの取り込み",
+    "process_blob": N_("文字の読み取り・検索の準備"),
+    "reembed_blob": N_("検索の索引の作り直し"),
+    "derive_blob": N_("プレビューの作成"),
+    "summarize_blob": N_("要約"),
+    "suggest_document": N_("フォルダ・タグの候補"),
+    "purge_trash": N_("ゴミ箱の掃除"),
+    "fetch_url": N_("Web クリップの取り込み"),
 }
 
 

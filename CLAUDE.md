@@ -27,6 +27,7 @@ python scripts/build_icons.py --check   # アイコンのスプライトが icon
 - 設定を足す: `src/docseed/config.py` + `.env.example` + `docs/admin/configuration.md`
 - DB を変える: `src/docseed/migrations/` に新しい番号のファイル（既存は書き換えない）
 - worker は外部と通信しない。外へ出るのは api・fetcher・webclip-browser だけ
+- 画面の文言は日本語で書いて `_()`（テンプレート・Python）・`T()`（JS）・`N_()`（定数）を通し、英語の訳を `src/docseed/locales/en.json` に足す（`pytest tests/test_i18n.py`。`docs/design/ui.md` 1.2）
 - 色は `static/app.css` の `:root` のトークンだけ。アイコンは `web/icons.txt` に足して `scripts/build_icons.py`
 
 ## 機能を足す・変えたら、文書も同じ変更で直す

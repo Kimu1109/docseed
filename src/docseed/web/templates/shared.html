@@ -1,22 +1,22 @@
 {% extends "base.html" %}
-{% block title %}共有されたフォルダ{% endblock %}
+{% block title %}{{ _("共有されたフォルダ") }}{% endblock %}
 {% block main %}
-<div class="page-head"><h1 class="page-title">{{ icon("folder_shared") }} 共有されたフォルダ</h1></div>
+<div class="page-head"><h1 class="page-title">{{ icon("folder_shared") }} {{ _("共有されたフォルダ") }}</h1></div>
 {% if not shared %}
   <div class="empty">
     {{ icon("folder_shared") }}
-    <p>ほかの人から共有されたフォルダはまだありません。</p>
+    <p>{{ _("ほかの人から共有されたフォルダはまだありません。") }}</p>
   </div>
 {% else %}
 <table class="files">
-  <thead><tr><th class="col-kind"><span class="sr">種類</span></th><th class="col-name">名前</th><th>所有者</th><th>あなたの権限</th></tr></thead>
+  <thead><tr><th class="col-kind"><span class="sr">{{ _("種類") }}</span></th><th class="col-name">{{ _("名前") }}</th><th>{{ _("所有者") }}</th><th>{{ _("あなたの権限") }}</th></tr></thead>
   <tbody>
   {% for f in shared %}
     <tr>
       <td class="col-kind"><span class="kind kind-folder"></span></td>
-      <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon("folder_shared") }}</span><a class="name" href="{{ base }}/f/{{ f.id }}">{{ f.name or "（ルート）" }}</a></div></td>
+      <td class="col-name"><div class="cell-name"><span class="thumb thumb-icon">{{ icon("folder_shared") }}</span><a class="name" href="{{ base }}/f/{{ f.id }}">{{ f.name or _("（ルート）") }}</a></div></td>
       <td>{{ f.owner_name }}</td>
-      <td>{{ {"editor": "編集できる", "viewer": "閲覧のみ"}[f.role] }}</td>
+      <td>{{ {"editor": _("編集できる"), "viewer": _("閲覧のみ")}[f.role] }}</td>
     </tr>
   {% endfor %}
   </tbody>

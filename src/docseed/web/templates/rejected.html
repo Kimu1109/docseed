@@ -1,24 +1,24 @@
 {% extends "base.html" %}
-{% block title %}却下した候補{% endblock %}
+{% block title %}{{ _("却下した候補") }}{% endblock %}
 {% block main %}
 <div class="page-head">
-  <h1 class="page-title">{{ icon("block") }} 却下した候補</h1>
+  <h1 class="page-title">{{ icon("block") }} {{ _("却下した候補") }}</h1>
 </div>
-<p class="note">却下した候補は、その文書には二度と出しません。{% if doc_filter %}<br>「{{ doc_filter.filename }}」の候補だけを表示しています。<a href="{{ base }}/suggestions/rejected">すべて表示</a>{% endif %}</p>
+<p class="note">{{ _("却下した候補は、その文書には二度と出しません。") }}{% if doc_filter %}<br>{{ _("「{filename}」の候補だけを表示しています。", filename=doc_filter.filename) }}<a href="{{ base }}/suggestions/rejected">{{ _("すべて表示") }}</a>{% endif %}</p>
 {% if items %}
 <table class="plain">
-  <thead><tr><th>ファイル</th><th>候補</th><th>却下した日時</th><th><span class="sr-hidden">操作</span></th></tr></thead>
+  <thead><tr><th>{{ _("ファイル") }}</th><th>{{ _("候補") }}</th><th>{{ _("却下した日時") }}</th><th><span class="sr-hidden">{{ _("操作") }}</span></th></tr></thead>
   <tbody>
   {% for r in items %}
   <tr>
     <td><a href="{{ base }}/d/{{ r.document_id }}">{{ r.filename }}</a></td>
-    <td>{% if r.kind == "folder" %}{{ icon("drive_file_move") }}フォルダ「{{ r.label }}」{% else %}{{ icon("label") }}タグ「{{ r.label }}」{% endif %}</td>
+    <td>{% if r.kind == "folder" %}{{ icon("drive_file_move") }}{{ _("フォルダ「{label}」", label=r.label) }}{% else %}{{ icon("label") }}{{ _("タグ「{label}」", label=r.label) }}{% endif %}</td>
     <td class="small">{{ r.decided_at | localtime }}</td>
     <td>
       <form method="post" action="{{ base }}/suggestions/{{ r.id }}/unreject">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         {% if doc_filter %}<input type="hidden" name="doc" value="{{ doc_filter.id }}">{% endif %}
-        <button class="btn btn-sm">{{ icon("restore_from_trash") }}取り消す</button>
+        <button class="btn btn-sm">{{ icon("restore_from_trash") }}{{ _("取り消す") }}</button>
       </form>
     </td>
   </tr>
@@ -26,6 +26,6 @@
   </tbody>
 </table>
 {% else %}
-<p class="muted">却下した候補はありません。</p>
+<p class="muted">{{ _("却下した候補はありません。") }}</p>
 {% endif %}
 {% endblock %}

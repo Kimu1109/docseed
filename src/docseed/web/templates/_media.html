@@ -1,8 +1,8 @@
 {# 音声・動画の再生。呼び出し側が media_kind（video / audio）・media_src（配信の URL）・media_name を決めておく #}
 <div class="media-player">
   {% if media_kind_now == "video" %}
-    <video controls preload="metadata" playsinline src="{{ media_src }}" aria-label="{{ media_name }}">お使いのブラウザでは再生できません。ダウンロードして開いてください。</video>
+    <video controls preload="metadata" playsinline src="{{ media_src }}" aria-label="{{ media_name }}">{{ _("お使いのブラウザでは再生できません。ダウンロードして開いてください。") }}</video>
   {% else %}
-    <audio controls preload="metadata" src="{{ media_src }}" aria-label="{{ media_name }}">お使いのブラウザでは再生できません。ダウンロードして開いてください。</audio>
+    <audio controls preload="metadata" src="{{ media_src }}" aria-label="{{ media_name }}">{{ _("お使いのブラウザでは再生できません。ダウンロードして開いてください。") }}</audio>
   {% endif %}
 </div>

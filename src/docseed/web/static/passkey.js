@@ -7,6 +7,13 @@
   const BASE = (document.querySelector('meta[name="docseed-base"]') || {}).content || "";
 
   const $ = (sel, root = document) => root.querySelector(sel);
+  // 画面の言語の訳（app.js と同じ。docs/design/ui.md 1.2）
+  const I18N = (() => { try { return JSON.parse($("#i18n")?.textContent || "{}"); } catch { return {}; } })();
+  const T = (s, vars) => {
+    let t = I18N[s] ?? s;
+    if (vars) for (const [k, v] of Object.entries(vars)) t = t.replaceAll("{" + k + "}", String(v));
+    return t;
+  };
   const supported = !!(window.PublicKeyCredential && navigator.credentials);
 
   // ---- base64url -----------------------------------------------------------
@@ -70,7 +77,7 @@
     if (r.status === 204) return {};
     let data = {};
     try { data = await r.json(); } catch { /* 本文なし */ }
-    if (!r.ok) throw new Error(data.detail || "サーバーでエラーが起きました（" + r.status + "）");
+    if (!r.ok) throw new Error(data.detail || T("サーバーでエラーが起きました（{status}）", {status: r.status}));
     return data;
   }
 
@@ -135,7 +142,7 @@
     const form = e.target.closest("[data-passkey-register]");
     if (!form) return;
     e.preventDefault();
-    if (!supported) { showError("このブラウザはパスキーに対応していません"); return; }
+    if (!supported) { showError(T("このブラウザはパスキーに対応していません")); return; }
     try {
       const opts = await post(BASE + "/api/v1/me/passkeys/register/options");
       const cred = await navigator.credentials.create({ publicKey: creationOptions(opts.publicKey) });
@@ -145,7 +152,7 @@
       });
       location.assign(BASE + "/settings/security?done=passkey_added");
     } catch (err) {
-      if (err && err.name === "InvalidStateError") showError("この端末のパスキーは既に登録されています");
+      if (err && err.name === "InvalidStateError") showError(T("この端末のパスキーは既に登録されています"));
       else if (!cancelled(err)) showError(err.message || String(err));
     }
   });
@@ -153,7 +160,7 @@
   // ---- 本人確認 -----------------------------------------------------------------
   document.addEventListener("click", async (e) => {
     if (!e.target.closest("[data-passkey-reauth]")) return;
-    if (!supported) { showError("このブラウザはパスキーに対応していません"); return; }
+    if (!supported) { showError(T("このブラウザはパスキーに対応していません")); return; }
     try {
       const opts = await post(BASE + "/auth/passkeys/login/options");
       const cred = await navigator.credentials.get({ publicKey: requestOptions(opts.publicKey) });

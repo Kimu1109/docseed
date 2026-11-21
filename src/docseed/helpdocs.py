@@ -24,6 +24,7 @@ from markdown_it import MarkdownIt
 from mdit_py_plugins.anchors import anchors_plugin
 from mdit_py_plugins.tasklists import tasklists_plugin
 
+from .i18n import N_
 from .urls import href
 
 EXCLUDE = ("dev/templates/",)
@@ -31,10 +32,10 @@ SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*:", re.I)
 
 # 画面の上に並べるガイド（キーの先頭 → 表示名）。管理者だけに出すものは admin_only
 GUIDES = [
-    ("user", "利用者ガイド", False),
-    ("admin", "管理者ガイド", True),
-    ("dev", "開発者ガイド", True),
-    ("design", "設計書", True),
+    ("user", N_("利用者ガイド"), False),
+    ("admin", N_("管理者ガイド"), True),
+    ("dev", N_("開発者ガイド"), True),
+    ("design", N_("設計書"), True),
 ]
 
 

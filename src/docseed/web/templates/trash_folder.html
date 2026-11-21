@@ -1,33 +1,33 @@
 {% extends "base.html" %}
-{% block title %}{{ folder.name }}（ゴミ箱）{% endblock %}
+{% block title %}{{ _("{name}（ゴミ箱）", name=folder.name) }}{% endblock %}
 {% block main %}
 <div class="page-head">
-  <nav class="crumbs crumbs-links" aria-label="現在の場所">
-    <a href="{{ base }}/trash">ゴミ箱</a><span class="sep" aria-hidden="true">/</span><span aria-current="page">{{ folder.name }}</span>
+  <nav class="crumbs crumbs-links" aria-label="{{ _("現在の場所") }}">
+    <a href="{{ base }}/trash">{{ _("ゴミ箱") }}</a><span class="sep" aria-hidden="true">/</span><span aria-current="page">{{ folder.name }}</span>
   </nav>
   <div class="actions">
     <form method="post" action="{{ base }}/trash/folder/{{ folder.id }}/restore" class="form-inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button type="submit" class="btn">{{ icon("restore_from_trash") }}フォルダごと元に戻す</button>
+      <button type="submit" class="btn">{{ icon("restore_from_trash") }}{{ _("フォルダごと元に戻す") }}</button>
     </form>
     <form method="post" action="{{ base }}/trash/folder/{{ folder.id }}/purge" class="form-inline"
-          data-confirm="フォルダ「{{ folder.name }}」と中の {{ docs | length }} ファイルを完全に削除します。元に戻せません。よろしいですか？">
+          data-confirm="{{ _("フォルダ「{name}」と中の {docs} ファイルを完全に削除します。元に戻せません。よろしいですか？", name=folder.name, docs=(docs | length)) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button type="submit" class="btn btn-danger">{{ icon("delete_forever") }}フォルダごと完全に削除</button>
+      <button type="submit" class="btn btn-danger">{{ icon("delete_forever") }}{{ _("フォルダごと完全に削除") }}</button>
     </form>
   </div>
 </div>
-<p class="note">{{ icon("delete") }} 元の場所: {{ location }} ・ {{ folder.deleted_at | localtime }} に削除{% if subfolders %} ・ 中のフォルダ {{ subfolders }} 個{% endif %}。ファイルを押すと中身を確かめられます。</p>
+<p class="note">{{ icon("delete") }} {{ _("元の場所: {location} ・ {deleted_at} に削除", location=location, deleted_at=(folder.deleted_at | localtime)) }}{% if subfolders %} {{ _("・ 中のフォルダ {subfolders} 個", subfolders=subfolders) }}{% endif %}{{ _("。") }}{{ _("ファイルを押すと中身を確かめられます。") }}</p>
 {% if not docs %}
-  <div class="empty">{{ icon("folder") }}<p>ファイルは入っていません。</p></div>
+  <div class="empty">{{ icon("folder") }}<p>{{ _("ファイルは入っていません。") }}</p></div>
 {% else %}
 <table class="files">
   <thead>
     <tr>
-      <th class="col-kind"><span class="sr">種類</span></th>
-      <th class="col-name">名前</th>
-      <th class="col-loc">フォルダの中の場所</th>
-      <th class="col-size">サイズ</th>
+      <th class="col-kind"><span class="sr">{{ _("種類") }}</span></th>
+      <th class="col-name">{{ _("名前") }}</th>
+      <th class="col-loc">{{ _("フォルダの中の場所") }}</th>
+      <th class="col-size">{{ _("サイズ") }}</th>
     </tr>
   </thead>
   <tbody>

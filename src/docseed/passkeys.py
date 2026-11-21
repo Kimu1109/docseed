@@ -31,6 +31,7 @@ from .audit import audit
 from .config import Settings
 from .db import Tx, now
 from .errors import AppError, Unauthenticated, ValidationFailed
+from .i18n import _
 from .users import User
 
 RP_NAME = "docseed"
@@ -50,10 +51,10 @@ def request_host(request: Request) -> str:
 def unavailable_reason(settings: Settings, request: Request) -> str | None:
     """このリクエストでパスキーを使えないときの説明。使えるなら None。"""
     if not settings.rp_id:
-        return ("パスキーは、名前（ドメイン名）で開いたときに使えます。"
-                "DOCSEED_HOST（または DOCSEED_RP_ID）を設定してください")
+        return _("パスキーは、名前（ドメイン名）で開いたときに使えます。"
+                 "DOCSEED_HOST（または DOCSEED_RP_ID）を設定してください")
     if request_host(request) != settings.rp_id:
-        return f"パスキーは {settings.public_url} で開いたときに使えます"
+        return _("パスキーは {url} で開いたときに使えます", url=settings.public_url)
     return None
 
 

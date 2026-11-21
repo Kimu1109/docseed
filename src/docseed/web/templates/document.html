@@ -12,16 +12,16 @@
   <div class="doc-actions m-ic">
   {% set fav_type, fav_id, small = "document", doc.id, False %}{% include "_fav.html" %}
   <button type="button" class="btn" data-open-dialog="dlg-share" hx-get="{{ base }}/x/share?type=document&id={{ doc.id }}"
-          hx-target="#share-body" hx-swap="outerHTML">{{ icon("share") }}<span class="lbl">共有</span></button>
-  {% if doc.mime_type == "application/pdf" %}<a class="btn m-only" href="{{ base }}/api/v1/documents/{{ doc.id }}/content?inline=1" target="_blank" rel="noopener">{{ icon("open_in_new") }}<span class="lbl">全画面で開く</span></a>{% endif %}
-  <a class="btn btn-primary" href="{{ base }}/api/v1/documents/{{ doc.id }}/content">{{ icon("download") }}<span class="lbl">ダウンロード</span></a>
+          hx-target="#share-body" hx-swap="outerHTML">{{ icon("share") }}<span class="lbl">{{ _("共有") }}</span></button>
+  {% if doc.mime_type == "application/pdf" %}<a class="btn m-only" href="{{ base }}/api/v1/documents/{{ doc.id }}/content?inline=1" target="_blank" rel="noopener">{{ icon("open_in_new") }}<span class="lbl">{{ _("全画面で開く") }}</span></a>{% endif %}
+  <a class="btn btn-primary" href="{{ base }}/api/v1/documents/{{ doc.id }}/content">{{ icon("download") }}<span class="lbl">{{ _("ダウンロード") }}</span></a>
   </div>
 </div>
 <dialog id="dlg-share" class="dialog dialog-wide">
   <div class="dialog-in">
-    <h2>{{ icon("share") }} 「{{ doc.filename }}」を共有</h2>
-    <div id="share-body"><p class="muted">読み込んでいます…</p></div>
-    <div class="dialog-actions"><button type="button" class="btn" data-close-dialog>{{ icon("close") }}閉じる</button></div>
+    <h2>{{ icon("share") }} {{ _("「{filename}」を共有", filename=doc.filename) }}</h2>
+    <div id="share-body"><p class="muted">{{ _("読み込んでいます…") }}</p></div>
+    <div class="dialog-actions"><button type="button" class="btn" data-close-dialog>{{ icon("close") }}{{ _("閉じる") }}</button></div>
   </div>
 </dialog>
 
@@ -33,130 +33,130 @@
     {% set can_redo = sugg and can_edit and doc.status == "ready" and (suggest_enabled or llm_enabled) %}
     {% set can_edit_summary = sugg and can_edit and llm_enabled and sugg.prefs.show_summary %}
     {% if sugg and (sugg.folders or sugg.tags or sugg.summary or can_redo or sugg.summary_hidden or sugg.rejected) %}
-    <section class="form-panel suggest-panel" aria-label="整理の候補">
-      <h2>{{ icon("wand_stars") }} 整理の候補</h2>
+    <section class="form-panel suggest-panel" aria-label="{{ _("整理の候補") }}">
+      <h2>{{ icon("wand_stars") }} {{ _("整理の候補") }}</h2>
       {% if sugg.summary %}
         <p class="summary-text">{{ sugg.summary.summary }}</p>
         {% if sugg.summary.manual %}
-        <p class="muted small">{{ sugg.summary.edited_by or "" }} さんが手で直した要約です（{{ sugg.summary.edited_at | localtime }}）。</p>
+        <p class="muted small">{{ _("{edited_by} さんが手で直した要約です（{edited_at}）。", edited_by=(sugg.summary.edited_by or ""), edited_at=(sugg.summary.edited_at | localtime)) }}</p>
         {% else %}
-        <p class="muted small">自動で作った要約です（{{ sugg.summary.model }}）。誤りが含まれることがあります。{% if sugg.summary.old_model %}今のモデルとは別のモデルで作った要約です。{% elif sugg.summary.old_version %}古い方法で作った要約です。{% endif %}</p>
+        <p class="muted small">{{ _("自動で作った要約です（{model}）。誤りが含まれることがあります。", model=sugg.summary.model) }}{% if sugg.summary.old_model %}{{ _("今のモデルとは別のモデルで作った要約です。") }}{% elif sugg.summary.old_version %}{{ _("古い方法で作った要約です。") }}{% endif %}</p>
         {% endif %}
       {% elif sugg.summary_hidden %}
-        <p class="muted small">この文書では要約を出さないようにしています。</p>
+        <p class="muted small">{{ _("この文書では要約を出さないようにしています。") }}</p>
       {% endif %}
       {% if can_edit_summary %}
       <details class="summary-edit" {% if sugg.summary_hidden %}open{% endif %}>
-        <summary class="small">{{ icon("edit") }}{% if sugg.summary %}要約を直す・消す{% else %}要約を書く{% endif %}</summary>
+        <summary class="small">{{ icon("edit") }}{% if sugg.summary %}{{ _("要約を直す・消す") }}{% else %}{{ _("要約を書く") }}{% endif %}</summary>
         <form method="post" action="{{ base }}/d/{{ doc.id }}/summary" class="form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <textarea name="summary" aria-label="要約" rows="4" maxlength="1000">{{ sugg.summary.summary if sugg.summary else "" }}</textarea>
+          <textarea name="summary" aria-label="{{ _("要約") }}" rows="4" maxlength="1000">{{ sugg.summary.summary if sugg.summary else "" }}</textarea>
           <div class="row-actions-in">
-            <button name="action" value="save" class="btn btn-sm btn-primary">{{ icon("save") }}保存</button>
+            <button name="action" value="save" class="btn btn-sm btn-primary">{{ icon("save") }}{{ _("保存") }}</button>
             {% if sugg.summary %}<button name="action" value="hide" class="btn btn-sm" formnovalidate
-                    data-confirm="この文書では要約を出さないようにします。よろしいですか？">{{ icon("delete") }}要約を消す</button>{% endif %}
-            {% if sugg.summary and sugg.summary.manual or sugg.summary_hidden %}<button name="action" value="restore" class="btn btn-sm" formnovalidate>{{ icon("restore_from_trash") }}自動の要約に戻す</button>{% endif %}
+                    data-confirm="{{ _("この文書では要約を出さないようにします。よろしいですか？") }}">{{ icon("delete") }}{{ _("要約を消す") }}</button>{% endif %}
+            {% if sugg.summary and sugg.summary.manual or sugg.summary_hidden %}<button name="action" value="restore" class="btn btn-sm" formnovalidate>{{ icon("restore_from_trash") }}{{ _("自動の要約に戻す") }}</button>{% endif %}
           </div>
         </form>
       </details>
       {% endif %}
-      {% if sugg.summary_pending %}<p class="muted small">{{ icon("schedule") }} 要約とタグを作り直しています。</p>{% endif %}
+      {% if sugg.summary_pending %}<p class="muted small">{{ icon("schedule") }} {{ _("要約とタグを作り直しています。") }}</p>{% endif %}
       {% if sugg.folders %}
-        <h3>{{ icon("folder") }} フォルダ</h3>
+        <h3>{{ icon("folder") }} {{ _("フォルダ") }}</h3>
         <ul class="suggest-list">
         {% for f in sugg.folders %}
           <li>
             <form method="post" action="{{ base }}/d/{{ doc.id }}/suggestions/{{ f.id }}/accept">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button class="btn btn-sm {% if f.recommended %}btn-primary{% endif %}" title="似ている文書があるフォルダです">{{ icon("drive_file_move") }}{{ f.path }} へ移動</button>
+              <button class="btn btn-sm {% if f.recommended %}btn-primary{% endif %}" title="{{ _("似ている文書があるフォルダです") }}">{{ icon("drive_file_move") }}{{ _("{path} へ移動", path=f.path) }}</button>
             </form>
-            {% if f.recommended %}<span class="badge-reco">おすすめ</span>{% endif %}
+            {% if f.recommended %}<span class="badge-reco">{{ _("おすすめ") }}</span>{% endif %}
             <form method="post" action="{{ base }}/d/{{ doc.id }}/suggestions/{{ f.id }}/reject">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button class="linkish small" aria-label="{{ f.path }} の候補を却下">{{ icon("close") }}</button>
+              <button class="linkish small" aria-label="{{ _("{path} の候補を却下", path=f.path) }}">{{ icon("close") }}</button>
             </form>
           </li>
         {% endfor %}
         </ul>
       {% endif %}
       {% if sugg.tags %}
-        <h3>{{ icon("label") }} タグ</h3>
+        <h3>{{ icon("label") }} {{ _("タグ") }}</h3>
         <ul class="suggest-tags">
         {% for t in sugg.tags %}
           <li class="tag tag-suggest">
             <form method="post" action="{{ base }}/d/{{ doc.id }}/suggestions/{{ t.id }}/accept">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button class="linkish" title="このタグを付ける">{{ icon("label") }}{{ t.name }}</button>
+              <button class="linkish" title="{{ _("このタグを付ける") }}">{{ icon("label") }}{{ t.name }}</button>
             </form>
             <form method="post" action="{{ base }}/d/{{ doc.id }}/suggestions/{{ t.id }}/reject">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button class="linkish" aria-label="タグ「{{ t.name }}」の候補を却下">{{ icon("close") }}</button>
+              <button class="linkish" aria-label="{{ _("タグ「{name}」の候補を却下", name=t.name) }}">{{ icon("close") }}</button>
             </form>
           </li>
         {% endfor %}
         </ul>
       {% endif %}
-      {% if sugg.rejected %}<p class="small"><a href="{{ base }}/suggestions/rejected?doc={{ doc.id }}">{{ icon("block") }} 却下した候補 {{ sugg.rejected }} 件</a></p>{% endif %}
+      {% if sugg.rejected %}<p class="small"><a href="{{ base }}/suggestions/rejected?doc={{ doc.id }}">{{ icon("block") }} {{ _("却下した候補 {rejected} 件", rejected=sugg.rejected) }}</a></p>{% endif %}
       {% if can_redo %}
       <form method="post" action="{{ base }}/d/{{ doc.id }}/redo" class="redo-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="btn btn-sm" {% if sugg.summary_pending %}disabled{% endif %}
-                title="{% if llm_enabled %}要約と、タグ・フォルダの候補を作り直します（今の要約は上書きされ、手で直した要約も自動の要約に戻ります）{% else %}タグ・フォルダの候補を作り直します{% endif %}">{{ icon("refresh") }}{% if llm_enabled %}{% if sugg.summary %}要約とタグをやり直す{% else %}要約とタグを作る{% endif %}{% else %}候補をやり直す{% endif %}</button>
+                title="{% if llm_enabled %}{{ _("要約と、タグ・フォルダの候補を作り直します（今の要約は上書きされ、手で直した要約も自動の要約に戻ります）") }}{% else %}{{ _("タグ・フォルダの候補を作り直します") }}{% endif %}">{{ icon("refresh") }}{% if llm_enabled %}{% if sugg.summary %}{{ _("要約とタグをやり直す") }}{% else %}{{ _("要約とタグを作る") }}{% endif %}{% else %}{{ _("候補をやり直す") }}{% endif %}</button>
       </form>
       {% endif %}
     </section>
     {% endif %}
     {% if doc.status == "ready" %}<div hx-get="{{ base }}/x/d/{{ doc.id }}/related" hx-trigger="load" hx-swap="outerHTML"></div>{% endif %}
     <dl class="facts">
-      <dt>状態</dt><dd><span class="status status-{{ doc.status }}">{{ icon(status_icon[doc.status]) }}{{ status_label[doc.status] }}{% if doc.status == "processing" and doc.progress_total %} <span data-live-progress>{{ doc.progress_done }}/{{ doc.progress_total }}</span>{% endif %}</span>
-        {% if error and doc.status in ["failed", "unsupported"] %}<div class="small">{{ error }}</div>{% endif %}
+      <dt>{{ _("状態") }}</dt><dd><span class="status status-{{ doc.status }}">{{ icon(status_icon[doc.status]) }}{{ status_label[doc.status] }}{% if doc.status == "processing" and doc.progress_total %} <span data-live-progress>{{ doc.progress_done }}/{{ doc.progress_total }}</span>{% endif %}</span>
+        {% if error and doc.status in ["failed", "unsupported"] %}<div class="small">{{ _(error) }}</div>{% endif %}
         {% for w in warnings %}<div class="small warn-text">{{ w }}</div>{% endfor %}</dd>
-      <dt>種類</dt><dd>{{ kind_label[k] }}<div class="muted small">{{ doc.mime_type }}</div></dd>
+      <dt>{{ _("種類") }}</dt><dd>{{ kind_label[k] }}<div class="muted small">{{ doc.mime_type }}</div></dd>
       {% if clip %}
-      <dt>元の URL</dt><dd class="hash"><a href="{{ clip.url }}" target="_blank" rel="noopener noreferrer">{{ clip.url }}</a></dd>
-      {% if clip.author %}<dt>著者</dt><dd>{{ clip.author }}</dd>{% endif %}
-      {% if clip.published_at %}<dt>公開日</dt><dd>{{ clip.published_at[:10] }}</dd>{% endif %}
-      <dt>取得日時</dt><dd>{{ clip.fetched_at | localtime }}{% if clip.status in ["pending", "fetching"] %}<div class="muted small">再取得しています…</div>{% elif clip.status == "failed" %}<div class="small err-text">前回の再取得に失敗: {{ clip.error_message }}</div>{% endif %}</dd>
+      <dt>{{ _("元の URL") }}</dt><dd class="hash"><a href="{{ clip.url }}" target="_blank" rel="noopener noreferrer">{{ clip.url }}</a></dd>
+      {% if clip.author %}<dt>{{ _("著者") }}</dt><dd>{{ clip.author }}</dd>{% endif %}
+      {% if clip.published_at %}<dt>{{ _("公開日") }}</dt><dd>{{ clip.published_at[:10] }}</dd>{% endif %}
+      <dt>{{ _("取得日時") }}</dt><dd>{{ clip.fetched_at | localtime }}{% if clip.status in ["pending", "fetching"] %}<div class="muted small">{{ _("再取得しています…") }}</div>{% elif clip.status == "failed" %}<div class="small err-text">{{ _("前回の再取得に失敗: {error_message}", error_message=clip.error_message) }}</div>{% endif %}</dd>
       {% endif %}
-      <dt>サイズ</dt><dd>{{ doc.size_bytes | filesize }}</dd>
-      {% if doc.page_count and not image_meta %}<dt>ページ数</dt><dd>{{ doc.page_count }}</dd>{% endif %}
+      <dt>{{ _("サイズ") }}</dt><dd>{{ doc.size_bytes | filesize }}</dd>
+      {% if doc.page_count and not image_meta %}<dt>{{ _("ページ数") }}</dt><dd>{{ doc.page_count }}</dd>{% endif %}
       {% if image_meta %}
-      <dt>大きさ</dt><dd>{{ image_meta.width }} × {{ image_meta.height }} px</dd>
-      {% if image_meta.taken_at %}<dt>撮影日時</dt><dd>{{ image_meta.taken_at | taken_at }}</dd>{% endif %}
-      {% if image_meta.camera %}<dt>カメラ</dt><dd>{{ image_meta.camera }}</dd>{% endif %}
-      {% if image_meta.has_gps %}<dt>位置情報</dt><dd>{{ icon("location_on") }}あり<div class="muted small">原本に撮影場所が含まれます。共有するときは注意してください。</div></dd>{% endif %}
+      <dt>{{ _("大きさ") }}</dt><dd>{{ image_meta.width }} × {{ image_meta.height }} px</dd>
+      {% if image_meta.taken_at %}<dt>{{ _("撮影日時") }}</dt><dd>{{ image_meta.taken_at | taken_at }}</dd>{% endif %}
+      {% if image_meta.camera %}<dt>{{ _("カメラ") }}</dt><dd>{{ image_meta.camera }}</dd>{% endif %}
+      {% if image_meta.has_gps %}<dt>{{ _("位置情報") }}</dt><dd>{{ icon("location_on") }}{{ _("あり") }}<div class="muted small">{{ _("原本に撮影場所が含まれます。共有するときは注意してください。") }}</div></dd>{% endif %}
       {% endif %}
-      <dt>追加した人</dt><dd>{{ doc.created_by_name }}</dd>
-      <dt>追加日時</dt><dd>{{ doc.created_at | localtime }}</dd>
-      {% if versions %}<dt>今の版</dt><dd>{{ (doc.content_updated_at or doc.created_at) | localtime }}<div class="muted small">過去の版 {{ versions | length }} 件</div></dd>{% endif %}
-      <dt>更新日時</dt><dd>{{ doc.updated_at | localtime }}</dd>
-      <dt>タグ</dt><dd>{% for t in tags %}<span class="tag">{{ icon("label") }}{{ t }}</span>{% else %}<span class="muted">なし</span>{% endfor %}</dd>
+      <dt>{{ _("追加した人") }}</dt><dd>{{ doc.created_by_name }}</dd>
+      <dt>{{ _("追加日時") }}</dt><dd>{{ doc.created_at | localtime }}</dd>
+      {% if versions %}<dt>{{ _("今の版") }}</dt><dd>{{ (doc.content_updated_at or doc.created_at) | localtime }}<div class="muted small">{{ _("過去の版 {versions} 件", versions=(versions | length)) }}</div></dd>{% endif %}
+      <dt>{{ _("更新日時") }}</dt><dd>{{ doc.updated_at | localtime }}</dd>
+      <dt>{{ _("タグ") }}</dt><dd>{% for t in tags %}<span class="tag">{{ icon("label") }}{{ t }}</span>{% else %}<span class="muted">{{ _("なし") }}</span>{% endfor %}</dd>
       <dt>SHA-256</dt><dd class="hash">{{ doc.sha256 }}</dd>
     </dl>
 
     {% if versions or (can_edit and doc.kind != "webclip" and versions_keep) %}
-    <section class="form-panel versions-panel" id="versions" aria-label="過去の版">
-      <h2>{{ icon("history") }} 過去の版</h2>
+    <section class="form-panel versions-panel" id="versions" aria-label="{{ _("過去の版") }}">
+      <h2>{{ icon("history") }} {{ _("過去の版") }}</h2>
       {% if versions %}
       <ol class="versions">
       {% for v in versions %}
         <li>
-          <div><b>{{ v.created_at | localtime }}</b> <span class="muted small">{{ v.size_bytes | filesize }}{% if v.created_by_name %} ・ {{ v.created_by_name }}{% endif %}</span></div>
-          <div class="muted small">{% if v.filename != doc.filename %}{{ v.filename }} ・ {% endif %}{{ v.archived_at | localtime }} に置き換え{% if v.archived_by_name %}（{{ v.archived_by_name }}）{% endif %}</div>
+          <div><b>{{ v.created_at | localtime }}</b> <span class="muted small">{{ v.size_bytes | filesize }}{% if v.created_by_name %} {{ _("・ {created_by_name}", created_by_name=v.created_by_name) }}{% endif %}</span></div>
+          <div class="muted small">{% if v.filename != doc.filename %}{{ _("{filename} ・", filename=v.filename) }} {% endif %}{{ _("{archived_at} に置き換え", archived_at=(v.archived_at | localtime)) }}{% if v.archived_by_name %}{{ _("（{archived_by_name}）", archived_by_name=v.archived_by_name) }}{% endif %}</div>
           <div class="row-actions-in">
-            <a class="btn btn-sm" href="{{ base }}/api/v1/documents/{{ doc.id }}/versions/{{ v.id }}/content">{{ icon("download") }}ダウンロード</a>
+            <a class="btn btn-sm" href="{{ base }}/api/v1/documents/{{ doc.id }}/versions/{{ v.id }}/content">{{ icon("download") }}{{ _("ダウンロード") }}</a>
             {% if can_edit %}
             {% if v.blob_id != doc.blob_id %}
             <form method="post" action="{{ base }}/d/{{ doc.id }}/versions/{{ v.id }}/restore" class="form-inline"
-                  data-confirm="この版（{{ v.created_at | localtime }}）に戻しますか？ 今の版は過去の版に残ります。">
+                  data-confirm="{{ _("この版（{created_at}）に戻しますか？ 今の版は過去の版に残ります。", created_at=(v.created_at | localtime)) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button class="btn btn-sm">{{ icon("undo") }}この版に戻す</button>
+              <button class="btn btn-sm">{{ icon("undo") }}{{ _("この版に戻す") }}</button>
             </form>
-            {% else %}<span class="muted small">今の版と同じ内容</span>{% endif %}
+            {% else %}<span class="muted small">{{ _("今の版と同じ内容") }}</span>{% endif %}
             <form method="post" action="{{ base }}/d/{{ doc.id }}/versions/{{ v.id }}/delete" class="form-inline"
-                  data-confirm="この版（{{ v.created_at | localtime }}）を完全に削除しますか？ 元に戻せません。">
+                  data-confirm="{{ _("この版（{created_at}）を完全に削除しますか？ 元に戻せません。", created_at=(v.created_at | localtime)) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button class="btn btn-sm btn-danger">{{ icon("delete_forever") }}削除</button>
+              <button class="btn btn-sm btn-danger">{{ icon("delete_forever") }}{{ _("削除") }}</button>
             </form>
             {% endif %}
           </div>
@@ -164,14 +164,14 @@
       {% endfor %}
       </ol>
       {% else %}
-      <p class="muted small">まだありません。新しい版をアップロードすると、今の版がここに残ります。</p>
+      <p class="muted small">{{ _("まだありません。新しい版をアップロードすると、今の版がここに残ります。") }}</p>
       {% endif %}
       {% if can_edit and doc.kind != "webclip" and versions_keep %}
       <form method="post" action="{{ base }}/d/{{ doc.id }}/versions" enctype="multipart/form-data" class="form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label>新しい版のファイル <input type="file" name="file" required></label>
-        <p class="muted small">名前・フォルダ・タグはそのままで、中身だけが変わります。過去の版は新しいものから {{ versions_keep }} 件まで残します。</p>
-        <button type="submit" class="btn">{{ icon("upload_file") }}新しい版をアップロード</button>
+        <label>{{ _("新しい版のファイル") }} <input type="file" name="file" required></label>
+        <p class="muted small">{{ _("名前・フォルダ・タグはそのままで、中身だけが変わります。過去の版は新しいものから {versions_keep} 件まで残します。", versions_keep=versions_keep) }}</p>
+        <button type="submit" class="btn">{{ icon("upload_file") }}{{ _("新しい版をアップロード") }}</button>
       </form>
       {% endif %}
     </section>
@@ -179,73 +179,73 @@
 
     {% if can_edit %}
     <form method="post" action="{{ base }}/d/{{ doc.id }}" class="form form-panel">
-      <h2>{{ icon("edit") }} 編集</h2>
+      <h2>{{ icon("edit") }} {{ _("編集") }}</h2>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label>ファイル名 <input name="filename" value="{{ doc.filename }}" required maxlength="255"></label>
-      <label>フォルダ
+      <label>{{ _("ファイル名") }} <input name="filename" value="{{ doc.filename }}" required maxlength="255"></label>
+      <label>{{ _("フォルダ") }}
         <select name="folder_id">
           {% for fid, label in targets %}<option value="{{ fid }}" {% if fid == doc.folder_id %}selected{% endif %}>{{ label }}</option>{% endfor %}
         </select>
       </label>
-      <label>タグ <span class="muted small">（カンマ区切り）</span>
-        <input name="tags" value="{{ tags | join(', ') }}" placeholder="例: 経理, 2026">
+      <label>{{ _("タグ") }} <span class="muted small">{{ _("（カンマ区切り）") }}</span>
+        <input name="tags" value="{{ tags | join(', ') }}" placeholder="{{ _("例: 経理, 2026") }}">
       </label>
-      <button type="submit" class="btn btn-primary">{{ icon("save") }}保存</button>
+      <button type="submit" class="btn btn-primary">{{ icon("save") }}{{ _("保存") }}</button>
     </form>
     {% if clip and webclip_enabled %}
     <form method="post" action="{{ base }}/d/{{ doc.id }}/refetch" class="form form-panel">
-      <h2>{{ icon("public") }} 元のページ</h2>
+      <h2>{{ icon("public") }} {{ _("元のページ") }}</h2>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="row-actions-in">
-        <button type="submit" class="btn">{{ icon("refresh") }}再取得</button>
-        <a class="btn" href="{{ clip.final_url or clip.url }}" target="_blank" rel="noopener noreferrer">{{ icon("link") }}元のページを開く</a>
+        <button type="submit" class="btn">{{ icon("refresh") }}{{ _("再取得") }}</button>
+        <a class="btn" href="{{ clip.final_url or clip.url }}" target="_blank" rel="noopener noreferrer">{{ icon("link") }}{{ _("元のページを開く") }}</a>
       </div>
     </form>
     {% endif %}
     {% if doc.status in ["ready", "failed", "unsupported"] %}
     <form method="post" action="{{ base }}/d/{{ doc.id }}/reprocess" class="form form-panel">
-      <h2>{{ icon("document_scanner") }} 文字の読み取り</h2>
+      <h2>{{ icon("document_scanner") }} {{ _("文字の読み取り") }}</h2>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      {% if doc.mime_type == "application/pdf" %}<label class="check"><input type="checkbox" name="force_ocr" value="1"> PDF の埋め込みテキストを使わず、画像として読み取る</label>{% endif %}
-      <button type="submit" class="btn">{{ icon("refresh") }}再処理</button>
+      {% if doc.mime_type == "application/pdf" %}<label class="check"><input type="checkbox" name="force_ocr" value="1"> {{ _("PDF の埋め込みテキストを使わず、画像として読み取る") }}</label>{% endif %}
+      <button type="submit" class="btn">{{ icon("refresh") }}{{ _("再処理") }}</button>
     </form>
     {% endif %}
-    <form method="post" action="{{ base }}/d/{{ doc.id }}/delete" class="form-inline" data-confirm="「{{ doc.filename }}」をゴミ箱に移動しますか？">
+    <form method="post" action="{{ base }}/d/{{ doc.id }}/delete" class="form-inline" data-confirm="{{ _("「{filename}」をゴミ箱に移動しますか？", filename=doc.filename) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button type="submit" class="btn btn-danger">{{ icon("delete") }}ゴミ箱に移動</button>
+      <button type="submit" class="btn btn-danger">{{ icon("delete") }}{{ _("ゴミ箱に移動") }}</button>
     </form>
     {% endif %}
   </aside>
 </div>
 
 {% if pages %}
-<section class="extracted" aria-label="取り出したテキスト">
-  <h2>{{ icon("text_snippet") }} 取り出したテキスト</h2>
-  {% if doc.page_count and doc.page_count > pages_shown %}<p class="muted small">全 {{ doc.page_count }} ページのうち先頭 {{ pages_shown }} ページを表示しています。</p>{% endif %}
+<section class="extracted" aria-label="{{ _("取り出したテキスト") }}">
+  <h2>{{ icon("text_snippet") }} {{ _("取り出したテキスト") }}</h2>
+  {% if doc.page_count and doc.page_count > pages_shown %}<p class="muted small">{{ _("全 {page_count} ページのうち先頭 {pages_shown} ページを表示しています。", page_count=doc.page_count, pages_shown=pages_shown) }}</p>{% endif %}
   {% for pg in pages %}
   <details class="pagetext" id="p{{ pg.page_no }}" {% if loop.first %}open{% endif %}>
     <summary>
-      <span class="pg-no">{% if pg.source == "office" and k == "sheet" %}{{ pg.page_no }} 枚目のシート{% elif pg.source == "office" and k == "slide" %}スライド {{ pg.page_no }}{% elif pg.source == "office" %}{{ pg.page_no }} 番目の区切り{% else %}{{ pg.page_no }} ページ{% endif %}</span>
-      <span class="muted small">{{ {"text": "テキスト", "text_layer": "PDF の埋め込みテキスト", "ocr": "画像から読み取り", "office": "Office 文書のテキスト"}[pg.source] }}{% if pg.source == "text_layer" and pg.ocr_confidence is not none %}＋ページ内の画像から読み取り{% endif %}{% if pg.ocr_confidence is not none %}（信頼度 {{ "%.2f" | format(pg.ocr_confidence) }}）{% endif %}</span>
+      <span class="pg-no">{% if pg.source == "office" and k == "sheet" %}{{ _("{page_no} 枚目のシート", page_no=pg.page_no) }}{% elif pg.source == "office" and k == "slide" %}{{ _("スライド {page_no}", page_no=pg.page_no) }}{% elif pg.source == "office" %}{{ _("{page_no} 番目の区切り", page_no=pg.page_no) }}{% else %}{{ _("{page_no} ページ", page_no=pg.page_no) }}{% endif %}</span>
+      <span class="muted small">{{ {"text": _("テキスト"), "text_layer": _("PDF の埋め込みテキスト"), "ocr": _("画像から読み取り"), "office": _("Office 文書のテキスト")}[pg.source] }}{% if pg.source == "text_layer" and pg.ocr_confidence is not none %}{{ _("＋ページ内の画像から読み取り") }}{% endif %}{% if pg.ocr_confidence is not none %}{{ _("（信頼度 {v}）", v=("%.2f" | format(pg.ocr_confidence))) }}{% endif %}</span>
     </summary>
     {% set can_page = can_edit and k in ["pdf", "image"] and doc.status in ["ready", "failed"] %}
     {% if (pg.source == "ocr" and k in ["pdf", "image"]) or can_page %}
     <div class="ocr-tools">
       {% if pg.source == "ocr" and k in ["pdf", "image"] %}
       <button type="button" class="btn btn-sm" data-ocr-toggle data-doc="{{ doc.id }}" data-page="{{ pg.page_no }}"
-              aria-expanded="false">{{ icon("image") }}読み取った位置を画像に重ねて表示</button>
+              aria-expanded="false">{{ icon("image") }}{{ _("読み取った位置を画像に重ねて表示") }}</button>
       {% endif %}
       {% if can_page %}
       <form method="post" action="{{ base }}/d/{{ doc.id }}/pages/{{ pg.page_no }}/reprocess" class="page-reprocess">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        {% if k == "pdf" and pg.source == "text_layer" %}<label class="check small"><input type="checkbox" name="force_ocr" value="1"> 埋め込みテキストを使わず画像として読む</label>{% endif %}
-        <button class="btn btn-sm" title="このページだけを読み直します（ほかのページはそのまま）">{{ icon("refresh") }}このページを読み直す</button>
+        {% if k == "pdf" and pg.source == "text_layer" %}<label class="check small"><input type="checkbox" name="force_ocr" value="1"> {{ _("埋め込みテキストを使わず画像として読む") }}</label>{% endif %}
+        <button class="btn btn-sm" title="{{ _("このページだけを読み直します（ほかのページはそのまま）") }}">{{ icon("refresh") }}{{ _("このページを読み直す") }}</button>
       </form>
       {% endif %}
     </div>
     {% if pg.source == "ocr" and k in ["pdf", "image"] %}<div class="ocr-overlay" hidden></div>{% endif %}
     {% endif %}
-    {% if pg.text %}<pre class="textview" data-highlight>{{ pg.text }}</pre>{% else %}<p class="muted small pad">文字は見つかりませんでした。</p>{% endif %}
+    {% if pg.text %}<pre class="textview" data-highlight>{{ pg.text }}</pre>{% else %}<p class="muted small pad">{{ _("文字は見つかりませんでした。") }}</p>{% endif %}
   </details>
   {% endfor %}
 </section>
