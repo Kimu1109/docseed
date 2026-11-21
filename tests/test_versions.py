@@ -232,3 +232,12 @@ def test_small_folder_has_no_pager(login):
     alice = login("alice")
     _fill(alice, 1, 2)
     assert 'aria-label="ページ送り"' not in alice.get(f"/f/{alice.root}").text
+
+
+def test_file_input_fits_side_panel():
+    # 「新しい版のファイル」は 320px の横の欄にある。ファイル選びの部品は UI の言語（日本語など）で幅が広くなり、
+    # 欄からはみ出すと画面全体が横にスクロールできてしまうので、親の幅より広がらないようにする
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[1] / "src" / "docseed" / "web" / "static" / "app.css").read_text()
+    rule = re.search(r"input\[type=file\] \{([^}]*)\}", css).group(1)
+    assert "min-width: 0" in rule and "max-width: 100%" in rule
