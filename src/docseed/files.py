@@ -63,7 +63,21 @@ def derived_response(path: Path | None) -> FileResponse:
     })
 
 
-def file_response(path: Path, doc: sqlite3.Row, *, inline: bool) -> FileResponse:
+class WholeFileResponse(FileResponse):
+    """範囲指定（Range）に応えず、いつもファイル全体を返す。
+
+    ダウンロードの回数を数えるリンクで使う。Range に応えると、数えない取得（「bytes=1-」など）を
+    何度でも繰り返せてしまう（docs/design/security.md 4.2）。
+    """
+
+    async def __call__(self, scope, receive, send) -> None:
+        scope = dict(scope)
+        scope["headers"] = [(k, v) for k, v in scope.get("headers", []) if k.lower() not in (b"range", b"if-range")]
+        await super().__call__(scope, receive, send)
+
+
+def file_response(path: Path, doc: sqlite3.Row, *, inline: bool, allow_range: bool = True) -> FileResponse:
+    """原本を返す。allow_range=False なら Range に応えない（WholeFileResponse）。"""
     if not path.exists():
         raise NotFound("ファイルの実体が見つかりません。管理者に連絡してください")
     mime = doc["mime_type"]
@@ -84,7 +98,10 @@ def file_response(path: Path, doc: sqlite3.Row, *, inline: bool) -> FileResponse
     else:
         headers["Content-Security-Policy"] = ("default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox;"
                                               " frame-ancestors 'self'")
-    return FileResponse(
+    if not allow_range:
+        headers["Accept-Ranges"] = "none"
+    cls = FileResponse if allow_range else WholeFileResponse
+    return cls(
         path, media_type=media if inline else (mime or "application/octet-stream"),
         filename=doc["filename"], content_disposition_type="inline" if inline else "attachment",
         headers=headers,

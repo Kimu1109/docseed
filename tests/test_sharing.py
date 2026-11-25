@@ -87,6 +87,29 @@ def test_document_link(app, login):
     assert anon.get(f"/s/{token_of(link['url'])}/preview/{other['id']}").status_code == 404
 
 
+def test_link_counts_ranged_downloads(app, login):
+    """上限の無いリンクでも、先頭からの Range は 1 回のダウンロードとして数える（続きの取得は数えない）。"""
+    alice = login("alice")
+    d = alice.upload(alice.root, {"a.txt": b"abcdef"}).json()["results"][0]["document"]
+    tok = token_of(alice.post("/api/v1/shares", json={"target_type": "document", "target_id": d["id"]}).json()["url"])
+    anon = public(app)
+    assert anon.get(f"/s/{tok}/download", headers={"Range": "bytes=0-"}).status_code == 206
+    assert anon.get(f"/s/{tok}/download", headers={"Range": "bytes=3-"}).content == b"def"
+    assert alice.get("/api/v1/shares").json()["shares"][0]["download_count"] == 1
+
+
+def test_link_preview_only_for_previewable(app, login):
+    """プレビュー・表示は表示できる形式だけ（ほかの形式をダウンロードとして返すと、回数に数えずに取れる）。"""
+    alice = login("alice")
+    d = alice.upload(alice.root, {"a.zip": b"PK\x05\x06" + b"\0" * 18}).json()["results"][0]["document"]
+    tok = token_of(alice.post("/api/v1/shares", json={"target_type": "document", "target_id": d["id"],
+                                                      "max_downloads": 1}).json()["url"])
+    anon = public(app)
+    assert anon.get(f"/s/{tok}/preview/{d['id']}").status_code == 404
+    assert anon.get(f"/s/{tok}/view/{d['id']}").status_code == 404
+    assert anon.get(f"/s/{tok}/download").status_code == 200
+
+
 def test_folder_link_scope(app, login):
     alice = login("alice")
     shared = alice.post("/api/v1/folders", json={"parent_id": alice.root, "name": "公開"}).json()
@@ -118,6 +141,22 @@ def test_password_link(app, login):
     assert anon.post(f"/s/{tok}/auth", data={"password": "wrong"}).status_code == 401
     r = anon.post(f"/s/{tok}/auth", data={"password": "himitsu"}, follow_redirects=False)
     assert r.status_code == 303
+    assert anon.get(f"/s/{tok}/download").content == b"a"
+
+
+def test_password_change_invalidates_link_cookie(app, login):
+    """リンクのパスワードを変えると、前に入力した人はもう一度入力する（security.md 4.2）。"""
+    alice = login("alice")
+    d = alice.upload(alice.root, {"a.txt": b"a"}).json()["results"][0]["document"]
+    link = alice.post("/api/v1/shares", json={"target_type": "document", "target_id": d["id"],
+                                              "password": "himitsu"}).json()
+    tok = token_of(link["url"])
+    anon = public(app)
+    anon.post(f"/s/{tok}/auth", data={"password": "himitsu"})
+    assert anon.get(f"/s/{tok}/download").content == b"a"
+    assert alice.patch(f"/api/v1/shares/{link['id']}", json={"password": "atarashii"}).status_code == 200
+    assert anon.get(f"/s/{tok}/download", follow_redirects=False).status_code == 303
+    anon.post(f"/s/{tok}/auth", data={"password": "atarashii"})
     assert anon.get(f"/s/{tok}/download").content == b"a"
 
 
@@ -155,6 +194,13 @@ def test_link_invalidation(app, login, conn):
     link = make(max_downloads=1)
     assert anon.get(f"/s/{token_of(link['url'])}/download").status_code == 200
     assert anon.get(f"/s/{token_of(link['url'])}/download").status_code == 404
+    # 回数の上限があるリンクは Range に応えず、毎回数える（数えない取得を繰り返させない）
+    link = make(max_downloads=2)
+    tok = token_of(link["url"])
+    for rng in ("bytes=0-", "bytes=1-"):
+        r = anon.get(f"/s/{tok}/download", headers={"Range": rng})
+        assert r.status_code == 200 and r.content == b"a" and r.headers["accept-ranges"] == "none"
+    assert anon.get(f"/s/{tok}/download", headers={"Range": "bytes=1-"}).status_code == 404
     # 対象をゴミ箱へ
     link = make()
     alice.delete(f"/api/v1/documents/{d['id']}")

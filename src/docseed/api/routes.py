@@ -29,7 +29,7 @@ from ..deps import (
     require_auth,
     require_session,
 )
-from ..errors import AppError, NotFound, ValidationFailed
+from ..errors import AppError, NotFound, RateLimited, ValidationFailed
 from ..files import derived_response, file_response
 from ..i18n import N_
 from ..storage import BlobStore
@@ -146,11 +146,23 @@ class PasswordIn(BaseModel):
 
 
 def change_password(conn: sqlite3.Connection, auth: Auth, current: str, new: str, ip: str | None) -> None:
+    """今のパスワードの失敗はユーザー ID ごと（pwchange:<id>）に数える（盗まれたセッションから当てさせない。
+    docs/design/security.md 2.4）。"""
+    from ..authn import limiter
+    keys = (f"pwchange:{auth.user.id}",)
+    try:
+        limiter.check(*keys)
+    except RateLimited as e:     # 案内の文言は「ログインの失敗」なので、ここでは一般の文言にする
+        raise RateLimited(retry_after=e.retry_after) from None
     row = conn.execute("SELECT password_hash FROM users WHERE id = ?", (auth.user.id,)).fetchone()
     if not security.verify_password(row["password_hash"], current):
+        limiter.failed(*keys)
+        with Tx(conn):
+            audit(conn, "password_change_failed", user_id=auth.user.id, ip=ip)
         raise ValidationFailed("現在のパスワードが違います",
                                errors=[{"field": "current_password", "message": "違います"}])
     um.set_password(conn, auth.user.id, new)
+    limiter.succeeded(*keys)
     security.delete_other_sessions(conn, auth.user.id, auth.session.id_hash if auth.session else None)
     with Tx(conn):
         audit(conn, "password_change", user_id=auth.user.id, ip=ip)

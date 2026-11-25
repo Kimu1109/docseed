@@ -241,8 +241,23 @@ def check_in_share(conn: sqlite3.Connection, acc: ShareAccess, *, folder_id: int
 
 
 def count_download(conn: sqlite3.Connection, share_id: int) -> None:
+    """ダウンロードを 1 回数える。回数の上限に達していたら（同時に取りに来た場合も）無効なリンクと同じ扱い。"""
     with Tx(conn):
-        conn.execute("UPDATE shares SET download_count = download_count + 1 WHERE id = ?", (share_id,))
+        cur = conn.execute("UPDATE shares SET download_count = download_count + 1 WHERE id = ?"
+                           " AND (max_downloads IS NULL OR download_count < max_downloads)", (share_id,))
+    if cur.rowcount == 0:
+        raise NotFound(INVALID)
+
+
+def counts_as_download(share: sqlite3.Row, range_header: str | None) -> bool:
+    """この取得をダウンロードの 1 回として数えるか（security.md 4.2）。
+
+    回数の上限があるリンクは Range に応えない（files.WholeFileResponse）ので、毎回数える。
+    上限が無いリンクは、続きの取得（先頭からでない Range）を数えない（記録の重複を避けるだけ）。
+    """
+    if share["max_downloads"] is not None or not range_header:
+        return True
+    return range_header.replace(" ", "").lower().startswith("bytes=0-")
 
 
 def uploaded_bytes(conn: sqlite3.Connection, share_id: int) -> int:
@@ -286,20 +301,24 @@ def cookie_name(token: str) -> str:
     return "docseed_share_" + hashlib.sha256(token.encode()).hexdigest()[:12]
 
 
-def make_pass_cookie(secret: str, token: str) -> str:
-    exp = int(time.time()) + PASS_COOKIE_HOURS * 3600
-    sig = hmac.new(secret.encode(), f"{token}:{exp}".encode(), hashlib.sha256).hexdigest()
-    return f"{exp}.{sig}"
+def _pass_sig(secret: str, token: str, password_hash: str, exp: str) -> str:
+    # 今のパスワードのハッシュも署名に混ぜる。パスワードを変える・外すと、前に確かめた Cookie は使えなくなる
+    pw = hashlib.sha256(password_hash.encode()).hexdigest()
+    return hmac.new(secret.encode(), f"{token}:{exp}:{pw}".encode(), hashlib.sha256).hexdigest()
 
 
-def check_pass_cookie(secret: str, token: str, value: str | None) -> bool:
+def make_pass_cookie(secret: str, token: str, password_hash: str) -> str:
+    exp = str(int(time.time()) + PASS_COOKIE_HOURS * 3600)
+    return f"{exp}.{_pass_sig(secret, token, password_hash, exp)}"
+
+
+def check_pass_cookie(secret: str, token: str, password_hash: str, value: str | None) -> bool:
     if not value or "." not in value:
         return False
     exp, sig = value.split(".", 1)
     if not exp.isdigit() or int(exp) < time.time():
         return False
-    good = hmac.new(secret.encode(), f"{token}:{exp}".encode(), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(sig, good)
+    return hmac.compare_digest(sig, _pass_sig(secret, token, password_hash, exp))
 
 
 def check_password(share: sqlite3.Row, password: str) -> bool:
