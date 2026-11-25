@@ -9,8 +9,8 @@ jobs:
   test:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           # 依存の wheel をジョブをまたいで使い回す（pyproject.toml が変わったら取り直す）
@@ -27,7 +27,7 @@ jobs:
   caddy:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: internal / file / tailscale（公式の caddy:2）
         run: |
           for mode in internal file tailscale; do
@@ -156,11 +156,11 @@ jobs:
   compose:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # api のイメージ（target base）の層を GitHub Actions のキャッシュに置き、次の実行で使い回す
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - name: api のイメージを作る
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile

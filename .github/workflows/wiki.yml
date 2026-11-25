@@ -25,13 +25,13 @@ jobs:
   sync:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Wiki のリポジトリを取ってくる
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ github.repository }}.wiki
           path: wiki
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: docs/ を Wiki の形に変換する
