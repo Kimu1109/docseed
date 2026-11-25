@@ -47,8 +47,9 @@ services:
       DOCSEED_ACME_EMAIL: ${DOCSEED_ACME_EMAIL:-}
       DOCSEED_ACME_DNS_TOKEN: ${DOCSEED_ACME_DNS_TOKEN:-}
       DOCSEED_ACME_STAGING: ${DOCSEED_ACME_STAGING:-false}
-      # 「内側」とみなす接続元（管理画面などを開ける範囲。docker/Caddyfile の冒頭を参照）。空だと Caddy の既定値が使われないので、ここで補う
-      DOCSEED_TRUSTED_NETS: ${DOCSEED_TRUSTED_NETS:-private_ranges 100.64.0.0/10}
+      # 「内側」とみなす接続元（管理画面などを開ける範囲。docker/Caddyfile の冒頭を参照）。空だと Caddy の既定値が使われないので、ここで補う。
+      # 172.16.0.0/12 は入れない（Docker のゲートウェイ。docker-proxy を通った外からの接続がこのアドレスに見える）
+      DOCSEED_TRUSTED_NETS: ${DOCSEED_TRUSTED_NETS:-192.168.0.0/16 10.0.0.0/8 127.0.0.1/8 fd00::/8 ::1 100.64.0.0/10}
       # cloudflared だけがいるネットワーク。ここからの CF-Connecting-IP だけを信頼する（docker/Caddyfile の冒頭）
       DOCSEED_TUNNEL_SUBNET: ${DOCSEED_TUNNEL_SUBNET:-10.213.47.0/28}
     volumes:
@@ -57,7 +58,8 @@ services:
       # tailscale のとき: tailscaled.sock に問い合わせて証明書をもらう（Tailscale が無ければ空のディレクトリ）
       - ${DOCSEED_TAILSCALE_SOCKET_DIR:-/var/run/tailscale}:/var/run/tailscale:ro
       - ${DOCSEED_DATA_DIR:-/srv/docseed}/caddy:/data
-    networks: [default, tunnel]
+    # front: api とだけ同じネットワーク（外への通信もここから）。default には入らない（描画のコンテナなどから届かないように）
+    networks: [front, tunnel]
     depends_on: [api]
     restart: unless-stopped
 
@@ -89,7 +91,9 @@ services:
       # 音声・動画の文字起こしを使うときだけ asr（ffmpeg と whisper-cli を入れる）。worker も同じイメージを使う
       target: ${DOCSEED_IMAGE_TARGET:-base}
     image: docseed:latest
-    command: ["docseed", "serve", "--port", "8000"]
+    # X-Forwarded-For は front（Caddy と api だけのネットワーク）から届いたときだけ信頼する。
+    # 同じ api に別の経路（internal など）から届いたものは、ヘッダを無視して本当の接続元を使う
+    command: ["docseed", "serve", "--port", "8000", "--forwarded-allow-ips", "${DOCSEED_FRONT_SUBNET:-10.213.47.16/28}"]
     <<: *hardening
     pids_limit: 256
     env_file: .env
@@ -103,9 +107,9 @@ services:
     volumes:
       - ${DOCSEED_DATA_DIR:-/srv/docseed}:/srv/docseed
       - /sys/class/thermal:/host/thermal:ro
-    # default: Caddy から届き、外部（Webhook の通知・OIDC など）へ通信する。
+    # front: Caddy から届き、外部（Webhook の通知・OIDC など）へ通信する。Caddy と api だけのネットワーク。
     # internal: 質問に答えるときに llm サービスを呼ぶ（internal は外部へ出られないネットワーク）
-    networks: [default, internal]
+    networks: [front, internal]
     mem_limit: 1536m
     logging: &logging
       driver: json-file
@@ -149,6 +153,8 @@ services:
     volumes:
       - ${DOCSEED_DATA_DIR:-/srv/docseed}:/srv/docseed
     mem_limit: 384m
+    # webclip: 外へ通信し、描画のコンテナ（webclip-browser）を呼ぶ。caddy・api には届かない
+    networks: [webclip]
     depends_on: [api]
     logging: *logging
     restart: unless-stopped
@@ -179,8 +185,9 @@ services:
     mem_limit: 1g
     logging: *logging
     restart: unless-stopped
-    # 外へは出る（描画のため）。LAN への出口は Pi のルーターや Docker 側で止めること（docs/admin/webclip.md）
-    networks: [default]
+    # 外へは出る（描画のため）。LAN への出口は Pi のルーターや Docker 側で止めること（docs/admin/webclip.md）。
+    # webclip: fetcher とだけ同じネットワーク（caddy・api には届かない）
+    networks: [webclip]
 
   llm:
     profiles: ["llm"]
@@ -226,8 +233,15 @@ services:
 
 networks:
   default: {}
+  # Caddy と api だけのネットワーク。サブネットを固定し、api はここから届いた X-Forwarded-For だけを信頼する
+  front:
+    ipam:
+      config:
+        - subnet: ${DOCSEED_FRONT_SUBNET:-10.213.47.16/28}
   internal:
     internal: true
+  # URL の取り込み（fetcher と webclip-browser）。外へは出られるが、caddy・api とは別にする
+  webclip: {}
   # cloudflared と caddy だけのネットワーク。サブネットを固定し、Caddy はここからの CF-Connecting-IP だけを信頼する
   tunnel:
     ipam:

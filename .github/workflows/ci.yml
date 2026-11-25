@@ -52,11 +52,12 @@ jobs:
           docker network create ct
           printf ':8000 {\n\theader X-Powered-By test\n\trespond "upstream" 200\n}\n' > /tmp/Stub
           docker run -d --name api --network ct -v /tmp/Stub:/etc/caddy/Caddyfile:ro caddy:2
-          probe() {  # $1 = DOCSEED_TRUSTED_NETS, 以降 = "パス 期待するコード"
+          probe() {  # $1 = DOCSEED_TRUSTED_NETS（default なら渡さない = Caddyfile の既定）, 以降 = "パス 期待するコード"
             nets=$1; shift
+            env=(-e DOCSEED_TRUSTED_NETS="$nets"); [ "$nets" = default ] && env=()
             docker rm -f c1 >/dev/null 2>&1 || true
             docker run -d --name c1 --network ct -v "$PWD/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
-              -e DOCSEED_HOST=docseed.example.com -e DOCSEED_LAN_IP=c1 -e DOCSEED_TRUSTED_NETS="$nets" caddy:2
+              -e DOCSEED_HOST=docseed.example.com -e DOCSEED_LAN_IP=c1 "${env[@]}" caddy:2
             sleep 3
             ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' c1)
             for t in "$@"; do
@@ -79,6 +80,9 @@ jobs:
           echo "$h" | grep -qi '^permissions-policy:'
           echo "$h" | grep -qi '^cross-origin-opener-policy: same-origin'
           if echo "$h" | grep -qiE '^(x-powered-by|server|via):'; then echo "外すはずのヘッダが残っている"; exit 1; fi
+          # 既定の範囲には Docker のゲートウェイ（172.16.0.0/12）を入れない。docker-proxy を通った外からの接続が
+          # このアドレスに見えるため（docs/design/security.md 8 章）。ct は 172.x のネットワーク
+          probe default "/ 200" "/admin 404" "/healthz 404" "/api/docs 404"
       - name: Cloudflare Tunnel 経由の判定（docs/design/security.md 10 章）
         run: |
           docker rm -f api c1 >/dev/null 2>&1 || true
@@ -86,8 +90,10 @@ jobs:
           # api の代わりに、届いた X-Forwarded-For をそのまま返す
           printf ':8000 {\n\trespond "xff={header.X-Forwarded-For}" 200\n}\n' > /tmp/Stub
           docker run -d --name api --network ct -v /tmp/Stub:/etc/caddy/Caddyfile:ro caddy:2
+          # ct（172.x）を内側にするため、範囲を明示する（既定は 172.16.0.0/12 を含まない）
           docker run -d --name c1 --network ct -v "$PWD/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
-            -e DOCSEED_HOST=docseed.example.com -e DOCSEED_LAN_IP=c1 caddy:2
+            -e DOCSEED_HOST=docseed.example.com -e DOCSEED_LAN_IP=c1 -e DOCSEED_TRUSTED_NETS="private_ranges 100.64.0.0/10" \
+            caddy:2
           docker network connect tun c1
           sleep 3
           ct_ip=$(docker inspect -f '{{(index .NetworkSettings.Networks "ct").IPAddress}}' c1)
@@ -115,13 +121,15 @@ jobs:
           check "direct /admin" "$(code ct $ct_ip /admin -H 'CF-Connecting-IP: 203.0.113.9')" 200
       - name: 通知の「内側」の範囲が Caddy の private_ranges と同じこと（src/docseed/security_notify.py）
         run: |
+          # private_ranges を展開させるため、その書き方を渡す（既定の値は private_ranges を使っていない）
           docker run --rm -v "$PWD/docker/Caddyfile:/etc/caddy/Caddyfile:ro" -e DOCSEED_HOST=docseed.example.com \
+            -e DOCSEED_TRUSTED_NETS="private_ranges 100.64.0.0/10" \
             caddy:2 caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/out.json
           python3 - <<'PY'
           import json, re
           j = open("/tmp/out.json").read()
           caddy = json.loads(re.search(r'"client_ip":\{"ranges":(\[[^\]]*\])', j).group(1))
-          caddy = [r for r in caddy if r != "100.64.0.0/10"]   # 既定の DOCSEED_TRUSTED_NETS で足しているもの
+          caddy = [r for r in caddy if r != "100.64.0.0/10"]   # 上で private_ranges に足したもの
           src = open("src/docseed/security_notify.py").read()
           ours = re.findall(r'"([^"]+)"', re.search(r"CADDY_PRIVATE_RANGES = \(([^)]*)\)", src).group(1))
           print("caddy:", caddy, "notify:", ours)

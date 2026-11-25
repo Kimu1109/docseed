@@ -39,10 +39,10 @@
 
 | サービス | 新規 / 変更 | ネットワーク | メモリ上限 | 有効にする条件 |
 |---|---|---|---|---|
-| caddy | 変更（証明書の方式、tailscaled.sock のマウント） | default | — | 常に |
-| api | 変更（パスキー・OIDC・画面） | default | 1.5GB（変更なし） | 常に |
+| caddy | 変更（証明書の方式、tailscaled.sock のマウント） | front・tunnel（実装で変更。[認証・権限・共有](security.md) 8 章） | — | 常に |
+| api | 変更（パスキー・OIDC・画面） | front・internal（実装で変更） | 1.5GB（変更なし） | 常に |
 | worker | 変更（派生ファイル・候補・要約のジョブ） | internal | 3GB（変更なし） | 常に |
-| fetcher | **新規**（api と同じイメージ、`docseed fetcher`） | default | 384MB | `DOCSEED_WEBCLIP_ENABLED=true`（compose の profile `webclip`） |
+| fetcher | **新規**（api と同じイメージ、`docseed fetcher`） | webclip（実装で変更。描画のコンテナと同じ） | 384MB | `DOCSEED_WEBCLIP_ENABLED=true`（compose の profile `webclip`） |
 | llm | **新規**（llama.cpp の `llama-server`） | internal | 2GB | `DOCSEED_LLM_ENABLED=true`（compose の profile `llm`） |
 
 RAM 8GB での目安は、api 1.5 + worker 3 + llm 2 + Caddy・OS 1 = 7.5GB で、ページキャッシュがほぼ残らない。**LLM を有効にするなら RAM 16GB を推奨**し、8GB では 1B 以下のモデルに限る（7.4 節）。
@@ -390,7 +390,7 @@ DOCSEED_OIDC_GOOGLE_LABEL=Google                      # ボタンの表示名
 - 提供者は `issuer` の `/.well-known/openid-configuration` から設定を読む（起動後の最初の利用時に読み、24 時間キャッシュ）。Google 以外（Pocket ID・Authelia・Keycloak など）も同じ書き方で足せる。
 - リダイレクト URI は `https://<DOCSEED_HOST>[:ポート]/auth/oidc/<提供者>/callback`。Google はリダイレクト URI に **HTTPS と、Public Suffix List に載ったドメイン**を求めるので、`*.ts.net` か自分のドメインで使う（`.local` と IP アドレスでは使えない）。Pi がインターネットから届かなくても使える（リダイレクトはブラウザの中で起きるため）。
 - Google Cloud の OAuth の同意画面は「外部」で、範囲は `openid email profile` だけにする。公開の状態が「テスト」のままなら、使う人をテストユーザーに登録する（実装時に Google の今の規則を確かめ、手順は [ユーザーとログイン](../admin/users.md#google-などでログインするoidc)）。
-- api から提供者（Google なら `accounts.google.com`, `oauth2.googleapis.com`, `www.googleapis.com`）へ通信する。worker と違い api は default ネットワークなので通信できる。
+- api から提供者（Google なら `accounts.google.com`, `oauth2.googleapis.com`, `www.googleapis.com`）へ通信する。worker と違い api は外へ出られるネットワーク（`front`）にいるので通信できる。
 
 **流れ**
 

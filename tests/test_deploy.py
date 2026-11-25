@@ -76,7 +76,7 @@ def test_lan_ip_never_empty_in_caddy():
 def test_fetcher_service():
     block = COMPOSE.split("\n  fetcher:", 1)[1].split("\n\n", 1)[0]
     assert 'profiles: ["webclip"]' in block and 'command: ["docseed", "fetcher"]' in block
-    assert "networks:" not in block            # default ネットワーク（外部へ通信する）
+    assert "networks: [webclip]" in block       # 外部へ通信する。caddy・api とは別のネットワーク
     worker = COMPOSE.split("\n  worker:", 1)[1].split("\n\n", 1)[0]
     assert "networks: [internal]" in worker     # worker は外部と通信しないまま
     for var in ("DOCSEED_WEBCLIP_ENABLED", "DOCSEED_WEBCLIP_MAX_MB", "DOCSEED_WEBCLIP_PROXY"):
@@ -131,7 +131,7 @@ def test_cloudflared_service():
     assert 'profiles: ["tunnel"]' in block and "<<: *hardening" in block
     assert "TUNNEL_TOKEN: ${DOCSEED_TUNNEL_TOKEN:-}" in block
     assert "networks: [tunnel]" in block                 # api・worker には直接届かない
-    assert "networks: [default, tunnel]" in _service("caddy")
+    assert "networks: [front, tunnel]" in _service("caddy")
     tunnel_net = COMPOSE.split("\n  tunnel:\n", 1)[1]
     assert "subnet: ${DOCSEED_TUNNEL_SUBNET:-10.213.47.0/28}" in tunnel_net
     # Caddy と compose の既定値がそろっていること（空の環境変数だと Caddy の既定値は使われない）
@@ -139,6 +139,55 @@ def test_cloudflared_service():
     assert CADDYFILE.count("{$DOCSEED_TUNNEL_SUBNET:10.213.47.0/28}") >= 3
     for var in ("DOCSEED_TUNNEL_TOKEN", "DOCSEED_TUNNEL_SUBNET", "DOCSEED_RATE_LIMIT"):
         assert var in ENV_EXAMPLE
+
+
+def _networks(name: str) -> set[str]:
+    m = re.search(r"^    networks: \[([^\]]*)\]$", _service(name), flags=re.MULTILINE)
+    return {n.strip() for n in m.group(1).split(",")} if m else {"default"}
+
+
+def test_api_trusts_forwarded_only_from_caddy():
+    """api は Caddy と api だけのネットワーク（front）から届いた X-Forwarded-For だけを信頼する（security.md 8 章）。
+
+    「*」にすると、api に直接つなげるコンテナ（外のページを描くコンテナなど）が接続元を偽り、
+    Caddy の入口の制限やログインの試行の制限を避けられる。
+    """
+    api = _service("api")
+    assert '"--forwarded-allow-ips", "${DOCSEED_FRONT_SUBNET:-10.213.47.16/28}"' in api
+    front = COMPOSE.split("\n  front:\n", 1)[1].split("\n  internal:", 1)[0]
+    assert "subnet: ${DOCSEED_FRONT_SUBNET:-10.213.47.16/28}" in front
+    assert "DOCSEED_FRONT_SUBNET" in ENV_EXAMPLE
+    # front には caddy と api だけ。api に届くほかの経路は internal（worker・llm）だけ
+    services = re.findall(r"^  ([a-z][a-z0-9-]*):$", COMPOSE.split("\nservices:\n", 1)[1].split("\nnetworks:\n", 1)[0],
+                          flags=re.MULTILINE)
+    on_front = {s for s in services if "front" in _networks(s)}
+    assert on_front == {"caddy", "api"}
+    assert _networks("api") == {"front", "internal"}
+    # 外のページを描くコンテナと fetcher は、caddy・api と同じネットワークに入れない
+    for name in ("webclip-browser", "fetcher"):
+        assert _networks(name) == {"webclip"}, name
+        assert not _networks(name) & (_networks("api") | _networks("caddy")), name
+    # docseed serve を直接動かしたときも、既定ではヘッダを信頼しない
+    from docseed.cli import build_parser
+    assert build_parser().parse_args(["serve"]).forwarded_allow_ips == "127.0.0.1"
+
+
+def test_trusted_nets_default_excludes_docker_gateway():
+    """「内側」の既定に 172.16.0.0/12（Docker のゲートウェイ）を入れない。docker-proxy を通った外からの接続
+    （IPv6 で届いたもの・Pi 自身からのもの）はこのアドレスに見えるため（security.md 8 章）。"""
+    from docseed.config import DEFAULT_TRUSTED_NETS, Settings
+    from docseed.security_notify import is_inside
+    assert "172.16.0.0/12" not in DEFAULT_TRUSTED_NETS and "private_ranges" not in DEFAULT_TRUSTED_NETS
+    assert CADDYFILE.count("{$DOCSEED_TRUSTED_NETS:" + DEFAULT_TRUSTED_NETS + "}") == 3
+    assert "{$DOCSEED_TRUSTED_NETS:private_ranges" not in CADDYFILE
+    assert "DOCSEED_TRUSTED_NETS: ${DOCSEED_TRUSTED_NETS:-" + DEFAULT_TRUSTED_NETS + "}" in _service("caddy")
+    assert DEFAULT_TRUSTED_NETS in ENV_EXAMPLE
+    assert f"`{DEFAULT_TRUSTED_NETS}`" in (ROOT / "docs" / "admin" / "configuration.md").read_text()
+    assert Settings.from_env({}).trusted_nets == DEFAULT_TRUSTED_NETS
+    for ip in ("192.168.1.5", "10.0.0.2", "100.100.1.1", "fd7a:115c:a1e0::1", "127.0.0.1"):
+        assert is_inside(ip, DEFAULT_TRUSTED_NETS), ip
+    for ip in ("172.17.0.1", "172.20.0.1", "203.0.113.9", "2001:db8::1"):
+        assert not is_inside(ip, DEFAULT_TRUSTED_NETS), ip
 
 
 def test_caddy_judges_by_client_ip():

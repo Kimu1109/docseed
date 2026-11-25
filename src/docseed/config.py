@@ -8,6 +8,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
+# 「内側」とみなす接続元の既定（Caddyfile・compose.yaml と同じ値。tests/test_deploy.py で照合する）。
+# Caddy の private_ranges から 172.16.0.0/12 を除いたものと Tailscale。172.16.0.0/12 は Docker のゲートウェイで、
+# docker-proxy を通った接続（IPv6 で届いたもの・Pi 自身からのもの）は外からでもこのアドレスに見える（security.md 8 章）
+DEFAULT_TRUSTED_NETS = "192.168.0.0/16 10.0.0.0/8 127.0.0.1/8 fd00::/8 ::1 100.64.0.0/10"
+
 
 @dataclass(frozen=True)
 class OidcProvider:
@@ -112,7 +117,7 @@ class Settings:
     notify_url: str = ""                  # DOCSEED_NOTIFY_URL（ntfy・Discord・Slack・汎用の Webhook。空なら送らない）
     notify_format: str = "auto"           # DOCSEED_NOTIFY_FORMAT（auto / ntfy / discord / slack / json）
     notify_login_failures: int = 20       # DOCSEED_NOTIFY_LOGIN_FAILURES（15 分の失敗がこれ以上で知らせる）
-    trusted_nets: str = "private_ranges 100.64.0.0/10"   # DOCSEED_TRUSTED_NETS（Caddy と同じ。内側の接続元）
+    trusted_nets: str = DEFAULT_TRUSTED_NETS   # DOCSEED_TRUSTED_NETS（Caddy と同じ。内側の接続元）
     rate_limit_enabled: bool = True       # DOCSEED_RATE_LIMIT（ログイン以外の流量制限。security.md 9 章）
     share_upload_min_free_pct: float = 10.0   # DOCSEED_SHARE_UPLOAD_MIN_FREE_PCT（空きがこれを下回ったら受け取らない）
     # 監視のしきい値（docs/design/deployment.md 6 章）
@@ -266,7 +271,7 @@ class Settings:
             notify_url=e.get("DOCSEED_NOTIFY_URL", "").strip(),
             notify_format=(e.get("DOCSEED_NOTIFY_FORMAT") or "auto").strip().lower(),
             notify_login_failures=int(e.get("DOCSEED_NOTIFY_LOGIN_FAILURES") or "20"),
-            trusted_nets=(e.get("DOCSEED_TRUSTED_NETS") or "private_ranges 100.64.0.0/10").strip(),
+            trusted_nets=(e.get("DOCSEED_TRUSTED_NETS") or DEFAULT_TRUSTED_NETS).strip(),
             share_upload_min_free_pct=float(e.get("DOCSEED_SHARE_UPLOAD_MIN_FREE_PCT") or "10"),
         )
 

@@ -190,14 +190,16 @@ Tailscale や LAN の中だけでなく、ポートを開けて公開する場�
 
 | 項目 | 内容 |
 |---|---|
-| 内側の範囲 | `DOCSEED_TRUSTED_NETS`（既定 `private_ranges 100.64.0.0/10`: RFC 1918・ループバック・`fd00::/8`・Tailscale）。接続元は `client_ip` で判定する（10 章） |
+| 内側の範囲 | `DOCSEED_TRUSTED_NETS`（既定 `192.168.0.0/16 10.0.0.0/8 127.0.0.1/8 fd00::/8 ::1 100.64.0.0/10`: `192.168.0.0/16`・`10.0.0.0/8`・ループバック・`fd00::/8`・Tailscale。Caddy の `private_ranges` から `172.16.0.0/12` を除いたもの。`config.DEFAULT_TRUSTED_NETS`）。接続元は `client_ip` で判定する（10 章） |
 | 外側から隠すパス | `/admin`、`/admin/*`、`/api/v1/admin`、`/api/v1/admin/*`、`/api/docs`、`/api/docs/*`、`/api/v1/openapi.json`、`/healthz` → 404（存在を知らせない。3.3 と同じ方針）。`%61dmin` や `%2F` のような符号化は Caddy が戻してから照合する。URL の接頭辞（`DOCSEED_BASE_PATH`、deployment.md 3.1）の下の同じパス（`/docseed/admin` など）も、接頭辞の中身を問わない `path_regexp` で 404 にする。外側に別のリバースプロキシを置くと接続元がそのプロキシに見えるため、そのプロキシの側でも止める（[パスの下で動かす](../admin/exposure.md#パスの下で動かす)） |
 | IP アドレスで開くサイト | `DOCSEED_LAN_IP` のサイトは内側からだけ。外側からは応答せずに接続を切る（`abort`） |
 | 追加するヘッダ | `Cross-Origin-Opener-Policy: same-origin`、`Permissions-Policy`（カメラ・マイク・位置情報・決済・USB などを無効）。アプリが同じヘッダを付けたときはアプリの値を優先する |
 | 外すヘッダ | `Server`、`Via`、`X-Powered-By` |
 
 - Docker の `healthcheck` は api に直接（`127.0.0.1:8000/healthz`）問い合わせるので、Caddy の制限の影響を受けない。
-- 注意: Docker のポート公開では、IPv6 の接続やホスト自身からの接続は docker-proxy を通り、接続元が Docker のゲートウェイ（`172.16.0.0/12` 内）に見える。IPv6 で外部に公開する場合はこの範囲を内側に含めないこと（[インターネットに公開する](../admin/exposure.md#ルーターでポートを開けて公開する)）。
+- Docker のポート公開では、IPv6 の接続やホスト自身からの接続は docker-proxy を通り、接続元が Docker のゲートウェイ（`172.16.0.0/12` 内）に見える。そのため既定の内側の範囲に `172.16.0.0/12` を入れない（入れると、IPv6 で届いた外からの接続が内側になり、入口の制限をすり抜ける）。かわりに Pi 自身から開いた場合と、LAN が `172.16.0.0/12` の場合は外側になる。LAN がこの範囲なら、その LAN の範囲だけを `DOCSEED_TRUSTED_NETS` に足す（[インターネットに公開する](../admin/exposure.md#ルーターでポートを開けて公開する)）。
+- api は、Caddy と api だけが入る `front` ネットワーク（サブネット固定 `DOCSEED_FRONT_SUBNET`、既定 `10.213.47.16/28`）から届いた `X-Forwarded-For` だけを信頼する（`docseed serve --forwarded-allow-ips`。`docseed serve` の既定は `127.0.0.1`）。api に直接つなげるほかのコンテナ（`internal` の worker・llm）が送ったヘッダは無視し、本当の接続元を使う。`*`（すべて信頼）にすると、api に直接つなげるコンテナが接続元を偽り、入口の制限・接続元ごとの回数の制限・ログインの試行の制限を避けられてしまう。
+- 外のページを描くコンテナ（`webclip-browser`）と `fetcher` は、外へ出られる別の `webclip` ネットワークに置き、caddy・api と同じネットワークに入れない（描画のコンテナが乗っ取られても api に直接届かない）。
 
 ## 9. ログイン以外の流量の制限とセキュリティログ
 
@@ -243,7 +245,7 @@ compose の `cloudflared`（profile `tunnel`）が Cloudflare へ外向きにつ
 
 | 項目 | 内容 |
 |---|---|
-| ネットワーク | cloudflared は `tunnel` ネットワーク（サブネット固定 `DOCSEED_TUNNEL_SUBNET`、既定 `10.213.47.0/28`）だけに入る。caddy は `default` と `tunnel` の両方。api・worker には直接届かない |
+| ネットワーク | cloudflared は `tunnel` ネットワーク（サブネット固定 `DOCSEED_TUNNEL_SUBNET`、既定 `10.213.47.0/28`）だけに入る。caddy は `front`（api と Caddy だけ。8 章）と `tunnel` の両方。api・worker には直接届かない |
 | 接続元 | Caddy は `tunnel` のサブネットから来たときだけ `CF-Connecting-IP` を信頼する（`servers { trusted_proxies static ...; client_ip_headers CF-Connecting-IP }`）。ほかの接続元が送ったヘッダは無視する |
 | 内側・外側の判定 | 8 章の判定は `remote_ip`（直接の相手）ではなく `client_ip`（信頼したヘッダを反映した接続元）で行う。さらにトンネル経由は、ヘッダが無い・プライベートなアドレスを名乗るなどに関係なく、常に外側（管理系のパスは 404、IP のサイトは切断） |
 | アプリへ渡す接続元 | Caddy が `X-Forwarded-For` を判定済みの接続元 1 つで上書きする（`header_up X-Forwarded-For {client_ip}`）。クライアントが送った `X-Forwarded-For` は届かない |
