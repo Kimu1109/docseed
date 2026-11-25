@@ -82,6 +82,28 @@ def test_password_change_logs_out_other_sessions(login):
     assert r.status_code == 422
 
 
+def test_password_change_attempts_limited(login):
+    """今のパスワードの失敗はユーザーごとに数える（盗まれたセッションから当てさせない。security.md 2.4）。"""
+    a = login("alice")
+    wrong = {"current_password": "wrong-guess", "new_password": "another-long-password"}
+    for _ in range(5):
+        r = a.post("/api/v1/me/password", json=wrong)
+        assert r.status_code == 422
+    r = a.post("/api/v1/me/password", json={"current_password": PASSWORD, "new_password": "another-long-password"})
+    assert r.status_code == 429 and "Retry-After" in r.headers
+    # 画面からの変更も同じように止まる
+    r = a.post("/settings/password", data={"current_password": PASSWORD, "new_password": "another-long-password",
+                                           "new_password2": "another-long-password", "csrf_token": a.csrf})
+    assert r.status_code == 429
+
+
+def test_local_path_rejects_control_chars():
+    from docseed.urls import is_local_path
+    assert is_local_path("/trash?q=a b")
+    for bad in ("//evil.example", "/\\evil.example", "/\t/evil.example", "/\r\n/evil.example", "/\x7f"):
+        assert not is_local_path(bad)
+
+
 def test_short_password_rejected(login):
     admin = login("admin")
     r = admin.post("/api/v1/admin/users", json={"username": "carol", "password": "short"})

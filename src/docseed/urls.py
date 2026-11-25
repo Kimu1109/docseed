@@ -15,6 +15,7 @@ import re
 from contextvars import ContextVar
 
 BASE: ContextVar[str] = ContextVar("docseed_base_path", default="")
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def base() -> str:
@@ -45,8 +46,13 @@ def to_browser(path: str, b: str | None = None) -> str:
 
 
 def is_local_path(path: str | None) -> bool:
-    """このサーバーの中を指すパスか（「//example.net」や「/\\example.net」のような別のサイトは不可）。"""
-    return bool(path) and path.startswith("/") and not path.startswith("//") and "\\" not in path
+    """このサーバーの中を指すパスか（「//example.net」や「/\\example.net」のような別のサイトは不可）。
+
+    タブ・改行などの制御文字も不可。ブラウザは URL の中のタブと改行を取り除くので、「/<タブ>/example.net」は
+    「//example.net」（別のサイト）として開かれてしまう（docs/design/security.md 2.2）。
+    """
+    return (bool(path) and path.startswith("/") and not path.startswith("//") and "\\" not in path
+            and not _CONTROL.search(path))
 
 
 class _Base:

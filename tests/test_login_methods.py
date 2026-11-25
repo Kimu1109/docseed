@@ -190,6 +190,18 @@ def test_second_factor_web_flow(app, users):
     assert w.get("/trash").status_code == 200
 
 
+def test_second_factor_next_rejects_control_chars(app, users):
+    """「/<タブ>/evil.example」はブラウザが「//evil.example」と読むので、戻り先にしない（security.md 2.2）。"""
+    b = Browser(app)
+    b.login()
+    _, codes = enable_totp(b)
+    for bad in ("/\t/evil.example", "/\n/evil.example", "/\x00/evil.example"):
+        w = TestClient(app, base_url=ORIGIN)
+        w.post("/login", data={"username": "alice", "password": PASSWORD, "next": bad}, follow_redirects=False)
+        r = w.post("/auth/second-factor", data={"code": codes.pop()}, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == "/"
+
+
 # ---------------------------------------------------------------------------
 # 再認証・パスワードでのログインの切り替え・2 段階認証の必須
 # ---------------------------------------------------------------------------
@@ -235,6 +247,11 @@ def test_password_login_toggle(app, users, conn):
     assert b.patch("/api/v1/me/security", json={"password_login": False}).status_code == 204
     r = Browser(app).login()
     assert r.status_code == 401 and "パスワードでのログインを使わない" in r.json()["detail"]
+    # パスワードが合ったときの案内も失敗として数える（数えないと、パスワードの正誤を何度でも試せる）
+    for _ in range(4):
+        Browser(app).login()
+    assert Browser(app).login().status_code == 429
+    api_routes.limiter._fail.clear()
     # 最後の 1 つは消せない
     iid = b.get("/api/v1/me/security").json()["identities"][0]["id"]
     assert b.delete(f"/api/v1/me/identities/{iid}").status_code == 422

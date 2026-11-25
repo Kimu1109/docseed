@@ -47,10 +47,11 @@ docseed の設定は、リポジトリの `.env`（`cp .env.example .env` で作
 | `DOCSEED_ACME_EMAIL` | 空 | caddy | Let's Encrypt に登録する連絡先 |
 | `DOCSEED_ACME_STAGING` | `false` | caddy | `true` で Let's Encrypt の試験用の環境を使う |
 | `DOCSEED_TLS_CHECK_ADDR` | `caddy:<HTTPS_PORT>` | api | 証明書の監視で接続する先。compose が設定する（ふつうは書かない）。空なら監視しない |
-| `DOCSEED_TRUSTED_NETS` | `private_ranges 100.64.0.0/10` | caddy | 「内側」とみなす接続元（空白区切りの CIDR）。外側からは管理画面などが 404 |
+| `DOCSEED_TRUSTED_NETS` | `192.168.0.0/16 10.0.0.0/8 127.0.0.1/8 fd00::/8 ::1 100.64.0.0/10` | caddy | 「内側」とみなす接続元（空白区切りの CIDR）。外側からは管理画面などが 404。`172.16.0.0/12` は既定に入れていない（Docker のゲートウェイ。LAN がこの範囲なら足す） |
 | `DOCSEED_RATE_LIMIT` | `true` | api | ログイン以外の、接続元ごとの回数の上限 |
 | `DOCSEED_TUNNEL_TOKEN` | 空 | compose | **秘密**。Cloudflare Tunnel のトークン（`COMPOSE_PROFILES` に `tunnel`） |
 | `DOCSEED_TUNNEL_SUBNET` | `10.213.47.0/28` | compose・caddy | cloudflared だけが入るネットワーク。重なるときだけ変える |
+| `DOCSEED_FRONT_SUBNET` | `10.213.47.16/28` | compose・api | Caddy と api だけが入るネットワーク。api はここから届いた `X-Forwarded-For` だけを信頼する。重なるときだけ変える |
 | `DOCSEED_CLOUDFLARED_IMAGE` | `cloudflare/cloudflared:latest` | compose | cloudflared のイメージ |
 | `DOCSEED_BASE_PATH` | 空 | api | パスの下で動かすときの接頭辞（例 `/docseed`） |
 | `DOCSEED_PUBLIC_URL` | 空 | api | ブラウザから見たオリジン。外側のプロキシなどで `https://<HOST>:<HTTPS_PORT>` と違うときだけ（パスまで書くと接頭辞にもなる） |

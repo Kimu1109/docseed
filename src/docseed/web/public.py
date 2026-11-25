@@ -54,7 +54,7 @@ def _resolve(conn: sqlite3.Connection, request: Request, token: str) -> sh.Share
 def _access(conn: sqlite3.Connection, settings: Settings, request: Request, token: str) -> sh.ShareAccess:
     acc = _resolve(conn, request, token)
     if acc.share["password_hash"] and not any(
-            sh.check_pass_cookie(settings.secret_key, token, v)
+            sh.check_pass_cookie(settings.secret_key, token, acc.share["password_hash"], v)
             for v in security.cookie_values(request, sh.cookie_name(token))):
         raise _NeedPassword()
     return acc
@@ -139,7 +139,8 @@ def share_auth(token: str, request: Request, password: str = Form(""), conn: sql
             "request": request, "user": None, "token": token, "error": "パスワードが違います"}, status_code=401)
     pass_limiter.succeeded(*keys)
     resp = RedirectResponse(f"/s/{token}", status_code=303)
-    resp.set_cookie(sh.cookie_name(token), sh.make_pass_cookie(settings.secret_key, token), httponly=True,
+    value = sh.make_pass_cookie(settings.secret_key, token, acc.share["password_hash"])
+    resp.set_cookie(sh.cookie_name(token), value, httponly=True,
                     secure=settings.cookie_secure, samesite="lax", path=f"/s/{token}",
                     max_age=sh.PASS_COOKIE_HOURS * 3600)
     return resp
@@ -163,10 +164,19 @@ def share_download(token: str, request: Request, doc_id: int | None = None,
                    store: BlobStore = Depends(get_store)):
     acc = _access(conn, settings, request, token)
     d = _doc_for(conn, acc, doc_id)
-    if "range" not in request.headers:
+    if sh.counts_as_download(acc.share, request.headers.get("range")):
         sh.count_download(conn, acc.share["id"])
         _log(conn, acc, request, "download", document=d["id"])
-    return file_response(store.path(d["storage_path"]), d, inline=False)
+    # 回数の上限があるリンクは Range に応えない（数えない取得を繰り返させない。security.md 4.2）
+    return file_response(store.path(d["storage_path"]), d, inline=False,
+                         allow_range=acc.share["max_downloads"] is None)
+
+
+def _previewable(d: sqlite3.Row) -> sqlite3.Row:
+    """プレビューは表示できる形式だけ。ほかの形式をダウンロードとして返すと、回数に数えずに取れてしまう。"""
+    if not can_preview(d["mime_type"]):
+        raise NotFound("見つかりません")
+    return d
 
 
 @router.get("/{token}/preview/{doc_id}")
@@ -174,7 +184,7 @@ def share_download(token: str, request: Request, doc_id: int | None = None,
 def share_preview(token: str, doc_id: int, request: Request, conn: sqlite3.Connection = Depends(get_conn),
                   settings: Settings = Depends(get_settings), store: BlobStore = Depends(get_store)):
     acc = _access(conn, settings, request, token)
-    d = _doc_for(conn, acc, doc_id)
+    d = _previewable(_doc_for(conn, acc, doc_id))
     return file_response(store.path(d["storage_path"]), d, inline=True)
 
 
@@ -212,7 +222,7 @@ def share_view(token: str, doc_id: int, request: Request, conn: sqlite3.Connecti
     d = _doc_for(conn, acc, doc_id)
     if d["view_path"]:
         return derived_response(store.derived_path(d["view_path"]))
-    return file_response(store.path(d["storage_path"]), d, inline=True)
+    return file_response(store.path(_previewable(d)["storage_path"]), d, inline=True)
 
 
 @router.get("/{token}/archive")

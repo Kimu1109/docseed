@@ -60,7 +60,7 @@ docker compose exec api docseed <コマンド> [オプション]
 
 | コマンド | 内容 |
 |---|---|
-| `docseed serve` | Web サーバー（api）。起動時にマイグレーションを適用する（`--host`・`--port`・`--forwarded-allow-ips`） |
+| `docseed serve` | Web サーバー（api）。起動時にマイグレーションを適用する（`--host`・`--port`・`--forwarded-allow-ips`。`X-Forwarded-For` を信頼する送信元で、既定は `127.0.0.1`。compose では Caddy と api だけのネットワーク） |
 | `docseed migrate` | マイグレーションだけを適用する |
 | `docseed worker` | 文字の読み取り（OCR）・埋め込み・要約・文字起こしの処理 |
 | `docseed fetcher` | Web クリップの取得（profile `webclip`） |

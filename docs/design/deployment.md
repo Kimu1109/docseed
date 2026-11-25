@@ -75,6 +75,8 @@ networks:
     internal: true
 ```
 
+> 実装では、ほかに `front`（Caddy と api だけ。api はここから届いた `X-Forwarded-For` だけを信頼する）・`tunnel`（cloudflared と Caddy）・`webclip`（fetcher と描画のコンテナ）のネットワークを使う（[認証・権限・共有](security.md) 8 章・10 章）。
+
 - api と worker は同じイメージで、起動コマンドだけを変える。
 - api は Uvicorn 1 プロセス（ワーカー 1）。SQLite の書き込みとメモリの都合で増やさない。非同期 I/O で同時接続をさばく。
 - api と worker は同じ SQLite ファイルを開く（WAL モードで読み書きの並行が可能。書き込みは短いトランザクションにする）。

@@ -31,6 +31,7 @@
 
 | 更新前の状態 | 追加の作業 |
 |---|---|
+| 0.9.0 まで（Docker のネットワークと「内側」の既定を変える前） | `docker compose up -d` でコンテナを作り直す（caddy・api は新しい `front`、fetcher・webclip-browser は `webclip` のネットワークに移る）。`front` のサブネット（`10.213.47.16/28`）が手元のネットワークと重なって起動しないときは、`.env` の `DOCSEED_FRONT_SUBNET` を空いている範囲にする。`DOCSEED_TRUSTED_NETS` を書いていない場合は「内側」の既定が `192.168.0.0/16 10.0.0.0/8 127.0.0.1/8 fd00::/8 ::1 100.64.0.0/10` に変わり、`172.16.0.0/12` が外側になる。LAN が `172.16`〜`172.31` で始まるアドレスなら、その LAN の範囲（例 `172.20.10.0/24`）を `.env` の `DOCSEED_TRUSTED_NETS` に既定の値と一緒に書く。`docseed serve` を compose を使わずに動かしているなら、`--forwarded-allow-ips` に手前のプロキシの IP を渡す（既定が `*` から `127.0.0.1` に変わった） |
 | Phase 7 まで（写真・サムネイルの前） | `docker compose exec api docseed reprocess unsupported`（以前に保存した HEIC / AVIF の文字を読む）と `docker compose exec api docseed derive missing`（保存済みの画像・PDF のサムネイルとプレビューを作る。文字の読み取りはやり直さない） |
 | Phase 4 まで（Office 文書・バックアップの前） | `docker compose exec api docseed reprocess unsupported`（以前に保存した Word / Excel / PowerPoint を処理する）。続けて [バックアップと復旧](backup.md) を設定する |
 | Phase 1 まで（文字の読み取りの前） | `docker compose --profile tools run --rm --build tools`（モデルの取得）のあと `docker compose up -d --build`。保存済みのファイルは worker が起動すると順に処理します |

@@ -343,6 +343,9 @@ def password_login(conn: sqlite3.Connection, settings: Settings, request: Reques
         raise Unauthenticated("ユーザー名またはパスワードが違います")
     user = User.from_row(row)
     if not user.password_login:
+        # パスワードが合ったときだけこの案内になるので、失敗として数える（数えないと、パスワードの正誤を
+        # 何度でも試せてしまう。docs/design/security.md 2.4）
+        limiter.failed(*keys)
         with Tx(conn):
             audit(conn, "login_failed", user_id=user.id, ip=ip, reason="password_login_disabled")
         raise Unauthenticated("このアカウントはパスワードでのログインを使わない設定です。パスキーなど、"

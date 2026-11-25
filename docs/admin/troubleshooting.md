@@ -32,7 +32,7 @@ docker compose exec api docseed status
 |---|---|
 | `failed to bind host port 0.0.0.0:80`（または `:443`）`: address already in use` | 他のサービスがポートを使っています。`sudo ss -ltnp 'sport = :80'` で確認し、そのサービスを止めるか、`.env` の `DOCSEED_HTTP_PORT` / `DOCSEED_HTTPS_PORT` を空いている番号に変えて `docker compose up -d` |
 | ポートを変えたのに、開くと Apache など 80 / 443 の別のサービスに飛ぶ・IP アドレスで開けない | `git pull` で最新にし（Caddy が中でも同じポートで待ち受ける設定）、IP で開くなら `.env` の `DOCSEED_LAN_IP` に Pi の IP を設定して `docker compose up -d --force-recreate caddy` |
-| 管理画面（`/admin`）や `/api/docs` が 404 になる | LAN・Tailscale の外からの接続とみなされています（[インターネットに公開する](exposure.md#ルーターでポートを開けて公開する)）。Tailscale 経由で開くか、`.env` の `DOCSEED_TRUSTED_NETS` に接続元の範囲を足して `docker compose up -d --force-recreate caddy` |
+| 管理画面（`/admin`）や `/api/docs` が 404 になる | LAN・Tailscale の外からの接続とみなされています（[インターネットに公開する](exposure.md#ルーターでポートを開けて公開する)）。Tailscale 経由で開くか、`.env` の `DOCSEED_TRUSTED_NETS` に接続元の範囲を足して `docker compose up -d --force-recreate caddy`。Pi 自身のブラウザや IPv6 で開いた場合も外側です（接続元が `172.x` に見えるため。LAN の IPv4 か Tailscale から開く）。LAN が `172.16`〜`172.31` で始まるなら、その LAN の範囲だけを足す |
 | 共有リンクや検索で「アクセスが多すぎます」（429）になる | 接続元の IP ごとの回数の上限（[インターネットに公開する](exposure.md#ルーターでポートを開けて公開する)）。しばらく待つと戻ります。fail2ban を入れている場合は `sudo fail2ban-client status docseed` で遮断されていないかも確認 |
 
 ## 証明書

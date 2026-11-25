@@ -51,6 +51,7 @@ docker compose up -d
 - 描画サービスは Cookie や保存領域を持ち越さず、docseed のデータも見られません。1 件ずつ処理します
 - 描画できたかは、Web クリップの API の `rendered`（`true` / `false`）で分かります
 - Chromium のサンドボックスが動かない機械では `.env` に `DOCSEED_RENDER_NO_SANDBOX=1` を設定します（コンテナの中の制限を緩めるので、必要なときだけ）
+- 描画サービスと fetcher は、caddy・api とは別の Docker のネットワーク（`webclip`）に入ります。描画サービスが外のページに乗っ取られても、api には直接届きません
 - **注意**: 描画サービスの通信は Docker のネットワーク越しに外へ出ます。WebSocket の通信は確認の対象にならないため、**LAN への出口は Pi のルーターや Docker 側でも止めてください**
 
 ## 関連

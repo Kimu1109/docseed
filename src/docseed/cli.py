@@ -267,14 +267,17 @@ def cmd_notify(args: argparse.Namespace) -> None:
     print(f"{n} 件送りました")
 
 
-def main(argv: list[str] | None = None) -> None:
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="docseed")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("serve", help="Web サーバーを起動する（起動時にマイグレーションを適用）")
     s.add_argument("--host", default="0.0.0.0")
     s.add_argument("--port", type=int, default=8000)
-    s.add_argument("--forwarded-allow-ips", default="*", help="X-Forwarded-For を信頼する送信元（Caddy）")
+    # 既定は自分自身だけ。compose では Caddy と api だけのネットワーク（DOCSEED_FRONT_SUBNET）を渡す。
+    # 「*」にすると、api に直接つなげるもの（同じネットワークのほかのコンテナ）が接続元を偽れる（security.md 8 章）
+    s.add_argument("--forwarded-allow-ips", default="127.0.0.1",
+                   help="X-Forwarded-For を信頼する送信元（Caddy の IP・CIDR。カンマ区切り。既定 127.0.0.1）")
     s.set_defaults(func=cmd_serve)
 
     s = sub.add_parser("migrate", help="データベースのマイグレーションを適用する")
@@ -356,8 +359,11 @@ def main(argv: list[str] | None = None) -> None:
     s = sub.add_parser("status", help="システムの状態と警告を表示する")
     s.add_argument("--json", action="store_true", help="結果を JSON で出力する")
     s.set_defaults(func=cmd_status)
+    return ap
 
-    args = ap.parse_args(argv)
+
+def main(argv: list[str] | None = None) -> None:
+    args = build_parser().parse_args(argv)
     args.func(args)
 
 
